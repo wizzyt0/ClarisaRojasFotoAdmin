@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trabajos | Clarisa Rojas Fotografia</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar"><div class="brand">Clarisa Rojas Fotografia</div><nav class="nav"><a href="dashboard.html">Dashboard</a><a href="clients.html">Clientes</a><a class="active" href="jobs.html">Trabajos</a><a href="packages.html">Paquetes</a><a href="follow-ups.html">Seguimiento escuelas</a><button data-logout type="button">Cerrar sesión</button></nav></aside>
+    <main class="main">
+      <section class="container">
+        <div class="page-header"><h1 class="page-title">Trabajos</h1><button id="newJobBtn" class="btn btn-primary" type="button">Nuevo trabajo</button></div>
+        <div class="card">
+          <div class="filters">
+            <input id="searchInput" class="input" placeholder="Buscar por trabajo, cliente o escuela">
+            <select id="typeFilter" class="select"><option value="">Todos los tipos</option><option value="PHOTO_SESSION">Sesión de fotos</option><option value="SCHOOL_GRADUATION">Graduación escolar</option></select>
+            <select id="statusFilter" class="select"><option value="">Todos los estados</option></select>
+          </div>
+          <div id="jobsTable" class="table-wrap"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div id="jobModal" class="modal hidden"><div class="modal-content"><div class="page-header"><h2 id="jobModalTitle">Trabajo</h2><button class="btn" data-close-modal type="button">Cerrar</button></div><form id="jobForm"></form></div></div>
+  <script type="module" src="js/jobs.js"></script>
+</body>
+</html>

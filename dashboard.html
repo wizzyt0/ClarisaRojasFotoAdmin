@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard | Clarisa Rojas Fotografia</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">Clarisa Rojas Fotografia</div>
+      <nav class="nav">
+        <a class="active" href="dashboard.html">Dashboard</a>
+        <a href="clients.html">Clientes</a>
+        <a href="jobs.html">Trabajos</a>
+        <a href="packages.html">Paquetes</a>
+        <a href="follow-ups.html">Seguimiento escuelas</a>
+        <button data-logout type="button">Cerrar sesión</button>
+      </nav>
+    </aside>
+    <main class="main">
+      <section class="container">
+        <div class="page-header">
+          <h1 class="page-title">Resumen general</h1>
+        </div>
+        <div id="metrics" class="grid"></div>
+        <div class="grid">
+          <section class="card"><h2>Próximas entregas</h2><div id="upcomingDeliveries"></div></section>
+          <section class="card"><h2>Esperando aprobación</h2><div id="waitingApproval"></div></section>
+          <section class="card"><h2>Últimos aprobados</h2><div id="recentApproved"></div></section>
+          <section class="card"><h2>Seguimientos cercanos</h2><div id="nearFollowUps"></div></section>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="js/dashboard.js"></script>
+</body>
+</html>

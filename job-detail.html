@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detalle de trabajo | Clarisa Rojas Fotografia</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar"><div class="brand">Clarisa Rojas Fotografia</div><nav class="nav"><a href="dashboard.html">Dashboard</a><a href="clients.html">Clientes</a><a class="active" href="jobs.html">Trabajos</a><a href="packages.html">Paquetes</a><a href="follow-ups.html">Seguimiento escuelas</a><button data-logout type="button">Cerrar sesión</button></nav></aside>
+    <main class="main">
+      <section class="container">
+        <div class="page-header"><h1 id="jobTitle" class="page-title">Trabajo</h1><div class="actions"><a class="btn" href="jobs.html">Volver</a><button id="copyApprovalBtn" class="btn">Copiar link aprobación</button><button id="openApprovalBtn" class="btn">Abrir aprobación</button><button id="deleteJobBtn" class="btn btn-danger">Eliminar trabajo</button></div></div>
+        <section id="summaryCard" class="card"></section>
+        <section id="schoolCard" class="card hidden"></section>
+        <section class="card"><div class="page-header"><h2>Galerías</h2><button id="newGalleryBtn" class="btn btn-primary">Agregar galería</button></div><div id="galleriesList"></div></section>
+        <section class="card"><div class="page-header"><h2>Abonos</h2><button id="newDepositBtn" class="btn btn-primary">Agregar abono</button></div><div id="depositsList"></div></section>
+        <section class="card"><div class="page-header"><h2>WhatsApp</h2><button id="generateWhatsappBtn" class="btn btn-primary">Generar mensaje WhatsApp</button></div><div id="phoneChoice"></div><textarea id="whatsappMessage" class="textarea" readonly></textarea><div class="actions"><button id="copyWhatsappBtn" class="btn">Copiar mensaje</button><button id="openWhatsappBtn" class="btn btn-secondary">Abrir WhatsApp</button></div><h3>Historial</h3><div id="messageLogs"></div></section>
+        <section id="approvalCard" class="card"></section>
+      </section>
+    </main>
+  </div>
+  <div id="detailModal" class="modal hidden"><div class="modal-content"><div class="page-header"><h2 id="detailModalTitle">Formulario</h2><button class="btn" data-close-modal>Cerrar</button></div><form id="detailForm"></form></div></div>
+  <script type="module" src="js/job-detail.js"></script>
+</body>
+</html>

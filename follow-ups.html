@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Seguimiento escuelas | Clarisa Rojas Fotografia</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar"><div class="brand">Clarisa Rojas Fotografia</div><nav class="nav"><a href="dashboard.html">Dashboard</a><a href="clients.html">Clientes</a><a href="jobs.html">Trabajos</a><a href="packages.html">Paquetes</a><a class="active" href="follow-ups.html">Seguimiento escuelas</a><button data-logout type="button">Cerrar sesión</button></nav></aside>
+    <main class="main">
+      <section class="container">
+        <div class="page-header"><h1 class="page-title">Seguimiento anual de escuelas</h1></div>
+        <div class="card">
+          <div class="filters"><input id="searchInput" class="input" placeholder="Buscar escuela"><select id="statusFilter" class="select"><option value="">Todos los estados</option></select><select id="monthFilter" class="select"><option value="">Todas</option><option value="month">Contactar este mes</option></select></div>
+          <div id="followUpsTable" class="table-wrap"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div id="followModal" class="modal hidden"><div class="modal-content"><div class="page-header"><h2>Editar seguimiento</h2><button class="btn" data-close-modal>Cerrar</button></div><form id="followForm"></form></div></div>
+  <script type="module" src="js/follow-ups.js"></script>
+</body>
+</html>
