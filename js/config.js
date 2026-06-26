@@ -3,7 +3,7 @@ export const SUPABASE_ANON_KEY = "sb_publishable_DsZwKxlO82UCeiHQn-Pwpg_nN1YtJly
 
 export const APP_CONFIG = {
   appName: "Clarisa Rojas Fotografia",
-  appUrl: "http://localhost:5500",
+  appUrl: "https://www.clarisarojasfoto.com",
   defaultCountryCode: "52",
   currency: "MXN",
   locale: "es-MX",
