@@ -1,0 +1,10 @@
+---
+deployment:
+  tasks:
+    - export DEPLOYPATH=$HOME/public_html/
+    - /bin/cp -R *.html "$DEPLOYPATH"
+    - /bin/cp -R css "$DEPLOYPATH"
+    - /bin/cp -R js "$DEPLOYPATH"
+    - /bin/cp -R sql "$DEPLOYPATH"
+    - /bin/cp README.md "$DEPLOYPATH"
+    - /bin/cp netlify.toml "$DEPLOYPATH"
