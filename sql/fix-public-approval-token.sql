@@ -1,3 +1,6 @@
+drop function if exists get_public_approval_by_token(text);
+drop function if exists approve_job_by_token(text, text);
+
 create or replace function get_public_approval_by_token(token text)
 returns jsonb
 language plpgsql
@@ -62,7 +65,7 @@ begin
   left join packages p on p.id = j.package_id
   left join school_profiles sp on sp.client_id = c.id
   left join galleries g on g.job_id = j.id
-  where j.approval_token = token
+  where j.approval_token = get_public_approval_by_token.token
     and j.approval_revoked_at is null
     and (j.approval_token_expires_at is null or j.approval_token_expires_at > now())
   group by j.id, c.id, p.id, sp.id;
@@ -83,10 +86,10 @@ begin
   update jobs
   set
     approved_at = now(),
-    approval_name = nullif(trim(approval_name), ''),
+    approval_name = nullif(trim(approve_job_by_token.approval_name), ''),
     approval_terms_accepted = true,
     status = 'APPROVED_FOR_PRINT'
-  where approval_token = token
+  where approval_token = approve_job_by_token.token
     and approval_revoked_at is null
     and (approval_token_expires_at is null or approval_token_expires_at > now())
   returning * into approved_job;
@@ -99,7 +102,7 @@ begin
   set
     status = 'APPROVED',
     approved_at = now(),
-    approved_by_name = nullif(trim(approval_name), ''),
+    approved_by_name = nullif(trim(approve_job_by_token.approval_name), ''),
     terms_accepted = true
   where job_id = approved_job.id and status = 'PENDING';
 
