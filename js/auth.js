@@ -1,17 +1,13 @@
 import { supabase } from "./supabase.js";
 import { showToast } from "./utils.js";
 
-export const AUTH_ENABLED = false;
+export const AUTH_ENABLED = true;
 
 export async function login(email, password) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 
 export async function logout() {
-  if (!AUTH_ENABLED) {
-    window.location.href = "dashboard.html";
-    return;
-  }
   await supabase.auth.signOut();
   window.location.href = "index.html";
 }
@@ -22,10 +18,6 @@ export async function getCurrentUser() {
 }
 
 export async function requireAuth() {
-  if (!AUTH_ENABLED) {
-    wireLogout();
-    return { localMode: true };
-  }
   const { data } = await supabase.auth.getSession();
   if (!data.session) {
     window.location.href = "index.html";
@@ -36,10 +28,6 @@ export async function requireAuth() {
 }
 
 export async function redirectIfAuthenticated() {
-  if (!AUTH_ENABLED) {
-    window.location.href = "dashboard.html";
-    return;
-  }
   const { data } = await supabase.auth.getSession();
   if (data.session) window.location.href = "dashboard.html";
 }
@@ -51,10 +39,6 @@ export function wireLogout() {
 }
 
 export function initLoginPage() {
-  if (!AUTH_ENABLED) {
-    window.location.href = "dashboard.html";
-    return;
-  }
   redirectIfAuthenticated();
   const form = document.querySelector("#loginForm");
   form?.addEventListener("submit", async (event) => {

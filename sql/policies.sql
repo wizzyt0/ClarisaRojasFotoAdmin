@@ -9,36 +9,20 @@ alter table message_logs enable row level security;
 
 create policy "admin read clients" on clients for select to authenticated using (true);
 create policy "admin write clients" on clients for all to authenticated using (true) with check (true);
-create policy "local anon read clients" on clients for select to anon using (true);
-create policy "local anon write clients" on clients for all to anon using (true) with check (true);
 create policy "admin read school_profiles" on school_profiles for select to authenticated using (true);
 create policy "admin write school_profiles" on school_profiles for all to authenticated using (true) with check (true);
-create policy "local anon read school_profiles" on school_profiles for select to anon using (true);
-create policy "local anon write school_profiles" on school_profiles for all to anon using (true) with check (true);
 create policy "admin read packages" on packages for select to authenticated using (true);
 create policy "admin write packages" on packages for all to authenticated using (true) with check (true);
-create policy "local anon read packages" on packages for select to anon using (true);
-create policy "local anon write packages" on packages for all to anon using (true) with check (true);
 create policy "admin read jobs" on jobs for select to authenticated using (true);
 create policy "admin write jobs" on jobs for all to authenticated using (true) with check (true);
-create policy "local anon read jobs" on jobs for select to anon using (true);
-create policy "local anon write jobs" on jobs for all to anon using (true) with check (true);
 create policy "admin read galleries" on galleries for select to authenticated using (true);
 create policy "admin write galleries" on galleries for all to authenticated using (true) with check (true);
-create policy "local anon read galleries" on galleries for select to anon using (true);
-create policy "local anon write galleries" on galleries for all to anon using (true) with check (true);
 create policy "admin read approvals" on approvals for select to authenticated using (true);
 create policy "admin write approvals" on approvals for all to authenticated using (true) with check (true);
-create policy "local anon read approvals" on approvals for select to anon using (true);
-create policy "local anon write approvals" on approvals for all to anon using (true) with check (true);
 create policy "admin read deposits" on deposits for select to authenticated using (true);
 create policy "admin write deposits" on deposits for all to authenticated using (true) with check (true);
-create policy "local anon read deposits" on deposits for select to anon using (true);
-create policy "local anon write deposits" on deposits for all to anon using (true) with check (true);
 create policy "admin read message_logs" on message_logs for select to authenticated using (true);
 create policy "admin write message_logs" on message_logs for all to authenticated using (true) with check (true);
-create policy "local anon read message_logs" on message_logs for select to anon using (true);
-create policy "local anon write message_logs" on message_logs for all to anon using (true) with check (true);
 
 create or replace function get_public_approval_by_token(token text)
 returns jsonb
