@@ -52,7 +52,7 @@ async function load() {
   const { data, error } = await supabase.rpc("get_public_approval_by_token", { token });
   if (error || !data) {
     console.error(error);
-    content.innerHTML = `<div class="alert alert-error">El link de aprobación no existe o expiró.</div>`;
+    content.innerHTML = `<div class="alert alert-error">El link de aprobación no existe, expiró o todavía falta configurar la función pública de aprobación en Supabase.</div>`;
     return;
   }
   approvalData = data;
