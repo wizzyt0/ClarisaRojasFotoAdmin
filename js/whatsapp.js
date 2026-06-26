@@ -1,7 +1,7 @@
 import { supabase } from "./supabase.js";
 import { APP_CONFIG } from "./config.js";
 import { formatMoney } from "./formatters.js";
-import { normalizePhone } from "./utils.js";
+import { generateToken, normalizePhone } from "./utils.js";
 
 export function buildWhatsAppUrl(phone, message) {
   const normalized = normalizePhone(phone);
@@ -18,7 +18,7 @@ Tu galería ya está lista:
 📦 Paquete: ${data.packageName || "Sin paquete"}
 🔗 Ver fotos: ${data.galleryUrl || "Link pendiente"}
 
-Para autorizar la impresión, entra aquí:
+Link de aprobación para autorizar la impresión:
 ${data.approvalUrl}
 
 Resumen:
@@ -52,7 +52,7 @@ Links para revisar:
 📁 Documentación: ${data.documentationUrl || "Pendiente"}
 🎓 Diploma: ${data.diplomaUrl || "Pendiente"}
 
-Para autorizar la impresión, entra aquí:
+Link de aprobación para autorizar la impresión:
 ${data.approvalUrl}
 
 Resumen:
@@ -75,6 +75,15 @@ export async function generateAndLogWhatsAppMessage(jobId, phone) {
     .eq("id", jobId)
     .single();
   if (error) throw error;
+
+  if (!job.approval_token) {
+    job.approval_token = generateToken(48);
+    const { error: tokenError } = await supabase
+      .from("jobs")
+      .update({ approval_token: job.approval_token, approval_revoked_at: null })
+      .eq("id", job.id);
+    if (tokenError) throw tokenError;
+  }
 
   const deposits = job.deposits || [];
   const totalDeposited = deposits.reduce((sum, item) => sum + Number(item.amount || 0), 0);
