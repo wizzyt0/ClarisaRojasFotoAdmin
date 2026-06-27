@@ -1,0 +1,12 @@
+name = "clarisa-r2-share"
+main = "r2-share-worker.js"
+compatibility_date = "2026-06-27"
+
+routes = []
+
+[[r2_buckets]]
+binding = "PHOTO_BUCKET"
+bucket_name = "clarisa-fotos"
+
+[vars]
+SUPABASE_URL = "https://yltpibylaybyicbmpvax.supabase.co"

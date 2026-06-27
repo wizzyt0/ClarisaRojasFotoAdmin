@@ -12,6 +12,7 @@ Aplicación web interna para administrar un negocio de fotografía. Es simple, e
 - Abonos manuales, sin métodos de pago.
 - Cálculo de abonado, pendiente y sobreabono.
 - Links compartidos de Google Photos.
+- Links seguros de Cloudflare R2 para previews de maestra y archivos de imprenta.
 - Mensajes de WhatsApp con `wa.me`, sin enviar automáticamente.
 - Página pública `approval.html?token=...` para aprobar impresión.
 - Seguimiento anual de escuelas.
@@ -19,7 +20,7 @@ Aplicación web interna para administrar un negocio de fotografía. Es simple, e
 
 ## Funciones no incluidas
 
-No usa Next.js, React, Vue, Angular, backend Node, pagos online, WhatsApp Business API, Google Photos API, subida de fotos, almacenamiento interno de fotos, dashboard de clientes ni cuentas para clientes.
+No usa Next.js, React, Vue, Angular, backend Node tradicional, pagos online, WhatsApp Business API, Google Photos API, dashboard de clientes ni cuentas para clientes.
 
 ## Modo local sin login
 
@@ -127,6 +128,19 @@ No hay integración con Google Photos API. El administrador pega manualmente lin
 
 - `photos.app.goo.gl`
 - `photos.google.com`
+
+## Cloudflare R2
+
+La app puede registrar archivos guardados en un bucket privado de Cloudflare R2 y generar links seguros:
+
+- Preview para maestra: `https://clarisa-r2-share.mudjkdriver.workers.dev/preview?token=...`
+- Descarga para imprenta: `https://clarisa-r2-share.mudjkdriver.workers.dev/download?token=...`
+
+Ejecute `sql/r2-storage-links.sql` en Supabase para crear las tablas `job_files` y `file_share_links`.
+
+El frontend nunca guarda llaves secretas de Cloudflare R2. La entrega de archivos se hace con un Cloudflare Worker en `cloudflare/r2-share-worker.js`.
+
+Guía completa: `docs/r2-cloudflare-setup.md`.
 
 ## WhatsApp
 

@@ -9,5 +9,6 @@ export const APP_CONFIG = {
   locale: "es-MX",
   businessName: "Clarisa Rojas Fotografia",
   facebookUrl: "https://www.facebook.com/clarisafotografia",
-  instagramUrl: "https://www.instagram.com/clarisarojasfotografia/"
+  instagramUrl: "https://www.instagram.com/clarisarojasfotografia/",
+  r2WorkerUrl: "https://clarisa-r2-share.mudjkdriver.workers.dev"
 };
