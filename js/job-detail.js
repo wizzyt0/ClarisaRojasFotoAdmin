@@ -161,7 +161,14 @@ function renderPhones() {
 }
 
 function renderGalleries() {
-  document.querySelector("#galleriesList").innerHTML = galleries.length ? `<table class="table"><thead><tr><th>Título</th><th>Tipo</th><th>Link</th><th>Enviada</th><th>Acciones</th></tr></thead><tbody>${galleries.map((gallery) => `<tr><td>${escapeHtml(gallery.title)}<br><span class="muted">${gallery.is_active ? "Activa" : "Inactiva"}</span></td><td>${getGalleryTypeLabel(gallery.gallery_type)}</td><td><a href="${escapeHtml(gallery.google_photos_url)}" target="_blank" rel="noopener">Abrir galería</a></td><td>${formatDateTime(gallery.sent_at)}</td><td class="actions"><button class="btn btn-danger" data-deactivate-gallery="${gallery.id}">Desactivar</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty-state">No hay galerías registradas.</div>`;
+  const teacherPreviewFiles = r2Files.filter((file) => file.file_type === "TEACHER_PREVIEW");
+  const googlePhotosHtml = galleries.length ? `<h3>Google Photos</h3><div class="table-wrap"><table class="table"><thead><tr><th>Título</th><th>Tipo</th><th>Link</th><th>Enviada</th><th>Acciones</th></tr></thead><tbody>${galleries.map((gallery) => `<tr><td>${escapeHtml(gallery.title)}<br><span class="muted">${gallery.is_active ? "Activa" : "Inactiva"}</span></td><td>${getGalleryTypeLabel(gallery.gallery_type)}</td><td><a href="${escapeHtml(gallery.google_photos_url)}" target="_blank" rel="noopener">Abrir galería</a></td><td>${formatDateTime(gallery.sent_at)}</td><td class="actions"><button class="btn btn-danger" data-deactivate-gallery="${gallery.id}">Desactivar</button></td></tr>`).join("")}</tbody></table></div>` : "";
+  const r2GalleryHtml = teacherPreviewFiles.length ? `<h3>Preview maestra en R2</h3><div class="file-gallery">${teacherPreviewFiles.map((file) => {
+    const isImage = String(file.content_type || "").startsWith("image/");
+    return `<article class="file-tile"><button class="file-preview" data-preview-r2-file="${file.id}" type="button">${isImage ? `<span class="file-thumb" data-r2-thumb="${file.id}"></span>` : `<span class="file-icon">${escapeHtml((file.file_name || "").split(".").pop() || "FILE")}</span>`}</button><div class="file-meta"><strong>${escapeHtml(file.file_name)}</strong><span>${formatDateTime(file.created_at)}</span></div><div class="actions"><button class="btn" data-open-r2-file="${file.id}">Abrir</button></div></article>`;
+  }).join("")}</div>` : "";
+  document.querySelector("#galleriesList").innerHTML = googlePhotosHtml || r2GalleryHtml ? `${r2GalleryHtml}${googlePhotosHtml}` : `<div class="empty-state">No hay galerías registradas. Puede subir previews en Archivos R2 o agregar un link de Google Photos.</div>`;
+  hydrateR2Thumbnails();
 }
 
 function renderR2Files() {
@@ -193,6 +200,24 @@ function renderR2ShareLinks() {
     const inactive = link.revoked_at || expired;
     return `<tr><td>${R2_LINK_TYPES[link.link_type] || link.link_type}</td><td><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a></td><td>${formatDateTime(link.expires_at)}</td><td>${link.revoked_at ? "Revocado" : expired ? "Expirado" : "Activo"}</td><td class="actions"><button class="btn" data-copy-r2-link="${escapeHtml(url)}">Copiar</button>${inactive ? "" : `<button class="btn btn-danger" data-revoke-r2-link="${link.id}">Revocar</button>`}</td></tr>`;
   }).join("")}</tbody></table></div>` : `<div class="empty-state">No hay links de R2 generados.</div>`;
+}
+
+async function createTeacherPreviewLink() {
+  const hasPreviewFiles = r2Files.some((file) => file.file_type === "TEACHER_PREVIEW");
+  if (!hasPreviewFiles) {
+    showToast("Primero suba fotos como Preview maestra en Archivos R2.", "error");
+    return;
+  }
+  const expiresAt = new Date(defaultR2Expiry(7)).toISOString();
+  const link = await createR2ShareLink(jobId, "TEACHER_PREVIEW", expiresAt);
+  const url = r2ShareUrl(link);
+  try {
+    await copyToClipboard(url);
+    showToast("Link de galería para maestra copiado.");
+  } catch {
+    showToast("Link de galería para maestra generado.");
+  }
+  await loadJob();
 }
 
 function renderDeposits() {
@@ -315,6 +340,7 @@ document.addEventListener("click", async (event) => {
   try {
     if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");
     if (event.target.matches("#newGalleryBtn")) openGalleryForm();
+    if (event.target.matches("#generateTeacherPreviewLinkBtn")) await createTeacherPreviewLink();
     if (event.target.matches("#newDepositBtn")) openDepositForm();
     if (event.target.matches("#newR2FileBtn")) openR2FileForm();
     if (event.target.matches("#newR2ShareLinkBtn")) openR2ShareLinkForm();
