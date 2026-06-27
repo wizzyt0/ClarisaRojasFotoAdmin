@@ -140,6 +140,8 @@ Ejecute `sql/r2-storage-links.sql` en Supabase para crear las tablas `job_files`
 
 El frontend nunca guarda llaves secretas de Cloudflare R2. La entrega de archivos se hace con un Cloudflare Worker en `cloudflare/r2-share-worker.js`.
 
+Desde el detalle de un trabajo puede arrastrar archivos al panel para subirlos directamente a R2. La subida pasa por el Worker y requiere sesión de administrador.
+
 Guía completa: `docs/r2-cloudflare-setup.md`.
 
 ## WhatsApp

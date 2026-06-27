@@ -3,6 +3,8 @@ const FILE_TYPE_BY_LINK_TYPE = {
   PRINT_DOWNLOAD: "PRINT_HIGH_RES"
 };
 
+const ALLOWED_FILE_TYPES = new Set(["TEACHER_PREVIEW", "PRINT_HIGH_RES"]);
+
 function html(body, status = 200) {
   return new Response(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clarisa Rojas Fotografia</title><style>
     body{margin:0;background:#f6f7f9;color:#1f2933;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5}
@@ -21,8 +23,17 @@ function html(body, status = 200) {
 function jsonError(message, status = 400) {
   return new Response(JSON.stringify({ error: message }), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" }
+    headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
   });
+}
+
+function corsHeaders(headers = {}) {
+  return {
+    "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-headers": "authorization,content-type",
+    ...headers
+  };
 }
 
 function safeText(value) {
@@ -44,6 +55,81 @@ async function supabaseFetch(env, path) {
   });
   if (!response.ok) throw new Error(`Supabase error ${response.status}`);
   return response.json();
+}
+
+async function supabaseInsert(env, table, payload) {
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}`, {
+    method: "POST",
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      "content-type": "application/json",
+      prefer: "return=representation"
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error(`Supabase insert error ${response.status}`);
+  const rows = await response.json();
+  return rows[0];
+}
+
+async function requireAdmin(request, env) {
+  const authorization = request.headers.get("authorization") || "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  if (!token) throw new Error("No hay sesión de administrador.");
+
+  const response = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+    headers: {
+      apikey: env.SUPABASE_ANON_KEY || env.SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${token}`
+    }
+  });
+  if (!response.ok) throw new Error("Sesión de administrador inválida.");
+  return response.json();
+}
+
+function cleanFileName(fileName) {
+  return String(fileName || "archivo")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 120) || "archivo";
+}
+
+async function handleAdminUpload(request, env) {
+  await requireAdmin(request, env);
+  const formData = await request.formData();
+  const jobId = String(formData.get("job_id") || "");
+  const fileType = String(formData.get("file_type") || "");
+  const file = formData.get("file");
+
+  if (!jobId) return jsonError("Falta job_id.", 400);
+  if (!ALLOWED_FILE_TYPES.has(fileType)) return jsonError("Tipo de archivo inválido.", 400);
+  if (!file || typeof file.arrayBuffer !== "function") return jsonError("Falta archivo.", 400);
+
+  const folder = fileType === "PRINT_HIGH_RES" ? "print" : "preview";
+  const fileName = cleanFileName(file.name);
+  const r2Key = `trabajos/${jobId}/${folder}/${Date.now()}-${crypto.randomUUID()}-${fileName}`;
+  const contentType = file.type || "application/octet-stream";
+
+  await env.PHOTO_BUCKET.put(r2Key, file.stream(), {
+    httpMetadata: { contentType }
+  });
+
+  const row = await supabaseInsert(env, "job_files", {
+    job_id: jobId,
+    file_type: fileType,
+    r2_key: r2Key,
+    file_name: file.name || fileName,
+    content_type: contentType,
+    size_bytes: file.size || null,
+    notes: "Subido desde el panel"
+  });
+
+  return new Response(JSON.stringify({ ok: true, file: row }), {
+    headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
+  });
 }
 
 async function getShare(env, token) {
@@ -110,7 +196,9 @@ async function handleFile(request, env, token, fileId) {
 export default {
   async fetch(request, env) {
     try {
+      if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
       const url = new URL(request.url);
+      if (url.pathname === "/admin/upload" && request.method === "POST") return handleAdminUpload(request, env);
       const token = url.searchParams.get("token");
       if (!token) return html(`<div class="alert"><h1>Falta token</h1><p>Abra el link completo que recibió.</p></div>`, 400);
       if (url.pathname === "/preview") return renderPreview(request, env, token);

@@ -121,6 +121,22 @@ label { font-weight: 650; }
 .hidden { display: none !important; }
 .loading { opacity: 0.65; pointer-events: none; }
 .empty-state { padding: 28px; color: var(--muted); text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); }
+.dropzone {
+  display: grid;
+  gap: 4px;
+  place-items: center;
+  min-height: 120px;
+  margin: 10px 0 16px;
+  padding: 18px;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  color: var(--text);
+  cursor: pointer;
+  text-align: center;
+}
+.dropzone span { color: var(--muted); }
+.dropzone:hover, .dropzone.dragover { border-color: var(--primary); background: #e6f3f0; }
 .toast { position: fixed; right: 18px; bottom: 18px; z-index: 40; box-shadow: var(--shadow); }
 .login-page { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
 .login-card { width: min(420px, 100%); }

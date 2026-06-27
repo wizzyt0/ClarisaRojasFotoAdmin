@@ -1,4 +1,5 @@
 import { supabase } from "./supabase.js";
+import { APP_CONFIG } from "./config.js";
 
 export const R2_FILE_TYPES = {
   TEACHER_PREVIEW: "Preview maestra",
@@ -61,4 +62,27 @@ export async function revokeR2ShareLink(linkId) {
     .update({ revoked_at: new Date().toISOString() })
     .eq("id", linkId);
   if (error) throw error;
+}
+
+export async function uploadR2File(jobId, fileType, file) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) throw new Error("Debe iniciar sesión para subir archivos.");
+
+  const formData = new FormData();
+  formData.append("job_id", jobId);
+  formData.append("file_type", fileType);
+  formData.append("file", file);
+
+  const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/upload`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${accessToken}`
+    },
+    body: formData
+  });
+
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(result?.error || "No se pudo subir el archivo.");
+  return result;
 }

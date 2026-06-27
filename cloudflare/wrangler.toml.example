@@ -10,3 +10,4 @@ bucket_name = "clarisa-fotos"
 
 [vars]
 SUPABASE_URL = "https://yltpibylaybyicbmpvax.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_DsZwKxlO82UCeiHQn-Pwpg_nN1YtJly"

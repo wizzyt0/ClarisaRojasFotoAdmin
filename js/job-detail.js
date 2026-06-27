@@ -4,7 +4,7 @@ import { APP_CONFIG } from "./config.js";
 import { GALLERY_TYPES, JOB_STATUSES, getGalleryTypeLabel, getJobStatusLabel, getJobTypeLabel } from "./constants.js";
 import { createDeposit, deleteDeposit, getDepositsByJob } from "./deposits.js";
 import { createGallery, deactivateGallery, getGalleriesByJob } from "./galleries.js";
-import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink } from "./r2-files.js";
+import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink, uploadR2File } from "./r2-files.js";
 import { generateAndLogWhatsAppMessage } from "./whatsapp.js";
 import { calculateTotals, copyToClipboard, escapeHtml, formToObject, generateToken, getQueryParam, openInNewTab, showToast, today } from "./utils.js";
 import { formatDate, formatDateTime, formatMoney } from "./formatters.js";
@@ -102,6 +102,52 @@ function render() {
       event.target.value = job.status;
     }
   });
+  setupR2Dropzone();
+}
+
+function setupR2Dropzone() {
+  const dropzone = document.querySelector("#r2Dropzone");
+  const input = document.querySelector("#r2FileInput");
+  if (!dropzone || !input || dropzone.dataset.ready) return;
+  dropzone.dataset.ready = "true";
+  dropzone.addEventListener("click", () => input.click());
+  dropzone.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") input.click();
+  });
+  dropzone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+  dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+  dropzone.addEventListener("drop", async (event) => {
+    event.preventDefault();
+    dropzone.classList.remove("dragover");
+    await uploadSelectedR2Files(Array.from(event.dataTransfer.files || []));
+  });
+  input.addEventListener("change", async () => {
+    await uploadSelectedR2Files(Array.from(input.files || []));
+    input.value = "";
+  });
+}
+
+async function uploadSelectedR2Files(files) {
+  if (!files.length) return;
+  const fileType = document.querySelector("#r2UploadType")?.value || "TEACHER_PREVIEW";
+  const status = document.querySelector("#r2UploadStatus");
+  try {
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+      if (status) status.textContent = `Subiendo ${index + 1} de ${files.length}: ${file.name}`;
+      await uploadR2File(jobId, fileType, file);
+    }
+    if (status) status.textContent = "";
+    showToast(files.length === 1 ? "Archivo subido a R2." : "Archivos subidos a R2.");
+    await loadJob();
+  } catch (error) {
+    console.error(error);
+    if (status) status.textContent = "";
+    showToast(error.message || "No se pudo subir el archivo.", "error");
+  }
 }
 
 function renderPhones() {

@@ -67,7 +67,7 @@ wrangler secret put SUPABASE_SERVICE_ROLE_KEY
 wrangler deploy
 ```
 
-El Worker usa `SUPABASE_URL` desde `wrangler.toml` y `SUPABASE_SERVICE_ROLE_KEY` como secreto.
+El Worker usa `SUPABASE_URL` y `SUPABASE_ANON_KEY` como variables, y `SUPABASE_SERVICE_ROLE_KEY` como secreto.
 
 ## 4. URL del Worker
 
@@ -86,21 +86,29 @@ https://files.clarisarojasfoto.com
 ## 5. Panel de la app
 
 1. Abra un trabajo en `job-detail.html`.
-2. En `Archivos R2`, haga clic en `Registrar archivo`.
-3. Pegue el R2 key exacto, por ejemplo:
+2. En `Archivos R2`, seleccione el tipo de subida:
+   - `Preview maestra`
+   - `Alta calidad imprenta`
+3. Arrastre los archivos al cuadro de subida o haga clic para seleccionarlos.
+4. El panel sube los archivos a Cloudflare R2 y registra automáticamente el R2 key en Supabase.
+
+También puede registrar un archivo manualmente:
+
+1. Haga clic en `Registrar archivo manual`.
+2. Pegue el R2 key exacto, por ejemplo:
 
 ```text
 trabajos/ID_DEL_TRABAJO/preview/foto-001.jpg
 ```
 
-4. Seleccione:
+3. Seleccione:
    - `Preview maestra` para fotos de revisión.
    - `Alta calidad imprenta` para ZIP o archivos finales.
-5. Haga clic en `Generar link`.
-6. Seleccione:
+4. Haga clic en `Generar link`.
+5. Seleccione:
    - `Preview para maestra`
    - `Descarga para imprenta`
-7. El link generado se copia automáticamente y queda guardado con fecha de expiración.
+6. El link generado se copia automáticamente y queda guardado con fecha de expiración.
 
 ## 6. GitHub
 
@@ -128,11 +136,12 @@ HostGator solo publica la app estática. El Worker vive en Cloudflare y no se de
 
 ## 8. Prueba final
 
-1. Suba un JPG de preview al bucket.
-2. Registre su R2 key en un trabajo.
-3. Genere un link de preview.
-4. Abra el link en una ventana privada.
-5. Suba un ZIP de imprenta.
-6. Registre su R2 key como `Alta calidad imprenta`.
-7. Genere un link de descarga.
-8. Abra el link en una ventana privada y confirme que descarga.
+1. Abra un trabajo en el panel.
+2. Seleccione `Preview maestra`.
+3. Arrastre un JPG al cuadro de subida.
+4. Genere un link de preview.
+5. Abra el link en una ventana privada.
+6. Seleccione `Alta calidad imprenta`.
+7. Arrastre un ZIP.
+8. Genere un link de descarga.
+9. Abra el link en una ventana privada y confirme que descarga.
