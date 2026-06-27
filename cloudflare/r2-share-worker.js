@@ -46,6 +46,15 @@ function safeText(value) {
   }[char]));
 }
 
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0);
+  if (!size) return "Peso no registrado";
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
+  const value = size / (1024 ** index);
+  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
 async function supabaseFetch(env, path) {
   const response = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
     headers: {
@@ -202,7 +211,7 @@ async function renderPreview(request, env, token) {
   if (!share || share.link_type !== "TEACHER_PREVIEW") return html(`<div class="alert"><h1>Link no disponible</h1><p>Este link expiró, fue revocado o no existe.</p></div>`, 404);
   const files = await getFiles(env, share);
   const url = new URL(request.url);
-  const items = files.map((file) => `<article class="item"><img src="${url.origin}/file/${file.id}?token=${encodeURIComponent(token)}" alt="${safeText(file.file_name)}"><p><strong>${safeText(file.file_name)}</strong></p></article>`).join("");
+  const items = files.map((file) => `<article class="item"><img src="${url.origin}/file/${file.id}?token=${encodeURIComponent(token)}" alt="${safeText(file.file_name)}"><p><strong>${safeText(file.file_name)}</strong><br><span class="muted">${formatFileSize(file.size_bytes)}</span></p></article>`).join("");
   return html(`<div class="top"><div><h1>Preview de fotos</h1><p class="muted">Clarisa Rojas Fotografia</p></div></div>${items ? `<section class="grid">${items}</section>` : `<div class="alert">No hay previews registrados.</div>`}`);
 }
 

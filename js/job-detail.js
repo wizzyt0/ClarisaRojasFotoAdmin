@@ -39,6 +39,15 @@ function defaultR2Expiry(days) {
   return date.toISOString().slice(0, 16);
 }
 
+function formatFileSize(bytes) {
+  const size = Number(bytes || 0);
+  if (!size) return "Peso no registrado";
+  const units = ["B", "KB", "MB", "GB"];
+  const index = Math.min(Math.floor(Math.log(size) / Math.log(1024)), units.length - 1);
+  const value = size / (1024 ** index);
+  return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
 async function loadJob() {
   const { data, error } = await supabase
     .from("jobs")
@@ -165,7 +174,7 @@ function renderGalleries() {
   const googlePhotosHtml = galleries.length ? `<h3>Google Photos</h3><div class="table-wrap"><table class="table"><thead><tr><th>Título</th><th>Tipo</th><th>Link</th><th>Enviada</th><th>Acciones</th></tr></thead><tbody>${galleries.map((gallery) => `<tr><td>${escapeHtml(gallery.title)}<br><span class="muted">${gallery.is_active ? "Activa" : "Inactiva"}</span></td><td>${getGalleryTypeLabel(gallery.gallery_type)}</td><td><a href="${escapeHtml(gallery.google_photos_url)}" target="_blank" rel="noopener">Abrir galería</a></td><td>${formatDateTime(gallery.sent_at)}</td><td class="actions"><button class="btn btn-danger" data-deactivate-gallery="${gallery.id}">Desactivar</button></td></tr>`).join("")}</tbody></table></div>` : "";
   const r2GalleryHtml = teacherPreviewFiles.length ? `<h3>Preview maestra en R2</h3><div class="file-gallery">${teacherPreviewFiles.map((file) => {
     const isImage = String(file.content_type || "").startsWith("image/");
-    return `<article class="file-tile"><button class="file-preview" data-preview-r2-file="${file.id}" type="button">${isImage ? `<span class="file-thumb" data-r2-thumb="${file.id}"></span>` : `<span class="file-icon">${escapeHtml((file.file_name || "").split(".").pop() || "FILE")}</span>`}</button><div class="file-meta"><strong>${escapeHtml(file.file_name)}</strong><span>${formatDateTime(file.created_at)}</span></div><div class="actions"><button class="btn" data-open-r2-file="${file.id}">Abrir</button></div></article>`;
+    return `<article class="file-tile"><button class="file-preview" data-preview-r2-file="${file.id}" type="button">${isImage ? `<span class="file-thumb" data-r2-thumb="${file.id}"></span>` : `<span class="file-icon">${escapeHtml((file.file_name || "").split(".").pop() || "FILE")}</span>`}</button><div class="file-meta"><strong>${escapeHtml(file.file_name)}</strong><span>${formatFileSize(file.size_bytes)}</span><span>${formatDateTime(file.created_at)}</span></div><div class="actions"><button class="btn" data-open-r2-file="${file.id}">Abrir</button></div></article>`;
   }).join("")}</div>` : "";
   document.querySelector("#galleriesList").innerHTML = googlePhotosHtml || r2GalleryHtml ? `${r2GalleryHtml}${googlePhotosHtml}` : `<div class="empty-state">No hay galerías registradas. Puede subir previews en Archivos R2 o agregar un link de Google Photos.</div>`;
   hydrateR2Thumbnails();
@@ -176,7 +185,7 @@ function renderR2Files() {
   const printCount = r2Files.filter((file) => file.file_type === "PRINT_HIGH_RES").length;
   document.querySelector("#r2FilesList").innerHTML = r2Files.length ? `<div class="r2-counts"><span class="badge">Preview maestra: ${previewCount}</span><span class="badge">Alta calidad imprenta: ${printCount}</span></div><div class="file-gallery">${r2Files.map((file) => {
     const isImage = String(file.content_type || "").startsWith("image/");
-    return `<article class="file-tile"><button class="file-preview" data-preview-r2-file="${file.id}" type="button">${isImage ? `<span class="file-thumb" data-r2-thumb="${file.id}"></span>` : `<span class="file-icon">${escapeHtml((file.file_name || "").split(".").pop() || "FILE")}</span>`}</button><div class="file-meta"><strong>${escapeHtml(file.file_name)}</strong><span>${R2_FILE_TYPES[file.file_type] || file.file_type}</span><span>${formatDateTime(file.created_at)}</span></div><div class="actions"><button class="btn" data-open-r2-file="${file.id}">Abrir</button><button class="btn btn-danger" data-delete-r2-file="${file.id}">Eliminar</button></div></article>`;
+    return `<article class="file-tile"><button class="file-preview" data-preview-r2-file="${file.id}" type="button">${isImage ? `<span class="file-thumb" data-r2-thumb="${file.id}"></span>` : `<span class="file-icon">${escapeHtml((file.file_name || "").split(".").pop() || "FILE")}</span>`}</button><div class="file-meta"><strong>${escapeHtml(file.file_name)}</strong><span>${R2_FILE_TYPES[file.file_type] || file.file_type}</span><span>${formatFileSize(file.size_bytes)}</span><span>${formatDateTime(file.created_at)}</span></div><div class="actions"><button class="btn" data-open-r2-file="${file.id}">Abrir</button><button class="btn btn-danger" data-delete-r2-file="${file.id}">Eliminar</button></div></article>`;
   }).join("")}</div>` : `<div class="empty-state">No hay archivos de R2 registrados.</div>`;
   hydrateR2Thumbnails();
 }
