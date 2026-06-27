@@ -73,6 +73,17 @@ async function supabaseInsert(env, table, payload) {
   return rows[0];
 }
 
+async function supabaseDelete(env, table, id) {
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`
+    }
+  });
+  if (!response.ok) throw new Error(`Supabase delete error ${response.status}`);
+}
+
 async function requireAdmin(request, env) {
   const authorization = request.headers.get("authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -128,6 +139,23 @@ async function handleAdminUpload(request, env) {
   });
 
   return new Response(JSON.stringify({ ok: true, file: row }), {
+    headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
+  });
+}
+
+async function handleAdminDeleteFile(request, env, fileId) {
+  await requireAdmin(request, env);
+  const files = await supabaseFetch(
+    env,
+    `job_files?select=id,r2_key&id=eq.${encodeURIComponent(fileId)}&limit=1`
+  );
+  const file = files[0];
+  if (!file) return jsonError("Archivo no encontrado.", 404);
+
+  await env.PHOTO_BUCKET.delete(file.r2_key);
+  await supabaseDelete(env, "job_files", file.id);
+
+  return new Response(JSON.stringify({ ok: true }), {
     headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
   });
 }
@@ -199,6 +227,7 @@ export default {
       if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
       const url = new URL(request.url);
       if (url.pathname === "/admin/upload" && request.method === "POST") return handleAdminUpload(request, env);
+      if (url.pathname.startsWith("/admin/files/") && request.method === "DELETE") return handleAdminDeleteFile(request, env, url.pathname.split("/").pop());
       const token = url.searchParams.get("token");
       if (!token) return html(`<div class="alert"><h1>Falta token</h1><p>Abra el link completo que recibió.</p></div>`, 400);
       if (url.pathname === "/preview") return renderPreview(request, env, token);

@@ -344,9 +344,9 @@ document.addEventListener("click", async (event) => {
       showToast("Abono eliminado.");
       loadJob();
     }
-    if (event.target.dataset.deleteR2File && confirm("¿Eliminar este archivo registrado? Esto no borra el archivo real en Cloudflare R2.")) {
+    if (event.target.dataset.deleteR2File && confirm("¿Eliminar este archivo? Se borrará del panel y también de Cloudflare R2.")) {
       await deleteR2File(event.target.dataset.deleteR2File);
-      showToast("Archivo R2 eliminado del panel.");
+      showToast("Archivo eliminado de R2.");
       loadJob();
     }
     if (event.target.dataset.copyR2Link) {

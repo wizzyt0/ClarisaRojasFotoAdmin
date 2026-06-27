@@ -41,11 +41,6 @@ export async function createR2File(jobId, payload) {
   return data;
 }
 
-export async function deleteR2File(fileId) {
-  const { error } = await supabase.from("job_files").delete().eq("id", fileId);
-  if (error) throw error;
-}
-
 export async function createR2ShareLink(jobId, linkType, expiresAt) {
   const { data, error } = await supabase
     .from("file_share_links")
@@ -84,5 +79,22 @@ export async function uploadR2File(jobId, fileType, file) {
 
   const result = await response.json().catch(() => null);
   if (!response.ok) throw new Error(result?.error || "No se pudo subir el archivo.");
+  return result;
+}
+
+export async function deleteR2File(fileId) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) throw new Error("Debe iniciar sesión para eliminar archivos.");
+
+  const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/files/${fileId}`, {
+    method: "DELETE",
+    headers: {
+      authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(result?.error || "No se pudo eliminar el archivo.");
   return result;
 }
