@@ -30,7 +30,7 @@ function jsonError(message, status = 400) {
 function corsHeaders(headers = {}) {
   return {
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
     "access-control-allow-headers": "authorization,content-type",
     ...headers
   };
@@ -160,6 +160,23 @@ async function handleAdminDeleteFile(request, env, fileId) {
   });
 }
 
+async function handleAdminGetFile(request, env, fileId) {
+  const url = new URL(request.url);
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || url.searchParams.get("auth") || "";
+  const authorizedRequest = new Request(request, {
+    headers: new Headers({ authorization: `Bearer ${token}` })
+  });
+  await requireAdmin(authorizedRequest, env);
+
+  const files = await supabaseFetch(
+    env,
+    `job_files?select=id,r2_key,file_name,content_type&id=eq.${encodeURIComponent(fileId)}&limit=1`
+  );
+  const file = files[0];
+  if (!file) return jsonError("Archivo no encontrado.", 404);
+  return streamFile(env, file, url.searchParams.get("download") === "1");
+}
+
 async function getShare(env, token) {
   const links = await supabaseFetch(
     env,
@@ -227,6 +244,7 @@ export default {
       if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
       const url = new URL(request.url);
       if (url.pathname === "/admin/upload" && request.method === "POST") return handleAdminUpload(request, env);
+      if (url.pathname.startsWith("/admin/files/") && request.method === "GET") return handleAdminGetFile(request, env, url.pathname.split("/").pop());
       if (url.pathname.startsWith("/admin/files/") && request.method === "DELETE") return handleAdminDeleteFile(request, env, url.pathname.split("/").pop());
       const token = url.searchParams.get("token");
       if (!token) return html(`<div class="alert"><h1>Falta token</h1><p>Abra el link completo que recibió.</p></div>`, 400);

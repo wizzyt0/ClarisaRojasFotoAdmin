@@ -98,3 +98,13 @@ export async function deleteR2File(fileId) {
   if (!response.ok) throw new Error(result?.error || "No se pudo eliminar el archivo.");
   return result;
 }
+
+export async function getAdminFileUrl(fileId, download = false) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) throw new Error("Debe iniciar sesión para ver archivos.");
+
+  const params = new URLSearchParams({ auth: accessToken });
+  if (download) params.set("download", "1");
+  return `${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/files/${fileId}?${params.toString()}`;
+}

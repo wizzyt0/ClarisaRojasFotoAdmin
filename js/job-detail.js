@@ -4,7 +4,7 @@ import { APP_CONFIG } from "./config.js";
 import { GALLERY_TYPES, JOB_STATUSES, getGalleryTypeLabel, getJobStatusLabel, getJobTypeLabel } from "./constants.js";
 import { createDeposit, deleteDeposit, getDepositsByJob } from "./deposits.js";
 import { createGallery, deactivateGallery, getGalleriesByJob } from "./galleries.js";
-import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink, uploadR2File } from "./r2-files.js";
+import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, getAdminFileUrl, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink, uploadR2File } from "./r2-files.js";
 import { generateAndLogWhatsAppMessage } from "./whatsapp.js";
 import { calculateTotals, copyToClipboard, escapeHtml, formToObject, generateToken, getQueryParam, openInNewTab, showToast, today } from "./utils.js";
 import { formatDate, formatDateTime, formatMoney } from "./formatters.js";
@@ -165,7 +165,25 @@ function renderGalleries() {
 }
 
 function renderR2Files() {
-  document.querySelector("#r2FilesList").innerHTML = r2Files.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Archivo</th><th>Tipo</th><th>R2 key</th><th>Content type</th><th>Acciones</th></tr></thead><tbody>${r2Files.map((file) => `<tr><td>${escapeHtml(file.file_name)}<br><span class="muted">${formatDateTime(file.created_at)}</span></td><td>${R2_FILE_TYPES[file.file_type] || file.file_type}</td><td><code>${escapeHtml(file.r2_key)}</code></td><td>${escapeHtml(file.content_type || "")}</td><td><button class="btn btn-danger" data-delete-r2-file="${file.id}">Eliminar</button></td></tr>`).join("")}</tbody></table></div>` : `<div class="empty-state">No hay archivos de R2 registrados. Primero suba los archivos al bucket y registre aquí su R2 key.</div>`;
+  const previewCount = r2Files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
+  const printCount = r2Files.filter((file) => file.file_type === "PRINT_HIGH_RES").length;
+  document.querySelector("#r2FilesList").innerHTML = r2Files.length ? `<div class="r2-counts"><span class="badge">Preview maestra: ${previewCount}</span><span class="badge">Alta calidad imprenta: ${printCount}</span></div><div class="file-gallery">${r2Files.map((file) => {
+    const isImage = String(file.content_type || "").startsWith("image/");
+    return `<article class="file-tile"><button class="file-preview" data-preview-r2-file="${file.id}" type="button">${isImage ? `<span class="file-thumb" data-r2-thumb="${file.id}"></span>` : `<span class="file-icon">${escapeHtml((file.file_name || "").split(".").pop() || "FILE")}</span>`}</button><div class="file-meta"><strong>${escapeHtml(file.file_name)}</strong><span>${R2_FILE_TYPES[file.file_type] || file.file_type}</span><span>${formatDateTime(file.created_at)}</span></div><div class="actions"><button class="btn" data-open-r2-file="${file.id}">Abrir</button><button class="btn btn-danger" data-delete-r2-file="${file.id}">Eliminar</button></div></article>`;
+  }).join("")}</div>` : `<div class="empty-state">No hay archivos de R2 registrados.</div>`;
+  hydrateR2Thumbnails();
+}
+
+async function hydrateR2Thumbnails() {
+  const thumbs = Array.from(document.querySelectorAll("[data-r2-thumb]"));
+  await Promise.all(thumbs.map(async (thumb) => {
+    try {
+      const url = await getAdminFileUrl(thumb.dataset.r2Thumb);
+      thumb.innerHTML = `<img src="${escapeHtml(url)}" alt="">`;
+    } catch {
+      thumb.textContent = "IMG";
+    }
+  }));
 }
 
 function renderR2ShareLinks() {
@@ -352,6 +370,13 @@ document.addEventListener("click", async (event) => {
     if (event.target.dataset.copyR2Link) {
       await copyToClipboard(event.target.dataset.copyR2Link);
       showToast("Link copiado.");
+    }
+    const previewButton = event.target.closest("[data-preview-r2-file]");
+    if (previewButton) {
+      openInNewTab(await getAdminFileUrl(previewButton.dataset.previewR2File));
+    }
+    if (event.target.dataset.openR2File) {
+      openInNewTab(await getAdminFileUrl(event.target.dataset.openR2File, true));
     }
     if (event.target.dataset.revokeR2Link && confirm("¿Revocar este link?")) {
       await revokeR2ShareLink(event.target.dataset.revokeR2Link);
