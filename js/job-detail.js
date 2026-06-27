@@ -212,7 +212,9 @@ function openR2FileForm() {
 
 function openR2ShareLinkForm() {
   document.querySelector("#detailModalTitle").textContent = "Generar link R2";
-  form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Tipo de link</label><select class="select" name="link_type"><option value="TEACHER_PREVIEW">Preview para maestra</option><option value="PRINT_DOWNLOAD">Descarga para imprenta</option></select></div><div class="form-group"><label>Expira</label><input class="input" type="datetime-local" name="expires_at" value="${defaultR2Expiry(3)}" required></div></div><input type="hidden" name="form_type" value="r2_share_link"><button class="btn btn-primary" type="submit">Generar link</button>`;
+  const previewCount = r2Files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
+  const printCount = r2Files.filter((file) => file.file_type === "PRINT_HIGH_RES").length;
+  form.innerHTML = `<div class="alert alert-warning">Antes de generar el link confirme que ya existen archivos del tipo correcto. Preview maestra: ${previewCount}. Alta calidad imprenta: ${printCount}.</div><div class="form-grid"><div class="form-group"><label>Tipo de link</label><select class="select" name="link_type"><option value="TEACHER_PREVIEW">Preview para maestra</option><option value="PRINT_DOWNLOAD">Descarga para imprenta</option></select></div><div class="form-group"><label>Expira</label><input class="input" type="datetime-local" name="expires_at" value="${defaultR2Expiry(3)}" required></div></div><input type="hidden" name="form_type" value="r2_share_link"><button class="btn btn-primary" type="submit">Generar link</button>`;
   modal.classList.remove("hidden");
 }
 
@@ -264,6 +266,12 @@ form.addEventListener("submit", async (event) => {
     if (data.form_type === "deposit") await createDeposit(jobId, { amount: Number(data.amount), deposit_date: data.deposit_date, notes: data.notes || null });
     if (data.form_type === "r2_file") await createR2File(jobId, { file_type: data.file_type, r2_key: data.r2_key.trim(), file_name: data.file_name.trim(), content_type: data.content_type || null, size_bytes: data.size_bytes ? Number(data.size_bytes) : null, notes: data.notes || null });
     if (data.form_type === "r2_share_link") {
+      const requiredFileType = data.link_type === "PRINT_DOWNLOAD" ? "PRINT_HIGH_RES" : "TEACHER_PREVIEW";
+      const hasRequiredFiles = r2Files.some((file) => file.file_type === requiredFileType);
+      if (!hasRequiredFiles) {
+        showToast(data.link_type === "PRINT_DOWNLOAD" ? "Primero suba un archivo como Alta calidad imprenta." : "Primero suba un archivo como Preview maestra.", "error");
+        return;
+      }
       const expiresAt = new Date(data.expires_at).toISOString();
       const link = await createR2ShareLink(jobId, data.link_type, expiresAt);
       const url = r2ShareUrl(link);

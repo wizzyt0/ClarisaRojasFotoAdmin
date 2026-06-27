@@ -14,7 +14,7 @@ create table if not exists job_files (
 create table if not exists file_share_links (
   id uuid primary key default gen_random_uuid(),
   job_id uuid not null references jobs(id) on delete cascade,
-  token text not null unique default encode(gen_random_bytes(36), 'base64url'),
+  token text not null unique default encode(gen_random_bytes(32), 'hex'),
   link_type text not null check (link_type in ('TEACHER_PREVIEW','PRINT_DOWNLOAD')),
   expires_at timestamptz not null,
   revoked_at timestamptz,
@@ -26,6 +26,9 @@ create index if not exists job_files_job_id_idx on job_files(job_id);
 create index if not exists job_files_file_type_idx on job_files(file_type);
 create index if not exists file_share_links_job_id_idx on file_share_links(job_id);
 create index if not exists file_share_links_token_idx on file_share_links(token);
+
+alter table file_share_links
+  alter column token set default encode(gen_random_bytes(32), 'hex');
 
 drop trigger if exists job_files_updated_at on job_files;
 create trigger job_files_updated_at before update on job_files for each row execute function set_updated_at();
