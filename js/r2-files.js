@@ -41,10 +41,10 @@ export async function createR2File(jobId, payload) {
   return data;
 }
 
-export async function createR2ShareLink(jobId, linkType, expiresAt) {
+export async function createR2ShareLink(jobId, linkType, expiresAt, printItemId = null) {
   const { data, error } = await supabase
     .from("file_share_links")
-    .insert([{ job_id: jobId, link_type: linkType, expires_at: expiresAt }])
+    .insert([{ job_id: jobId, print_item_id: printItemId, link_type: linkType, expires_at: expiresAt }])
     .select()
     .single();
   if (error) throw error;
@@ -59,13 +59,14 @@ export async function revokeR2ShareLink(linkId) {
   if (error) throw error;
 }
 
-export async function uploadR2File(jobId, fileType, file) {
+export async function uploadR2File(jobId, fileType, file, printItemId = null) {
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData?.session?.access_token;
   if (!accessToken) throw new Error("Debe iniciar sesión para subir archivos.");
 
   const formData = new FormData();
   formData.append("job_id", jobId);
+  if (printItemId) formData.append("print_item_id", printItemId);
   formData.append("file_type", fileType);
   formData.append("file", file);
 

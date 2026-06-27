@@ -121,6 +121,7 @@ async function handleAdminUpload(request, env) {
   await requireAdmin(request, env);
   const formData = await request.formData();
   const jobId = String(formData.get("job_id") || "");
+  const printItemId = String(formData.get("print_item_id") || "") || null;
   const fileType = String(formData.get("file_type") || "");
   const file = formData.get("file");
 
@@ -130,7 +131,8 @@ async function handleAdminUpload(request, env) {
 
   const folder = fileType === "PRINT_HIGH_RES" ? "print" : "preview";
   const fileName = cleanFileName(file.name);
-  const r2Key = `trabajos/${jobId}/${folder}/${Date.now()}-${crypto.randomUUID()}-${fileName}`;
+  const itemFolder = printItemId || "general";
+  const r2Key = `trabajos/${jobId}/${itemFolder}/${folder}/${Date.now()}-${crypto.randomUUID()}-${fileName}`;
   const contentType = file.type || "application/octet-stream";
 
   await env.PHOTO_BUCKET.put(r2Key, file.stream(), {
@@ -139,6 +141,7 @@ async function handleAdminUpload(request, env) {
 
   const row = await supabaseInsert(env, "job_files", {
     job_id: jobId,
+    print_item_id: printItemId,
     file_type: fileType,
     r2_key: r2Key,
     file_name: file.name || fileName,
@@ -189,7 +192,7 @@ async function handleAdminGetFile(request, env, fileId) {
 async function getShare(env, token) {
   const links = await supabaseFetch(
     env,
-    `file_share_links?select=id,job_id,link_type,expires_at,revoked_at,created_at&token=eq.${encodeURIComponent(token)}&limit=1`
+    `file_share_links?select=id,job_id,print_item_id,link_type,expires_at,revoked_at,created_at&token=eq.${encodeURIComponent(token)}&limit=1`
   );
   const share = links[0];
   if (!share) return null;
@@ -200,9 +203,10 @@ async function getShare(env, token) {
 
 async function getFiles(env, share) {
   const fileType = FILE_TYPE_BY_LINK_TYPE[share.link_type];
+  const printItemFilter = share.print_item_id ? `&print_item_id=eq.${share.print_item_id}` : "";
   return supabaseFetch(
     env,
-    `job_files?select=id,file_type,r2_key,file_name,content_type,size_bytes,notes&job_id=eq.${share.job_id}&file_type=eq.${fileType}&order=created_at.desc`
+    `job_files?select=id,file_type,r2_key,file_name,content_type,size_bytes,notes&job_id=eq.${share.job_id}&file_type=eq.${fileType}${printItemFilter}&order=created_at.desc`
   );
 }
 

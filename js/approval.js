@@ -4,8 +4,10 @@ import { formatMoney } from "./formatters.js";
 import { escapeHtml, getQueryParam, openInNewTab, showToast } from "./utils.js";
 
 const token = getQueryParam("token");
+const itemToken = getQueryParam("item_token");
 const content = document.querySelector("#approvalContent");
 let approvalData = null;
+let printItemData = null;
 
 function galleryButton(gallery) {
   return `<button class="btn btn-secondary" data-open-url="${escapeHtml(gallery.google_photos_url)}">Ver ${getGalleryTypeLabel(gallery.gallery_type).toLowerCase()}</button>`;
@@ -44,7 +46,52 @@ function render() {
     </form>`;
 }
 
+function printItemTypeLabel(type) {
+  return {
+    STUDENT_GALLERY: "Galería de niños",
+    DIPLOMA: "Diploma",
+    FOLDER_OPTION: "Carpeta",
+    GROUP_PHOTO: "Foto grupal",
+    PHOTO_PACKAGE: "Paquete de fotos",
+    OTHER: "Otro"
+  }[type] || type || "";
+}
+
+function renderPrintItemApproval() {
+  const { print_item: item, job, client, school_profile: school } = printItemData;
+  if (item.approved_at) {
+    content.innerHTML = `<h1>Esta pieza ya fue aprobada para impresión.</h1><p class="muted">Fecha de aprobación: ${new Date(item.approved_at).toLocaleString("es-MX")}</p>`;
+    return;
+  }
+  content.innerHTML = `
+    <h1 class="approval-title">${escapeHtml(item.title)}</h1>
+    <p class="muted">Aprobación por pieza de impresión.</p>
+    <div class="grid">
+      <p><strong>Trabajo:</strong><br>${escapeHtml(job.title)}</p>
+      <p><strong>Tipo:</strong><br>${escapeHtml(printItemTypeLabel(item.item_type))}</p>
+      <p><strong>Cliente/Escuela:</strong><br>${escapeHtml(school?.school_name || client.name)}</p>
+      <p><strong>Contacto:</strong><br>${escapeHtml(school?.teacher_name || school?.principal_name || client.name)}</p>
+    </div>
+    <div class="alert alert-warning"><strong>IMPORTANTE:</strong><br>Una vez aprobada esta pieza para impresión, cualquier cambio adicional solicitado después de la aprobación tendrá un costo extra. Por favor revise cuidadosamente antes de aprobar.</div>
+    <form id="printItemApprovalForm">
+      <div class="form-group"><label>Nombre de quien aprueba</label><input class="input" name="approval_name" required></div>
+      <label class="form-group"><span><input type="checkbox" name="terms" required> Confirmo que revisé esta pieza y autorizo enviarla a impresión. Entiendo que cualquier cambio solicitado después de esta aprobación tendrá costo adicional.</span></label>
+      <button class="btn btn-primary" type="submit">Autorizar esta pieza para impresión</button>
+    </form>`;
+}
+
 async function load() {
+  if (itemToken) {
+    const { data, error } = await supabase.rpc("get_public_print_item_by_token", { token: itemToken });
+    if (error || !data) {
+      console.error(error);
+      content.innerHTML = `<div class="alert alert-error">El link de aprobación no existe, expiró o falta configurar la aprobación por pieza en Supabase.</div>`;
+      return;
+    }
+    printItemData = data;
+    renderPrintItemApproval();
+    return;
+  }
   if (!token) {
     content.innerHTML = `<div class="alert alert-error">El link de aprobación no existe o expiró.</div>`;
     return;
@@ -64,6 +111,20 @@ document.addEventListener("click", (event) => {
 });
 
 document.addEventListener("submit", async (event) => {
+  if (event.target.matches("#printItemApprovalForm")) {
+    event.preventDefault();
+    if (!event.target.terms.checked) return showToast("Debe aceptar las condiciones antes de aprobar.", "error");
+    const approvalName = event.target.approval_name.value.trim();
+    if (!approvalName) return showToast("Escriba el nombre de quien aprueba.", "error");
+    const { data, error } = await supabase.rpc("approve_print_item_by_token", { token: itemToken, approval_name: approvalName });
+    if (error || !data?.ok) {
+      console.error(error || data);
+      showToast(data?.message || "No se pudo aprobar la pieza.", "error");
+      return;
+    }
+    content.innerHTML = `<div class="alert alert-success"><h1>Pieza autorizada para impresión.</h1><p>Gracias. La aprobación fue registrada correctamente.</p></div>`;
+    return;
+  }
   if (!event.target.matches("#approvalForm")) return;
   event.preventDefault();
   if (!event.target.terms.checked) return showToast("Debe aceptar las condiciones antes de aprobar.", "error");

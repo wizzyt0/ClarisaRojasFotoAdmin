@@ -77,7 +77,7 @@ begin
     approved_at = now(),
     approval_name = nullif(trim(approve_job_by_token.approval_name), ''),
     approval_terms_accepted = true,
-    status = 'APPROVED_FOR_PRINT'
+    status = 'PRINTING'
   where approval_token = approve_job_by_token.token
     and approval_revoked_at is null
     and (approval_token_expires_at is null or approval_token_expires_at > now())

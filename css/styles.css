@@ -90,6 +90,37 @@ a { color: var(--primary); text-decoration: none; }
 .badge-status.APPROVED_FOR_PRINT, .badge-status.DELIVERED { background: #e8f5ee; color: var(--success); }
 .badge-status.WAITING_APPROVAL, .badge-status.PRINTING { background: #fff4df; color: var(--warning); }
 .badge-status.CANCELLED { background: #fde8e6; color: var(--danger); }
+.deliverables { margin-top: 16px; }
+.deliverable-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.deliverable {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--surface-muted);
+}
+.deliverable span { color: var(--muted); font-size: 0.9rem; }
+.deliverable.approved { background: #eaf7ef; border-color: #9bd0b3; }
+.deliverable.approved span { color: var(--success); }
+.deliverable.waiting { background: #fff8e8; border-color: #f3c36b; }
+.deliverable.waiting span { color: var(--warning); }
+.deliverable.missing { background: #f8fafc; }
+.print-item-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.print-item-card {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: white;
+}
+.print-item-card > div:first-child { display: grid; gap: 2px; }
+.print-item-card > div:first-child span { color: var(--muted); font-size: 0.9rem; }
+.print-item-card.approved { border-color: #9bd0b3; background: #f4fbf7; }
+.print-item-card.waiting { border-color: #f3c36b; background: #fffaf0; }
+.print-item-card.changes { border-color: #f3a6a0; background: #fff5f4; }
+.compact-select { width: auto; min-width: 180px; }
 .form-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .form-group { display: grid; gap: 6px; margin-bottom: 12px; }
 label { font-weight: 650; }

@@ -4,8 +4,9 @@ import { APP_CONFIG } from "./config.js";
 import { GALLERY_TYPES, JOB_STATUSES, getGalleryTypeLabel, getJobStatusLabel, getJobTypeLabel } from "./constants.js";
 import { createDeposit, deleteDeposit, getDepositsByJob } from "./deposits.js";
 import { createGallery, deactivateGallery, getGalleriesByJob } from "./galleries.js";
+import { PRINT_ITEM_STATUSES, ensureDefaultPrintItems, getPrintItemStatusLabel, getPrintItemTypeLabel, updatePrintItem } from "./print-items.js";
 import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, getAdminFileUrl, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink, uploadR2File } from "./r2-files.js";
-import { generateAndLogWhatsAppMessage } from "./whatsapp.js";
+import { buildWhatsAppUrl, generateAndLogWhatsAppMessage } from "./whatsapp.js";
 import { calculateTotals, copyToClipboard, escapeHtml, formToObject, generateToken, getQueryParam, openInNewTab, showToast, today } from "./utils.js";
 import { formatDate, formatDateTime, formatMoney } from "./formatters.js";
 
@@ -17,6 +18,7 @@ let galleries = [];
 let deposits = [];
 let r2Files = [];
 let r2ShareLinks = [];
+let printItems = [];
 let selectedWhatsappUrl = "";
 let currentMessage = "";
 const modal = document.querySelector("#detailModal");
@@ -24,6 +26,10 @@ const form = document.querySelector("#detailForm");
 
 function approvalUrl() {
   return `${APP_CONFIG.appUrl.replace(/\/$/, "")}/approval.html?token=${job.approval_token}`;
+}
+
+function printItemApprovalUrl(item) {
+  return `${APP_CONFIG.appUrl.replace(/\/$/, "")}/approval.html?item_token=${item.approval_token}`;
 }
 
 function r2ShareUrl(link) {
@@ -38,6 +44,14 @@ function defaultR2Expiry(days) {
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
   return date.toISOString().slice(0, 16);
 }
+
+const DELIVERABLES = [
+  { label: "Galería", galleryTypes: ["GENERAL", "STUDENT_GALLERY"], r2Types: ["TEACHER_PREVIEW"] },
+  { label: "Foto grupal", galleryTypes: ["GROUP_PHOTO"], r2Types: [] },
+  { label: "Carpeta", galleryTypes: ["DOCUMENTATION_FOLDER"], r2Types: [] },
+  { label: "Diploma", galleryTypes: ["DIPLOMA"], r2Types: [] },
+  { label: "Alta calidad", galleryTypes: [], r2Types: ["PRINT_HIGH_RES"] }
+];
 
 function formatFileSize(bytes) {
   const size = Number(bytes || 0);
@@ -60,6 +74,7 @@ async function loadJob() {
   deposits = await getDepositsByJob(jobId);
   r2Files = await getR2FilesByJob(jobId);
   r2ShareLinks = await getR2ShareLinksByJob(jobId);
+  printItems = job.job_type === "SCHOOL_GRADUATION" ? await ensureDefaultPrintItems(jobId) : [];
   render();
   await loadLogs();
 }
@@ -82,7 +97,8 @@ function render() {
       <p><strong>Total abonado:</strong><br>${formatMoney(totals.totalDeposited)}</p>
       <p><strong>Pendiente:</strong><br>${formatMoney(totals.remainingBalance)}</p>
     </div>
-    <p><strong>Notas:</strong><br>${escapeHtml(job.notes || "")}</p>`;
+    <p><strong>Notas:</strong><br>${escapeHtml(job.notes || "")}</p>
+    ${renderDeliverablesSummary()}`;
   if (job.job_type === "SCHOOL_GRADUATION") {
     document.querySelector("#schoolCard").classList.remove("hidden");
     document.querySelector("#schoolCard").innerHTML = `<h2>Datos escolares</h2><div class="grid">
@@ -94,6 +110,7 @@ function render() {
       <p><strong>Estudiantes:</strong><br>${school.student_count || ""}</p>
     </div>`;
   }
+  renderPrintItems();
   renderGalleries();
   renderR2Files();
   renderR2ShareLinks();
@@ -112,6 +129,51 @@ function render() {
     }
   });
   setupR2Dropzone();
+}
+
+function deliverableState(deliverable) {
+  const hasGallery = galleries.some((gallery) => gallery.is_active && deliverable.galleryTypes.includes(gallery.gallery_type));
+  const hasFile = r2Files.some((file) => deliverable.r2Types.includes(file.file_type));
+  if (!hasGallery && !hasFile) return { label: "Pendiente de subir", className: "missing" };
+  if (job.approved_at) return { label: "Aprobado", className: "approved" };
+  return { label: "Esperando aprobación", className: "waiting" };
+}
+
+function renderDeliverablesSummary() {
+  if (printItems.length) {
+    return `<div class="deliverables"><h3>Piezas de impresión</h3><div class="deliverable-grid">${printItems.map((item) => `<div class="deliverable ${printItemClass(item.status)}"><strong>${escapeHtml(item.title)}</strong><span>${getPrintItemStatusLabel(item.status)}</span></div>`).join("")}</div></div>`;
+  }
+  return `<div class="deliverables"><h3>Entregables</h3><div class="deliverable-grid">${DELIVERABLES.map((item) => {
+    const state = deliverableState(item);
+    return `<div class="deliverable ${state.className}"><strong>${item.label}</strong><span>${state.label}</span></div>`;
+  }).join("")}</div></div>`;
+}
+
+function printItemClass(status) {
+  if (["APPROVED_FOR_PRINT", "PRINTING", "PRINTED", "DELIVERED"].includes(status)) return "approved";
+  if (["SENT_FOR_APPROVAL", "READY_FOR_REVIEW"].includes(status)) return "waiting";
+  if (status === "CHANGES_REQUESTED") return "changes";
+  return "missing";
+}
+
+function renderPrintItems() {
+  const card = document.querySelector("#printItemsCard");
+  if (!printItems.length) {
+    card.classList.add("hidden");
+    return;
+  }
+  card.classList.remove("hidden");
+  card.innerHTML = `<div class="page-header"><h2>Piezas de impresión</h2></div><div class="print-item-grid">${printItems.map((item) => {
+    const files = r2Files.filter((file) => file.print_item_id === item.id);
+    const previewCount = files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
+    const printCount = files.filter((file) => file.file_type === "PRINT_HIGH_RES").length;
+    return `<article class="print-item-card ${printItemClass(item.status)}"><div><strong>${escapeHtml(item.title)}</strong><span>${getPrintItemTypeLabel(item.item_type)}</span></div><span class="badge">${getPrintItemStatusLabel(item.status)}</span><p class="muted">Previews: ${previewCount} · Alta calidad: ${printCount}</p><div class="actions"><select class="select compact-select" data-print-item-status="${item.id}">${Object.entries(PRINT_ITEM_STATUSES).map(([value, label]) => `<option value="${value}" ${value === item.status ? "selected" : ""}>${label}</option>`).join("")}</select><button class="btn" data-send-print-item="${item.id}">WhatsApp</button><button class="btn" data-copy-print-item-approval="${item.id}">Copiar aprobación</button></div></article>`;
+  }).join("")}</div>`;
+
+  const select = document.querySelector("#r2PrintItem");
+  if (select) {
+    select.innerHTML = printItems.map((item) => `<option value="${item.id}">${escapeHtml(item.title)}</option>`).join("");
+  }
 }
 
 function setupR2Dropzone() {
@@ -142,12 +204,13 @@ function setupR2Dropzone() {
 async function uploadSelectedR2Files(files) {
   if (!files.length) return;
   const fileType = document.querySelector("#r2UploadType")?.value || "TEACHER_PREVIEW";
+  const printItemId = document.querySelector("#r2PrintItem")?.value || null;
   const status = document.querySelector("#r2UploadStatus");
   try {
     for (let index = 0; index < files.length; index += 1) {
       const file = files[index];
       if (status) status.textContent = `Subiendo ${index + 1} de ${files.length}: ${file.name}`;
-      await uploadR2File(jobId, fileType, file);
+      await uploadR2File(jobId, fileType, file, printItemId);
     }
     if (status) status.textContent = "";
     showToast(files.length === 1 ? "Archivo subido a R2." : "Archivos subidos a R2.");
@@ -211,22 +274,101 @@ function renderR2ShareLinks() {
   }).join("")}</tbody></table></div>` : `<div class="empty-state">No hay links de R2 generados.</div>`;
 }
 
-async function createTeacherPreviewLink() {
+async function sendTeacherPreviewWhatsapp() {
   const hasPreviewFiles = r2Files.some((file) => file.file_type === "TEACHER_PREVIEW");
   if (!hasPreviewFiles) {
     showToast("Primero suba fotos como Preview maestra en Archivos R2.", "error");
     return;
   }
+  const phone = document.querySelector("#whatsappPhone")?.value || job.clients.phone;
+  if (!phone) {
+    showToast("No hay teléfono disponible para WhatsApp.", "error");
+    return;
+  }
+  const school = job.clients.school_profiles?.[0] || {};
+  const contactName = school.teacher_name || school.principal_name || job.clients.name;
+  const schoolName = school.school_name || job.clients.name;
   const expiresAt = new Date(defaultR2Expiry(7)).toISOString();
   const link = await createR2ShareLink(jobId, "TEACHER_PREVIEW", expiresAt);
-  const url = r2ShareUrl(link);
-  try {
-    await copyToClipboard(url);
-    showToast("Link de galería para maestra copiado.");
-  } catch {
-    showToast("Link de galería para maestra generado.");
-  }
+  const previewUrl = r2ShareUrl(link);
+  const message = `Hola ${contactName} 👋
+
+Su galería de graduación ya está lista para revisión.
+
+Escuela: ${schoolName}
+Trabajo: ${job.title}
+
+Puede revisar las fotos aquí:
+${previewUrl}
+
+Cuando todo esté correcto, por favor autorice el trabajo para impresión en este link:
+${approvalUrl()}
+
+IMPORTANTE:
+Una vez autorizado para impresión, cualquier cambio adicional solicitado después de la aprobación tendrá costo extra.
+
+Muchas gracias.
+Clarisa Rojas Fotografia`;
+  const waMeUrl = buildWhatsAppUrl(phone, message);
+  currentMessage = message;
+  selectedWhatsappUrl = waMeUrl;
+  document.querySelector("#whatsappMessage").value = message;
+  await supabase.from("message_logs").insert({
+    job_id: job.id,
+    client_id: job.client_id,
+    message_type: "R2_TEACHER_PREVIEW",
+    message_text: message,
+    wa_me_url: waMeUrl
+  });
+  await supabase.from("jobs").update({ status: "WAITING_APPROVAL" }).eq("id", job.id);
   await loadJob();
+  showToast("WhatsApp de galería generado.");
+  openInNewTab(waMeUrl);
+}
+
+async function sendPrintItemWhatsapp(itemId) {
+  const item = printItems.find((entry) => entry.id === itemId);
+  if (!item) return;
+  const hasPreviewFiles = r2Files.some((file) => file.print_item_id === item.id && file.file_type === "TEACHER_PREVIEW");
+  if (!hasPreviewFiles) {
+    showToast("Primero suba previews para esta pieza.", "error");
+    return;
+  }
+  const phone = document.querySelector("#whatsappPhone")?.value || job.clients.phone;
+  const school = job.clients.school_profiles?.[0] || {};
+  const contactName = school.teacher_name || school.principal_name || job.clients.name;
+  const expiresAt = new Date(defaultR2Expiry(7)).toISOString();
+  const link = await createR2ShareLink(jobId, "TEACHER_PREVIEW", expiresAt, item.id);
+  const previewUrl = r2ShareUrl(link);
+  const message = `Hola ${contactName} 👋
+
+Ya está lista la revisión de: ${item.title}
+
+Puede revisar los archivos aquí:
+${previewUrl}
+
+Cuando esté correcto, por favor autorice esta pieza para impresión:
+${printItemApprovalUrl(item)}
+
+IMPORTANTE:
+Una vez autorizada esta pieza para impresión, cualquier cambio adicional solicitado después de la aprobación tendrá costo extra.
+
+Muchas gracias.
+Clarisa Rojas Fotografia`;
+  const waMeUrl = buildWhatsAppUrl(phone, message);
+  currentMessage = message;
+  selectedWhatsappUrl = waMeUrl;
+  document.querySelector("#whatsappMessage").value = message;
+  await updatePrintItem(item.id, { status: "SENT_FOR_APPROVAL", sent_at: new Date().toISOString() });
+  await supabase.from("message_logs").insert({
+    job_id: job.id,
+    client_id: job.client_id,
+    message_type: "PRINT_ITEM_APPROVAL",
+    message_text: message,
+    wa_me_url: waMeUrl
+  });
+  await loadJob();
+  openInNewTab(waMeUrl);
 }
 
 function renderDeposits() {
@@ -258,7 +400,8 @@ function openDepositForm() {
 
 function openR2FileForm() {
   document.querySelector("#detailModalTitle").textContent = "Registrar archivo R2";
-  form.innerHTML = `<div class="alert alert-warning">Suba primero el archivo al bucket privado de Cloudflare R2. Aquí registre la ruta exacta del objeto, por ejemplo <code>trabajos/${escapeHtml(jobId)}/preview/foto-001.jpg</code> o <code>trabajos/${escapeHtml(jobId)}/print/final.zip</code>.</div><div class="form-grid"><div class="form-group"><label>Tipo de archivo</label><select class="select" name="file_type">${Object.entries(R2_FILE_TYPES).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></div><div class="form-group"><label>Nombre visible</label><input class="input" name="file_name" placeholder="foto-001.jpg" required></div></div><div class="form-group"><label>R2 key</label><input class="input" name="r2_key" placeholder="trabajos/${escapeHtml(jobId)}/preview/foto-001.jpg" required></div><div class="form-grid"><div class="form-group"><label>Content type</label><input class="input" name="content_type" placeholder="image/jpeg o application/zip"></div><div class="form-group"><label>Tamaño en bytes</label><input class="input" type="number" min="0" step="1" name="size_bytes"></div></div><div class="form-group"><label>Notas</label><textarea class="textarea" name="notes"></textarea></div><input type="hidden" name="form_type" value="r2_file"><button class="btn btn-primary" type="submit">Registrar archivo</button>`;
+  const itemOptions = printItems.length ? `<div class="form-group"><label>Pieza de impresión</label><select class="select" name="print_item_id"><option value="">Sin pieza</option>${printItems.map((item) => `<option value="${item.id}">${escapeHtml(item.title)}</option>`).join("")}</select></div>` : "";
+  form.innerHTML = `<div class="alert alert-warning">Suba primero el archivo al bucket privado de Cloudflare R2. Aquí registre la ruta exacta del objeto, por ejemplo <code>trabajos/${escapeHtml(jobId)}/preview/foto-001.jpg</code> o <code>trabajos/${escapeHtml(jobId)}/print/final.zip</code>.</div><div class="form-grid">${itemOptions}<div class="form-group"><label>Tipo de archivo</label><select class="select" name="file_type">${Object.entries(R2_FILE_TYPES).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></div><div class="form-group"><label>Nombre visible</label><input class="input" name="file_name" placeholder="foto-001.jpg" required></div></div><div class="form-group"><label>R2 key</label><input class="input" name="r2_key" placeholder="trabajos/${escapeHtml(jobId)}/preview/foto-001.jpg" required></div><div class="form-grid"><div class="form-group"><label>Content type</label><input class="input" name="content_type" placeholder="image/jpeg o application/zip"></div><div class="form-group"><label>Tamaño en bytes</label><input class="input" type="number" min="0" step="1" name="size_bytes"></div></div><div class="form-group"><label>Notas</label><textarea class="textarea" name="notes"></textarea></div><input type="hidden" name="form_type" value="r2_file"><button class="btn btn-primary" type="submit">Registrar archivo</button>`;
   modal.classList.remove("hidden");
 }
 
@@ -316,7 +459,7 @@ form.addEventListener("submit", async (event) => {
   try {
     if (data.form_type === "gallery") await createGallery(jobId, { title: data.title, gallery_type: data.gallery_type, google_photos_url: data.google_photos_url, notes: data.notes || null, is_active: true });
     if (data.form_type === "deposit") await createDeposit(jobId, { amount: Number(data.amount), deposit_date: data.deposit_date, notes: data.notes || null });
-    if (data.form_type === "r2_file") await createR2File(jobId, { file_type: data.file_type, r2_key: data.r2_key.trim(), file_name: data.file_name.trim(), content_type: data.content_type || null, size_bytes: data.size_bytes ? Number(data.size_bytes) : null, notes: data.notes || null });
+    if (data.form_type === "r2_file") await createR2File(jobId, { print_item_id: data.print_item_id || null, file_type: data.file_type, r2_key: data.r2_key.trim(), file_name: data.file_name.trim(), content_type: data.content_type || null, size_bytes: data.size_bytes ? Number(data.size_bytes) : null, notes: data.notes || null });
     if (data.form_type === "r2_share_link") {
       const requiredFileType = data.link_type === "PRINT_DOWNLOAD" ? "PRINT_HIGH_RES" : "TEACHER_PREVIEW";
       const hasRequiredFiles = r2Files.some((file) => file.file_type === requiredFileType);
@@ -349,7 +492,12 @@ document.addEventListener("click", async (event) => {
   try {
     if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");
     if (event.target.matches("#newGalleryBtn")) openGalleryForm();
-    if (event.target.matches("#generateTeacherPreviewLinkBtn")) await createTeacherPreviewLink();
+    if (event.target.matches("#sendTeacherPreviewWhatsappBtn")) await sendTeacherPreviewWhatsapp();
+    if (event.target.dataset.sendPrintItem) await sendPrintItemWhatsapp(event.target.dataset.sendPrintItem);
+    if (event.target.dataset.copyPrintItemApproval) {
+      const item = printItems.find((entry) => entry.id === event.target.dataset.copyPrintItemApproval);
+      if (item) await copyToClipboard(printItemApprovalUrl(item));
+    }
     if (event.target.matches("#newDepositBtn")) openDepositForm();
     if (event.target.matches("#newR2FileBtn")) openR2FileForm();
     if (event.target.matches("#newR2ShareLinkBtn")) openR2ShareLinkForm();
@@ -433,6 +581,19 @@ document.addEventListener("click", async (event) => {
   } catch (error) {
     console.error(error);
     showToast(error.message || "No se pudo completar la acción.", "error");
+  }
+});
+
+document.addEventListener("change", async (event) => {
+  try {
+    if (event.target.dataset.printItemStatus) {
+      await updatePrintItem(event.target.dataset.printItemStatus, { status: event.target.value });
+      showToast("Pieza actualizada.");
+      await loadJob();
+    }
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "No se pudo actualizar la pieza.", "error");
   }
 });
 
