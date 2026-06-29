@@ -2,6 +2,7 @@ import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { APP_CONFIG } from "./config.js";
 import { GALLERY_TYPES, JOB_STATUSES, getGalleryTypeLabel, getJobStatusLabel, getJobTypeLabel } from "./constants.js";
+import { getCatalogFileUrl, getDiplomaTemplates, getPackageImages } from "./catalog.js";
 import { createDeposit, deleteDeposit, getDepositsByJob } from "./deposits.js";
 import { createGallery, deactivateGallery, getGalleriesByJob } from "./galleries.js";
 import { PRINT_ITEM_STATUSES, ensureDefaultPrintItems, getPrintItemStatusLabel, getPrintItemTypeLabel, updatePrintItem } from "./print-items.js";
@@ -19,6 +20,8 @@ let deposits = [];
 let r2Files = [];
 let r2ShareLinks = [];
 let printItems = [];
+let packageCatalogImages = [];
+let diplomaTemplates = [];
 let selectedWhatsappUrl = "";
 let currentMessage = "";
 const modal = document.querySelector("#detailModal");
@@ -75,6 +78,8 @@ async function loadJob() {
   r2Files = await getR2FilesByJob(jobId);
   r2ShareLinks = await getR2ShareLinksByJob(jobId);
   printItems = job.job_type === "SCHOOL_GRADUATION" ? await ensureDefaultPrintItems(jobId) : [];
+  packageCatalogImages = await getPackageImages();
+  diplomaTemplates = await getDiplomaTemplates();
   render();
   await loadLogs();
 }
@@ -167,13 +172,28 @@ function renderPrintItems() {
     const files = r2Files.filter((file) => file.print_item_id === item.id);
     const previewCount = files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
     const printCount = files.filter((file) => file.file_type === "PRINT_HIGH_RES").length;
-    return `<article class="print-item-card ${printItemClass(item.status)}"><div><strong>${escapeHtml(item.title)}</strong><span>${getPrintItemTypeLabel(item.item_type)}</span></div><span class="badge">${getPrintItemStatusLabel(item.status)}</span><p class="muted">Previews: ${previewCount} · Alta calidad: ${printCount}</p><div class="actions"><select class="select compact-select" data-print-item-status="${item.id}">${Object.entries(PRINT_ITEM_STATUSES).map(([value, label]) => `<option value="${value}" ${value === item.status ? "selected" : ""}>${label}</option>`).join("")}</select><button class="btn" data-send-print-item="${item.id}">WhatsApp</button><button class="btn" data-copy-print-item-approval="${item.id}">Copiar aprobación</button></div></article>`;
+    return `<article class="print-item-card ${printItemClass(item.status)}"><div><strong>${escapeHtml(item.title)}</strong><span>${getPrintItemTypeLabel(item.item_type)}</span></div><span class="badge">${getPrintItemStatusLabel(item.status)}</span><p class="muted">Previews: ${previewCount} · Alta calidad: ${printCount}</p>${item.client_notes ? `<div class="review-note"><strong>Observaciones de la maestra:</strong><br>${escapeHtml(item.client_notes)}</div>` : ""}${renderCatalogPicker(item)}<div class="actions"><select class="select compact-select" data-print-item-status="${item.id}">${Object.entries(PRINT_ITEM_STATUSES).map(([value, label]) => `<option value="${value}" ${value === item.status ? "selected" : ""}>${label}</option>`).join("")}</select><button class="btn" data-send-print-item="${item.id}">WhatsApp</button><button class="btn" data-copy-print-item-approval="${item.id}">Copiar aprobación</button></div></article>`;
   }).join("")}</div>`;
 
   const select = document.querySelector("#r2PrintItem");
   if (select) {
     select.innerHTML = printItems.map((item) => `<option value="${item.id}">${escapeHtml(item.title)}</option>`).join("");
   }
+  hydrateCatalogThumbs();
+}
+
+function renderCatalogPicker(item) {
+  if (item.item_type === "DIPLOMA") {
+    const activeDiplomas = diplomaTemplates.filter((template) => template.is_active !== false);
+    if (!activeDiplomas.length) return `<div class="inline-catalog"><h4>Catálogo de diplomas</h4><p class="muted">No hay diplomas activos.</p></div>`;
+    return `<div class="inline-catalog"><h4>Catálogo de diplomas</h4><div class="inline-catalog-grid">${activeDiplomas.map((template) => `<div class="inline-catalog-option"><button class="catalog-thumb" data-open-catalog-file="diploma_templates:${template.id}" type="button"><span data-catalog-thumb="diploma_templates:${template.id}">DIP</span></button><button class="btn" data-use-diploma-template="${template.id}" data-print-item-id="${item.id}">Usar</button><span class="muted">${escapeHtml(template.name)}</span></div>`).join("")}</div></div>`;
+  }
+  if (item.item_type === "PHOTO_PACKAGE") {
+    const schoolPackages = packageCatalogImages.filter((image) => !image.packages?.package_type || image.packages.package_type === "SCHOOL_GRADUATION" || image.packages.package_type === "GENERAL");
+    if (!schoolPackages.length) return `<div class="inline-catalog"><h4>Catálogo de paquetes</h4><p class="muted">No hay imágenes de paquetes.</p></div>`;
+    return `<div class="inline-catalog"><h4>Catálogo de paquetes</h4><div class="inline-catalog-grid">${schoolPackages.map((image) => `<div class="inline-catalog-option"><button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">PKG</span></button><button class="btn" data-use-package-image="${image.id}" data-print-item-id="${item.id}">Usar</button><span class="muted">${escapeHtml(image.packages?.name || image.file_name)}</span></div>`).join("")}</div></div>`;
+  }
+  return "";
 }
 
 function setupR2Dropzone() {
@@ -263,6 +283,57 @@ async function hydrateR2Thumbnails() {
       thumb.textContent = "IMG";
     }
   }));
+}
+
+async function hydrateCatalogThumbs() {
+  const thumbs = Array.from(document.querySelectorAll("[data-catalog-thumb]"));
+  await Promise.all(thumbs.map(async (thumb) => {
+    const [table, fileId] = thumb.dataset.catalogThumb.split(":");
+    try {
+      const url = await getCatalogFileUrl(table, fileId);
+      thumb.innerHTML = `<img src="${escapeHtml(url)}" alt="">`;
+    } catch {
+      thumb.textContent = "IMG";
+    }
+  }));
+}
+
+async function useDiplomaTemplate(printItemId, templateId) {
+  const template = diplomaTemplates.find((item) => item.id === templateId);
+  if (!template) return;
+  await createR2File(jobId, {
+    print_item_id: printItemId,
+    file_type: "TEACHER_PREVIEW",
+    r2_key: template.r2_key,
+    file_name: template.file_name,
+    content_type: template.content_type || null,
+    size_bytes: template.size_bytes || null,
+    notes: `Importado del catálogo de diplomas: ${template.name}`
+  });
+  await updatePrintItem(printItemId, { status: "READY_FOR_REVIEW", notes: `Diploma seleccionado: ${template.name}` });
+  showToast("Diploma agregado a la pieza.");
+  await loadJob();
+}
+
+async function usePackageImage(printItemId, imageId) {
+  const image = packageCatalogImages.find((item) => item.id === imageId);
+  if (!image) return;
+  await createR2File(jobId, {
+    print_item_id: printItemId,
+    file_type: "TEACHER_PREVIEW",
+    r2_key: image.r2_key,
+    file_name: image.file_name,
+    content_type: image.content_type || null,
+    size_bytes: image.size_bytes || null,
+    notes: `Importado del catálogo de paquetes: ${image.packages?.name || image.file_name}`
+  });
+  await updatePrintItem(printItemId, {
+    status: "READY_FOR_REVIEW",
+    selected_package_id: image.package_id || null,
+    notes: `Paquete seleccionado: ${image.packages?.name || image.file_name}`
+  });
+  showToast("Paquete agregado a la pieza.");
+  await loadJob();
 }
 
 function renderR2ShareLinks() {
@@ -490,10 +561,17 @@ form.addEventListener("submit", async (event) => {
 
 document.addEventListener("click", async (event) => {
   try {
+    const catalogButton = event.target.closest("[data-open-catalog-file]");
     if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");
     if (event.target.matches("#newGalleryBtn")) openGalleryForm();
     if (event.target.matches("#sendTeacherPreviewWhatsappBtn")) await sendTeacherPreviewWhatsapp();
     if (event.target.dataset.sendPrintItem) await sendPrintItemWhatsapp(event.target.dataset.sendPrintItem);
+    if (event.target.dataset.useDiplomaTemplate) await useDiplomaTemplate(event.target.dataset.printItemId, event.target.dataset.useDiplomaTemplate);
+    if (event.target.dataset.usePackageImage) await usePackageImage(event.target.dataset.printItemId, event.target.dataset.usePackageImage);
+    if (catalogButton) {
+      const [table, fileId] = catalogButton.dataset.openCatalogFile.split(":");
+      openInNewTab(await getCatalogFileUrl(table, fileId));
+    }
     if (event.target.dataset.copyPrintItemApproval) {
       const item = printItems.find((entry) => entry.id === event.target.dataset.copyPrintItemApproval);
       if (item) await copyToClipboard(printItemApprovalUrl(item));

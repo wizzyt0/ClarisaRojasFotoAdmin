@@ -1,11 +1,13 @@
 import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
+import { getCatalogFileUrl, getPackageImages, uploadPackageImage } from "./catalog.js";
 import { PACKAGE_TYPES, getPackageTypeLabel } from "./constants.js";
 import { escapeHtml, formToObject, showToast } from "./utils.js";
 import { formatMoney } from "./formatters.js";
 
 await requireAuth();
 let packages = [];
+let packageImages = [];
 let editingPackage = null;
 const modal = document.querySelector("#packageModal");
 const form = document.querySelector("#packageForm");
@@ -28,14 +30,32 @@ function render() {
   const type = document.querySelector("#typeFilter").value;
   const active = document.querySelector("#activeFilter").value;
   const rows = packages.filter((item) => (!search || item.name.toLowerCase().includes(search)) && (!type || item.package_type === type) && (active === "" || String(item.is_active) === active));
-  document.querySelector("#packagesTable").innerHTML = rows.length ? `<table class="table"><thead><tr><th>Nombre</th><th>Tipo</th><th>Precio</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${rows.map((item) => `<tr><td>${escapeHtml(item.name)}<br><span class="muted">${escapeHtml(item.description)}</span></td><td>${getPackageTypeLabel(item.package_type)}</td><td>${formatMoney(item.price)}</td><td><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></td><td class="actions"><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty-state">No hay paquetes para mostrar.</div>`;
+  document.querySelector("#packagesTable").innerHTML = rows.length ? `<div class="catalog-grid">${rows.map((item) => {
+    const images = packageImages.filter((image) => image.package_id === item.id);
+    return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(item.name)}</h3><p class="muted">${getPackageTypeLabel(item.package_type)} · ${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div><p>${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="actions"><label class="btn">Subir imagen<input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></label><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
+  }).join("")}</div>` : `<div class="empty-state">No hay paquetes para mostrar.</div>`;
+  hydrateCatalogThumbs();
 }
 
 async function load() {
   const { data, error } = await supabase.from("packages").select("*").order("created_at", { ascending: false });
   if (error) throw error;
   packages = data || [];
+  packageImages = await getPackageImages();
   render();
+}
+
+async function hydrateCatalogThumbs() {
+  const thumbs = Array.from(document.querySelectorAll("[data-catalog-thumb]"));
+  await Promise.all(thumbs.map(async (thumb) => {
+    const [table, fileId] = thumb.dataset.catalogThumb.split(":");
+    try {
+      const url = await getCatalogFileUrl(table, fileId);
+      thumb.innerHTML = `<img src="${escapeHtml(url)}" alt="">`;
+    } catch {
+      thumb.textContent = "IMG";
+    }
+  }));
 }
 
 function openModal(item = null) {
@@ -58,13 +78,33 @@ form.addEventListener("submit", async (event) => {
 });
 
 document.addEventListener("click", async (event) => {
+  const catalogButton = event.target.closest("[data-open-catalog-file]");
   if (event.target.matches("#newPackageBtn")) openModal();
   if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");
   if (event.target.dataset.edit) openModal(packages.find((item) => item.id === event.target.dataset.edit));
+  if (catalogButton) {
+    const [table, fileId] = catalogButton.dataset.openCatalogFile.split(":");
+    window.open(await getCatalogFileUrl(table, fileId), "_blank", "noopener");
+  }
   if (event.target.dataset.deactivate && confirm("¿Desactivar este paquete?")) {
     await supabase.from("packages").update({ is_active: false }).eq("id", event.target.dataset.deactivate);
     showToast("Paquete desactivado.");
     load();
+  }
+});
+document.addEventListener("change", async (event) => {
+  if (!event.target.dataset.packageUpload) return;
+  const files = Array.from(event.target.files || []);
+  if (!files.length) return;
+  try {
+    for (const file of files) await uploadPackageImage(event.target.dataset.packageUpload, file);
+    showToast(files.length === 1 ? "Imagen del paquete subida." : "Imágenes del paquete subidas.");
+    await load();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "No se pudo subir la imagen.", "error");
+  } finally {
+    event.target.value = "";
   }
 });
 ["searchInput", "typeFilter", "activeFilter"].forEach((id) => document.querySelector(`#${id}`).addEventListener("input", render));

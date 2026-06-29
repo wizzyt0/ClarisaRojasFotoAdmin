@@ -8,13 +8,17 @@ Aplicación web interna para administrar un negocio de fotografía. Es simple, e
 - Clientes de sesiones de fotos y graduaciones escolares.
 - Perfiles escolares con contacto, maestra, directora, curso, estudiantes y seguimiento anual.
 - Catálogo de paquetes.
+- Imágenes de paquetes para que la maestra vea qué incluye cada opción.
+- Catálogo de diplomas con previews seleccionables.
 - Trabajos con estados, paquetes, cantidad, precio, fecha de entrega y token de aprobación.
+- Piezas de impresión por trabajo escolar: galería, diploma, carpeta, foto grupal y paquete de fotos.
 - Abonos manuales, sin métodos de pago.
 - Cálculo de abonado, pendiente y sobreabono.
 - Links compartidos de Google Photos.
 - Links seguros de Cloudflare R2 para previews de maestra y archivos de imprenta.
 - Mensajes de WhatsApp con `wa.me`, sin enviar automáticamente.
 - Página pública `approval.html?token=...` para aprobar impresión.
+- Página pública `approval.html?item_token=...` para aprobar o pedir cambios por pieza de impresión.
 - Seguimiento anual de escuelas.
 - Despliegue directo en Netlify.
 
@@ -137,10 +141,33 @@ La app puede registrar archivos guardados en un bucket privado de Cloudflare R2 
 - Descarga para imprenta: `https://clarisa-r2-share.mudjkdriver.workers.dev/download?token=...`
 
 Ejecute `sql/r2-storage-links.sql` en Supabase para crear las tablas `job_files` y `file_share_links`.
+Ejecute también `sql/print-items-workflow.sql` para las aprobaciones por pieza y `sql/catalog-previews.sql` para los catálogos de paquetes y diplomas.
 
 El frontend nunca guarda llaves secretas de Cloudflare R2. La entrega de archivos se hace con un Cloudflare Worker en `cloudflare/r2-share-worker.js`.
 
 Desde el detalle de un trabajo puede arrastrar archivos al panel para subirlos directamente a R2. La subida pasa por el Worker y requiere sesión de administrador.
+
+## Flujo de impresión escolar
+
+1. En `packages.html`, cree los paquetes y suba imágenes de preview para cada paquete.
+2. En `diplomas.html`, suba los diseños de diploma disponibles.
+3. En un trabajo escolar, abra el detalle y revise “Piezas de impresión”.
+4. Para “Diploma”, use un diseño del catálogo o suba un preview propio en “Archivos R2”.
+5. Para “Paquete de fotos”, use una imagen del catálogo de paquetes o suba un preview propio.
+6. Para cada pieza, suba los previews y use el botón “WhatsApp”.
+7. La maestra recibe un link de preview y un link de autorización por pieza.
+8. Si aprueba, la pieza cambia a “Aprobada para imprimir”.
+9. Si pide cambios, la pieza cambia a “Cambios solicitados” y sus observaciones aparecen visibles en el detalle del trabajo.
+
+Los archivos del catálogo se guardan separados en R2:
+
+- `catalog/packages/...`
+- `catalog/diplomas/...`
+
+Los archivos de cada trabajo se guardan separados por pieza:
+
+- `trabajos/{jobId}/{printItemId}/preview/...`
+- `trabajos/{jobId}/{printItemId}/print/...`
 
 Guía completa: `docs/r2-cloudflare-setup.md`.
 

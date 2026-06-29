@@ -14,12 +14,16 @@ create table if not exists print_items (
   selected_file_id uuid,
   selected_package_id uuid references packages(id) on delete set null,
   notes text,
+  client_notes text,
+  changes_requested_at timestamptz,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
 
 alter table job_files add column if not exists print_item_id uuid references print_items(id) on delete set null;
 alter table file_share_links add column if not exists print_item_id uuid references print_items(id) on delete cascade;
+alter table print_items add column if not exists client_notes text;
+alter table print_items add column if not exists changes_requested_at timestamptz;
 
 alter table message_logs drop constraint if exists message_logs_message_type_check;
 alter table message_logs add constraint message_logs_message_type_check
@@ -44,6 +48,7 @@ create policy "admin write print_items" on print_items for all to authenticated 
 
 drop function if exists get_public_print_item_by_token(text);
 drop function if exists approve_print_item_by_token(text, text);
+drop function if exists request_print_item_changes_by_token(text, text, text);
 
 create or replace function get_public_print_item_by_token(token text)
 returns jsonb
@@ -61,7 +66,8 @@ begin
       'title', pi.title,
       'status', pi.status,
       'approved_at', pi.approved_at,
-      'approved_by_name', pi.approved_by_name
+      'approved_by_name', pi.approved_by_name,
+      'client_notes', pi.client_notes
     ),
     'job', jsonb_build_object(
       'id', j.id,
@@ -109,7 +115,9 @@ begin
     approved_at = now(),
     approved_by_name = nullif(trim(approve_print_item_by_token.approval_name), ''),
     terms_accepted = true,
-    status = 'APPROVED_FOR_PRINT'
+    status = 'APPROVED_FOR_PRINT',
+    client_notes = null,
+    changes_requested_at = null
   where approval_token = approve_print_item_by_token.token
     and approval_revoked_at is null
     and (approval_token_expires_at is null or approval_token_expires_at > now())
@@ -123,5 +131,34 @@ begin
 end;
 $$;
 
+create or replace function request_print_item_changes_by_token(token text, approval_name text, client_notes text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  changed_item print_items;
+begin
+  update print_items
+  set
+    approved_by_name = nullif(trim(request_print_item_changes_by_token.approval_name), ''),
+    client_notes = nullif(trim(request_print_item_changes_by_token.client_notes), ''),
+    changes_requested_at = now(),
+    status = 'CHANGES_REQUESTED'
+  where approval_token = request_print_item_changes_by_token.token
+    and approval_revoked_at is null
+    and (approval_token_expires_at is null or approval_token_expires_at > now())
+  returning * into changed_item;
+
+  if changed_item.id is null then
+    return jsonb_build_object('ok', false, 'message', 'El link de revisión no existe o expiró.');
+  end if;
+
+  return jsonb_build_object('ok', true, 'print_item_id', changed_item.id, 'changes_requested_at', changed_item.changes_requested_at);
+end;
+$$;
+
 grant execute on function get_public_print_item_by_token(text) to anon, authenticated;
 grant execute on function approve_print_item_by_token(text, text) to anon, authenticated;
+grant execute on function request_print_item_changes_by_token(text, text, text) to anon, authenticated;

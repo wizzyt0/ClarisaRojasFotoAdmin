@@ -30,7 +30,7 @@ function jsonError(message, status = 400) {
 function corsHeaders(headers = {}) {
   return {
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
     "access-control-allow-headers": "authorization,content-type",
     ...headers
   };
@@ -91,6 +91,22 @@ async function supabaseDelete(env, table, id) {
     }
   });
   if (!response.ok) throw new Error(`Supabase delete error ${response.status}`);
+}
+
+async function supabaseUpdate(env, table, id, payload) {
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      "content-type": "application/json",
+      prefer: "return=representation"
+    },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error(`Supabase update error ${response.status}`);
+  const rows = await response.json();
+  return rows[0];
 }
 
 async function requireAdmin(request, env) {
@@ -164,10 +180,92 @@ async function handleAdminDeleteFile(request, env, fileId) {
   const file = files[0];
   if (!file) return jsonError("Archivo no encontrado.", 404);
 
-  await env.PHOTO_BUCKET.delete(file.r2_key);
   await supabaseDelete(env, "job_files", file.id);
 
+  const [remainingJobFiles, packageImages, diplomaTemplates] = await Promise.all([
+    supabaseFetch(env, `job_files?select=id&r2_key=eq.${encodeURIComponent(file.r2_key)}&limit=1`),
+    supabaseFetch(env, `package_images?select=id&r2_key=eq.${encodeURIComponent(file.r2_key)}&limit=1`),
+    supabaseFetch(env, `diploma_templates?select=id&r2_key=eq.${encodeURIComponent(file.r2_key)}&limit=1`)
+  ]);
+  if (!remainingJobFiles.length && !packageImages.length && !diplomaTemplates.length) {
+    await env.PHOTO_BUCKET.delete(file.r2_key);
+  }
+
   return new Response(JSON.stringify({ ok: true }), {
+    headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
+  });
+}
+
+async function handleCatalogUpload(request, env) {
+  await requireAdmin(request, env);
+  const formData = await request.formData();
+  const catalogType = String(formData.get("catalog_type") || "");
+  const packageId = String(formData.get("package_id") || "") || null;
+  const name = String(formData.get("name") || "").trim();
+  const file = formData.get("file");
+
+  if (!["PACKAGE", "DIPLOMA"].includes(catalogType)) return jsonError("Tipo de catálogo inválido.", 400);
+  if (catalogType === "PACKAGE" && !packageId) return jsonError("Falta package_id.", 400);
+  if (catalogType === "DIPLOMA" && !name) return jsonError("Falta el nombre del diploma.", 400);
+  if (!file || typeof file.arrayBuffer !== "function") return jsonError("Falta archivo.", 400);
+
+  const fileName = cleanFileName(file.name);
+  const contentType = file.type || "application/octet-stream";
+  const r2Key = catalogType === "PACKAGE"
+    ? `catalog/packages/${packageId}/${Date.now()}-${crypto.randomUUID()}-${fileName}`
+    : `catalog/diplomas/${Date.now()}-${crypto.randomUUID()}-${fileName}`;
+
+  await env.PHOTO_BUCKET.put(r2Key, file.stream(), {
+    httpMetadata: { contentType }
+  });
+
+  const row = catalogType === "PACKAGE"
+    ? await supabaseInsert(env, "package_images", {
+      package_id: packageId,
+      r2_key: r2Key,
+      file_name: file.name || fileName,
+      content_type: contentType,
+      size_bytes: file.size || null
+    })
+    : await supabaseInsert(env, "diploma_templates", {
+      name,
+      r2_key: r2Key,
+      file_name: file.name || fileName,
+      content_type: contentType,
+      size_bytes: file.size || null,
+      is_active: true
+    });
+
+  return new Response(JSON.stringify({ ok: true, file: row }), {
+    headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
+  });
+}
+
+async function handleAdminGetCatalogFile(request, env, table, fileId) {
+  const allowedTables = new Set(["package_images", "diploma_templates"]);
+  if (!allowedTables.has(table)) return jsonError("Catálogo inválido.", 400);
+
+  const url = new URL(request.url);
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || url.searchParams.get("auth") || "";
+  const authorizedRequest = new Request(request, {
+    headers: new Headers({ authorization: `Bearer ${token}` })
+  });
+  await requireAdmin(authorizedRequest, env);
+
+  const files = await supabaseFetch(
+    env,
+    `${table}?select=id,r2_key,file_name,content_type&id=eq.${encodeURIComponent(fileId)}&limit=1`
+  );
+  const file = files[0];
+  if (!file) return jsonError("Archivo no encontrado.", 404);
+  return streamFile(env, file, url.searchParams.get("download") === "1");
+}
+
+async function handleToggleDiplomaTemplate(request, env, fileId) {
+  await requireAdmin(request, env);
+  const body = await request.json().catch(() => ({}));
+  const row = await supabaseUpdate(env, "diploma_templates", fileId, { is_active: Boolean(body.is_active) });
+  return new Response(JSON.stringify({ ok: true, file: row }), {
     headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
   });
 }
@@ -257,6 +355,12 @@ export default {
       if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
       const url = new URL(request.url);
       if (url.pathname === "/admin/upload" && request.method === "POST") return handleAdminUpload(request, env);
+      if (url.pathname === "/admin/catalog/upload" && request.method === "POST") return handleCatalogUpload(request, env);
+      if (url.pathname.startsWith("/admin/catalog/diploma_templates/") && request.method === "PATCH") return handleToggleDiplomaTemplate(request, env, url.pathname.split("/").pop());
+      if (url.pathname.startsWith("/admin/catalog/") && request.method === "GET") {
+        const [, , , table, fileId] = url.pathname.split("/");
+        return handleAdminGetCatalogFile(request, env, table, fileId);
+      }
       if (url.pathname.startsWith("/admin/files/") && request.method === "GET") return handleAdminGetFile(request, env, url.pathname.split("/").pop());
       if (url.pathname.startsWith("/admin/files/") && request.method === "DELETE") return handleAdminDeleteFile(request, env, url.pathname.split("/").pop());
       const token = url.searchParams.get("token");

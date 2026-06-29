@@ -75,8 +75,9 @@ function renderPrintItemApproval() {
     <div class="alert alert-warning"><strong>IMPORTANTE:</strong><br>Una vez aprobada esta pieza para impresión, cualquier cambio adicional solicitado después de la aprobación tendrá un costo extra. Por favor revise cuidadosamente antes de aprobar.</div>
     <form id="printItemApprovalForm">
       <div class="form-group"><label>Nombre de quien aprueba</label><input class="input" name="approval_name" required></div>
-      <label class="form-group"><span><input type="checkbox" name="terms" required> Confirmo que revisé esta pieza y autorizo enviarla a impresión. Entiendo que cualquier cambio solicitado después de esta aprobación tendrá costo adicional.</span></label>
-      <button class="btn btn-primary" type="submit">Autorizar esta pieza para impresión</button>
+      <div class="form-group"><label>Observaciones o cambios solicitados</label><textarea class="textarea" name="client_notes" placeholder="Escriba aquí si algo necesita corrección antes de imprimir."></textarea></div>
+      <label class="form-group"><span><input type="checkbox" name="terms"> Confirmo que revisé esta pieza y autorizo enviarla a impresión. Entiendo que cualquier cambio solicitado después de esta aprobación tendrá costo adicional.</span></label>
+      <div class="actions"><button class="btn btn-primary" type="submit" name="action" value="approve">Autorizar esta pieza para impresión</button><button class="btn" type="submit" name="action" value="changes">Solicitar cambios</button></div>
     </form>`;
 }
 
@@ -113,9 +114,22 @@ document.addEventListener("click", (event) => {
 document.addEventListener("submit", async (event) => {
   if (event.target.matches("#printItemApprovalForm")) {
     event.preventDefault();
-    if (!event.target.terms.checked) return showToast("Debe aceptar las condiciones antes de aprobar.", "error");
+    const action = event.submitter?.value || "approve";
     const approvalName = event.target.approval_name.value.trim();
     if (!approvalName) return showToast("Escriba el nombre de quien aprueba.", "error");
+    if (action === "changes") {
+      const notes = event.target.client_notes.value.trim();
+      if (!notes) return showToast("Escriba las observaciones para solicitar cambios.", "error");
+      const { data, error } = await supabase.rpc("request_print_item_changes_by_token", { token: itemToken, approval_name: approvalName, client_notes: notes });
+      if (error || !data?.ok) {
+        console.error(error || data);
+        showToast(data?.message || "No se pudieron registrar los cambios.", "error");
+        return;
+      }
+      content.innerHTML = `<div class="alert alert-success"><h1>Observaciones enviadas.</h1><p>Gracias. Registramos los cambios solicitados para revisión.</p></div>`;
+      return;
+    }
+    if (!event.target.terms.checked) return showToast("Debe aceptar las condiciones antes de aprobar.", "error");
     const { data, error } = await supabase.rpc("approve_print_item_by_token", { token: itemToken, approval_name: approvalName });
     if (error || !data?.ok) {
       console.error(error || data);
