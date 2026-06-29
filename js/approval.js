@@ -30,7 +30,7 @@ function render() {
     <div class="grid">
       <p><strong>Trabajo:</strong><br>${escapeHtml(job.title)}</p>
       <p><strong>Paquete:</strong><br>${escapeHtml(pkg?.name || "Sin paquete")}</p>
-      ${job.job_type === "SCHOOL_GRADUATION" ? `<p><strong>Nivel:</strong><br>${escapeHtml({ KINDER: "Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[school?.school_level] || "")}</p><p><strong>Curso:</strong><br>${escapeHtml(school?.grade_or_class)}</p><p><strong>Maestra:</strong><br>${escapeHtml(school?.teacher_name)}</p><p><strong>Directora:</strong><br>${escapeHtml(school?.principal_name)}</p><p><strong>Cantidad de paquetes:</strong><br>${job.package_quantity}</p><p><strong>Estudiantes:</strong><br>${school?.student_count || ""}</p>` : `<p><strong>Tipo de sesión:</strong><br>${escapeHtml(job.event_type || "Sesión de fotos")}</p>`}
+      ${job.job_type === "SCHOOL_GRADUATION" ? `<p><strong>Nivel:</strong><br>${escapeHtml({ KINDER: "Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[school?.school_level] || "")}</p><p><strong>Curso:</strong><br>${escapeHtml(school?.grade_or_class)}</p><p><strong>Maestra:</strong><br>${escapeHtml(school?.teacher_name)}</p><p><strong>Directora:</strong><br>${escapeHtml(school?.principal_name)}</p><p><strong>Cantidad de paquetes:</strong><br>${Number(job.package_quantity || 0) > 0 ? job.package_quantity : "Pendiente de selección"}</p><p><strong>Estudiantes:</strong><br>${school?.student_count || ""}</p>` : `<p><strong>Tipo de sesión:</strong><br>${escapeHtml(job.event_type || "Sesión de fotos")}</p>`}
     </div>
     <h2>Links para revisar</h2>
     ${galleryHtml || `<div class="empty-state">No hay galerías activas registradas.</div>`}
@@ -103,6 +103,7 @@ function renderCatalogSelection() {
     <h1 class="approval-title">${title}</h1>
     <p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(job.title)}</p>
     <div class="catalog-grid">${catalogOptions.length ? catalogOptions.map((option) => `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(catalogFileUrl(option))}" type="button"><span><img src="${escapeHtml(catalogFileUrl(option))}" alt="${escapeHtml(option.name)}"></span></button><div><h3>${escapeHtml(option.name)}</h3>${option.price != null ? `<p class="muted">${formatMoney(option.price)}</p>` : ""}${option.description ? `<p>${escapeHtml(option.description)}</p>` : ""}</div><button class="btn btn-primary" data-select-catalog="${option.table}:${option.id}">Elegir esta opción</button></article>`).join("") : `<div class="empty-state">No hay opciones disponibles para este catálogo.</div>`}</div>
+    ${item.item_type === "PHOTO_PACKAGE" ? `<div class="form-group"><label>Cantidad de paquetes</label><input id="catalogPackageQuantity" class="input" type="number" min="1" step="1" value="1" required></div>` : ""}
     <div class="form-group"><label>Observaciones para Clarisa</label><textarea id="catalogClientNotes" class="textarea" placeholder="Ejemplo: nos gusta este diseño, pero queremos usar color azul."></textarea></div>`;
 }
 
@@ -145,20 +146,27 @@ document.addEventListener("click", async (event) => {
   if (!event.target.dataset.selectCatalog) return;
   const [optionTable, optionId] = event.target.dataset.selectCatalog.split(":");
   const notes = document.querySelector("#catalogClientNotes")?.value || "";
+  const quantityInput = document.querySelector("#catalogPackageQuantity");
+  const packageQuantity = quantityInput ? Number(quantityInput.value || 0) : null;
+  if (quantityInput && packageQuantity < 1) {
+    showToast("Indique cuántos paquetes necesita.", "error");
+    return;
+  }
   const confirmed = confirm("¿Confirmar esta selección?");
   if (!confirmed) return;
   const { data, error } = await supabase.rpc("select_catalog_option_by_token", {
     token: itemToken,
     option_table: optionTable,
     option_id: optionId,
-    client_notes: notes
+    client_notes: notes,
+    package_quantity: packageQuantity
   });
   if (error || !data?.ok) {
     console.error(error || data);
     showToast(data?.message || "No se pudo guardar la selección.", "error");
     return;
   }
-  content.innerHTML = `<div class="alert alert-success"><h1>Selección guardada.</h1><p>Gracias. Clarisa recibirá su selección para preparar la versión personalizada y enviarla a revisión final.</p><p><strong>Selección:</strong> ${escapeHtml(data.selected_name || "")}</p></div>`;
+  content.innerHTML = `<div class="alert alert-success"><h1>Selección guardada.</h1><p>Gracias. Clarisa recibirá su selección para preparar la versión personalizada y enviarla a revisión final.</p><p><strong>Selección:</strong> ${escapeHtml(data.selected_name || "")}</p>${data.package_quantity ? `<p><strong>Cantidad:</strong> ${data.package_quantity}<br><strong>Total:</strong> ${formatMoney(data.price || 0)}</p>` : ""}</div>`;
 });
 
 document.addEventListener("submit", async (event) => {

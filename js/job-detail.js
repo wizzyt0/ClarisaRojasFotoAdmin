@@ -96,8 +96,8 @@ function render() {
       <p><strong>Estado:</strong><br><span class="badge badge-status ${job.status}">${getJobStatusLabel(job.status)}</span></p>
       <p><strong>Fecha evento:</strong><br>${formatDate(job.event_date)}</p>
       <p><strong>Fecha entrega:</strong><br>${formatDate(job.delivery_date)}</p>
-      <p><strong>Paquete:</strong><br>${escapeHtml(job.packages?.name || "Sin paquete")}</p>
-      <p><strong>Cantidad:</strong><br>${job.package_quantity}</p>
+      <p><strong>Paquete:</strong><br>${escapeHtml(job.packages?.name || "Pendiente de selección")}</p>
+      <p><strong>Cantidad:</strong><br>${Number(job.package_quantity || 0) > 0 ? job.package_quantity : "Pendiente"}</p>
       <p><strong>Precio:</strong><br>${formatMoney(job.price)}</p>
       <p><strong>Total abonado:</strong><br>${formatMoney(totals.totalDeposited)}</p>
       <p><strong>Pendiente:</strong><br>${formatMoney(totals.remainingBalance)}</p>

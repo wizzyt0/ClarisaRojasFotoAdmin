@@ -26,9 +26,9 @@ function renderForm(job = {}) {
       <div class="form-group"><label>Tipo de evento</label><input class="input" name="event_type" value="${escapeHtml(job.event_type)}"></div>
       <div class="form-group"><label>Fecha del evento</label><input class="input" type="date" name="event_date" value="${escapeHtml(job.event_date)}"></div>
       <div class="form-group"><label>Fecha de entrega</label><input class="input" type="date" name="delivery_date" value="${escapeHtml(job.delivery_date)}"></div>
-      <div class="form-group"><label>Paquete</label><select class="select" name="package_id"><option value="">Sin paquete</option>${packages.map((pkg) => `<option value="${pkg.id}" data-price="${pkg.price}" ${pkg.id === job.package_id ? "selected" : ""}>${escapeHtml(pkg.name)} - ${formatMoney(pkg.price)}</option>`).join("")}</select></div>
-      <div class="form-group"><label>Cantidad de paquetes</label><input class="input" type="number" min="1" name="package_quantity" required value="${job.package_quantity || 1}"></div>
-      <div class="form-group"><label>Precio</label><input class="input" type="number" min="0" step="0.01" name="price" required value="${job.price ?? 0}"></div>
+      <div class="form-group"><label>Paquete</label><select class="select" name="package_id"><option value="">Pendiente de selección</option>${packages.map((pkg) => `<option value="${pkg.id}" data-price="${pkg.price}" ${pkg.id === job.package_id ? "selected" : ""}>${escapeHtml(pkg.name)} - ${formatMoney(pkg.price)}</option>`).join("")}</select><span class="muted">En graduaciones escolares normalmente se rellena cuando la maestra elige del catálogo.</span></div>
+      <div class="form-group"><label>Cantidad de paquetes</label><input class="input" type="number" min="0" name="package_quantity" value="${job.package_quantity ?? 0}"></div>
+      <div class="form-group"><label>Precio total</label><input class="input" type="number" min="0" step="0.01" name="price" value="${job.price ?? 0}"></div>
       <div class="form-group"><label>Estado</label><select class="select" name="status">${Object.entries(JOB_STATUSES).map(([value, label]) => `<option value="${value}" ${value === (job.status || "CREATED") ? "selected" : ""}>${label}</option>`).join("")}</select></div>
     </div>
     <div class="form-group"><label>Notas</label><textarea class="textarea" name="notes">${escapeHtml(job.notes)}</textarea></div>
@@ -47,7 +47,7 @@ function renderForm(job = {}) {
   const updatePrice = () => {
     const packageOption = form.package_id.selectedOptions[0];
     const packagePrice = Number(packageOption?.dataset.price || 0);
-    if (packagePrice) form.price.value = calculateJobPrice(packagePrice, form.package_quantity.value, form.job_type.value);
+    if (packagePrice && Number(form.package_quantity.value || 0) > 0) form.price.value = calculateJobPrice(packagePrice, form.package_quantity.value, form.job_type.value);
   };
   form.client_id.addEventListener("change", () => {
     const type = form.client_id.selectedOptions[0]?.dataset.type;
@@ -71,7 +71,7 @@ function render() {
   document.querySelector("#jobsTable").innerHTML = rows.length ? `<table class="table"><thead><tr><th>Trabajo</th><th>Cliente/Escuela</th><th>Tipo</th><th>Estado</th><th>Paquete</th><th>Cantidad</th><th>Precio</th><th>Abonado</th><th>Pendiente</th><th>Entrega</th><th>Acciones</th></tr></thead><tbody>${rows.map((job) => {
     const total = (job.deposits || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
     const pending = Math.max(Number(job.price || 0) - total, 0);
-    return `<tr><td>${escapeHtml(job.title)}</td><td>${escapeHtml(job.clients?.name)}</td><td>${getJobTypeLabel(job.job_type)}</td><td><span class="badge badge-status ${job.status}">${getJobStatusLabel(job.status)}</span></td><td>${escapeHtml(job.packages?.name || "")}</td><td>${job.package_quantity}</td><td>${formatMoney(job.price)}</td><td>${formatMoney(total)}</td><td>${formatMoney(pending)}</td><td>${formatDate(job.delivery_date)}</td><td class="actions"><a class="btn" href="job-detail.html?id=${job.id}">Abrir</a><button class="btn" data-edit="${job.id}">Editar</button><button class="btn btn-danger" data-delete-job="${job.id}">Eliminar</button></td></tr>`;
+    return `<tr><td>${escapeHtml(job.title)}</td><td>${escapeHtml(job.clients?.name)}</td><td>${getJobTypeLabel(job.job_type)}</td><td><span class="badge badge-status ${job.status}">${getJobStatusLabel(job.status)}</span></td><td>${escapeHtml(job.packages?.name || "Pendiente")}</td><td>${Number(job.package_quantity || 0) > 0 ? job.package_quantity : "Pendiente"}</td><td>${formatMoney(job.price)}</td><td>${formatMoney(total)}</td><td>${formatMoney(pending)}</td><td>${formatDate(job.delivery_date)}</td><td class="actions"><a class="btn" href="job-detail.html?id=${job.id}">Abrir</a><button class="btn" data-edit="${job.id}">Editar</button><button class="btn btn-danger" data-delete-job="${job.id}">Eliminar</button></td></tr>`;
   }).join("")}</tbody></table>` : `<div class="empty-state">No hay trabajos para mostrar.</div>`;
 }
 
@@ -98,7 +98,7 @@ async function load() {
       client_id: clientParam,
       job_type: client?.client_type || "SCHOOL_GRADUATION",
       status: "CREATED",
-      package_quantity: 1,
+      package_quantity: 0,
       price: 0
     });
   }
@@ -107,14 +107,14 @@ async function load() {
 function openModal(job = null) {
   editingJob = job;
   document.querySelector("#jobModalTitle").textContent = job ? "Editar trabajo" : "Nuevo trabajo";
-  renderForm(job || { status: "CREATED", package_quantity: 1, price: 0 });
+  renderForm(job || { status: "CREATED", package_quantity: 0, price: 0 });
   modal.classList.remove("hidden");
 }
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = formToObject(form);
-  if (Number(data.package_quantity) < 1 || Number(data.price) < 0) return showToast("Revise cantidad y precio.", "error");
+  if (Number(data.package_quantity || 0) < 0 || Number(data.price || 0) < 0) return showToast("Revise cantidad y precio.", "error");
   let galleryUrl = "";
   const hasActiveGallery = (editingJob?.galleries || []).some((gallery) => gallery.is_active && gallery.google_photos_url);
   if (data.status === "GALLERY_READY" && !hasActiveGallery) {
@@ -133,8 +133,8 @@ form.addEventListener("submit", async (event) => {
     event_date: data.event_date || null,
     delivery_date: data.delivery_date || null,
     status: data.status || "CREATED",
-    price: Number(data.price),
-    package_quantity: Number(data.package_quantity),
+    price: Number(data.price || 0),
+    package_quantity: Number(data.package_quantity || 0),
     notes: data.notes || null
   };
   if (!editingJob) payload.approval_token = generateToken(48);

@@ -62,7 +62,7 @@ create table jobs (
   delivery_date date,
   status text not null default 'CREATED' check (status in ('CREATED','EDITING','GALLERY_READY','GALLERY_SENT','WAITING_APPROVAL','CHANGES_REQUESTED','APPROVED_FOR_PRINT','PRINTING','READY_FOR_DELIVERY','DELIVERED','CANCELLED')),
   price numeric(12,2) not null default 0 check (price >= 0),
-  package_quantity integer not null default 1 check (package_quantity >= 1),
+  package_quantity integer not null default 0 check (package_quantity >= 0),
   notes text,
   approval_token text unique not null,
   approval_token_expires_at timestamptz,

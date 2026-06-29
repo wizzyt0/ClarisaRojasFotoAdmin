@@ -154,8 +154,8 @@ Desde el detalle de un trabajo puede arrastrar archivos al panel para subirlos d
 3. En un trabajo escolar, abra el detalle y revise “Piezas de impresión”.
 4. Para “Diploma”, use el botón “WhatsApp” para mandar el catálogo correspondiente al nivel de la escuela. Si la escuela es primaria, verá diplomas de primaria; si es preescolar/kinder, verá diplomas de kinder.
 5. Para “Paquete de fotos”, use el botón “WhatsApp” para mandar el catálogo de paquetes disponibles.
-6. La maestra selecciona la opción que le gusta y puede dejar observaciones.
-7. El trabajo queda marcado como “Catálogo seleccionado” y muestra la selección en el detalle.
+6. La maestra selecciona la opción que le gusta, indica cuántos paquetes necesita y puede dejar observaciones.
+7. El trabajo queda marcado como “Catálogo seleccionado”, muestra la selección en el detalle y actualiza paquete, cantidad y precio total automáticamente.
 8. Con esa selección, prepare el archivo personalizado para la escuela y súbalo como preview de la pieza.
 9. Use otra vez “WhatsApp” en esa pieza para mandar el preview final y pedir autorización de impresión.
 10. Si aprueba, la pieza cambia a “Aprobada para imprimir”. Si pide cambios, aparece “Cambios solicitados” con sus observaciones.
