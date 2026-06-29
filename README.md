@@ -150,14 +150,15 @@ Desde el detalle de un trabajo puede arrastrar archivos al panel para subirlos d
 ## Flujo de impresión escolar
 
 1. En `packages.html`, cree los paquetes y suba imágenes de preview para cada paquete.
-2. En `diplomas.html`, suba los diseños de diploma disponibles.
+2. En `diplomas.html`, suba los diseños de diploma disponibles y marque su nivel: Preescolar/Kinder, Primaria o Secundaria.
 3. En un trabajo escolar, abra el detalle y revise “Piezas de impresión”.
-4. Para “Diploma”, use un diseño del catálogo o suba un preview propio en “Archivos R2”.
-5. Para “Paquete de fotos”, use una imagen del catálogo de paquetes o suba un preview propio.
-6. Para cada pieza, suba los previews y use el botón “WhatsApp”.
-7. La maestra recibe un link de preview y un link de autorización por pieza.
-8. Si aprueba, la pieza cambia a “Aprobada para imprimir”.
-9. Si pide cambios, la pieza cambia a “Cambios solicitados” y sus observaciones aparecen visibles en el detalle del trabajo.
+4. Para “Diploma”, use el botón “WhatsApp” para mandar el catálogo correspondiente al nivel de la escuela. Si la escuela es primaria, verá diplomas de primaria; si es preescolar/kinder, verá diplomas de kinder.
+5. Para “Paquete de fotos”, use el botón “WhatsApp” para mandar el catálogo de paquetes disponibles.
+6. La maestra selecciona la opción que le gusta y puede dejar observaciones.
+7. El trabajo queda marcado como “Catálogo seleccionado” y muestra la selección en el detalle.
+8. Con esa selección, prepare el archivo personalizado para la escuela y súbalo como preview de la pieza.
+9. Use otra vez “WhatsApp” en esa pieza para mandar el preview final y pedir autorización de impresión.
+10. Si aprueba, la pieza cambia a “Aprobada para imprimir”. Si pide cambios, aparece “Cambios solicitados” con sus observaciones.
 
 Los archivos del catálogo se guardan separados en R2:
 

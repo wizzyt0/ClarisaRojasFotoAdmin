@@ -8,9 +8,10 @@ await requireAuth();
 let templates = [];
 const modal = document.querySelector("#diplomaModal");
 const form = document.querySelector("#diplomaForm");
+const schoolLevelLabel = (value) => ({ KINDER: "Preescolar / Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[value] || "Sin nivel");
 
 function render() {
-  document.querySelector("#diplomaTemplates").innerHTML = templates.length ? `<div class="catalog-grid">${templates.map((template) => `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(template.name)}</h3><p class="muted">${escapeHtml(template.file_name)} · ${formatDateTime(template.created_at)}</p></div><span class="badge">${template.is_active ? "Activo" : "Inactivo"}</span></div><button class="catalog-preview-large" data-open-catalog-file="diploma_templates:${template.id}" type="button"><span data-catalog-thumb="diploma_templates:${template.id}">DIPLOMA</span></button><div class="actions"><button class="btn" data-open-catalog-file="diploma_templates:${template.id}">Abrir</button><button class="btn ${template.is_active ? "btn-danger" : ""}" data-toggle-diploma="${template.id}" data-active="${template.is_active ? "false" : "true"}">${template.is_active ? "Desactivar" : "Activar"}</button></div></article>`).join("")}</div>` : `<div class="empty-state">Aún no hay diplomas en el catálogo.</div>`;
+  document.querySelector("#diplomaTemplates").innerHTML = templates.length ? `<div class="catalog-grid">${templates.map((template) => `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(template.name)}</h3><p class="muted">${schoolLevelLabel(template.school_level)} · ${escapeHtml(template.file_name)} · ${formatDateTime(template.created_at)}</p></div><span class="badge">${template.is_active ? "Activo" : "Inactivo"}</span></div><button class="catalog-preview-large" data-open-catalog-file="diploma_templates:${template.id}" type="button"><span data-catalog-thumb="diploma_templates:${template.id}">DIPLOMA</span></button><div class="actions"><button class="btn" data-open-catalog-file="diploma_templates:${template.id}">Abrir</button><button class="btn ${template.is_active ? "btn-danger" : ""}" data-toggle-diploma="${template.id}" data-active="${template.is_active ? "false" : "true"}">${template.is_active ? "Desactivar" : "Activar"}</button></div></article>`).join("")}</div>` : `<div class="empty-state">Aún no hay diplomas en el catálogo.</div>`;
   hydrateThumbs();
 }
 
@@ -52,7 +53,7 @@ form.addEventListener("submit", async (event) => {
   const file = form.file.files?.[0];
   if (!file) return showToast("Seleccione un archivo.", "error");
   try {
-    await uploadDiplomaTemplate(form.name.value.trim(), file);
+    await uploadDiplomaTemplate(form.name.value.trim(), form.school_level.value, file);
     showToast("Diploma subido al catálogo.");
     form.reset();
     modal.classList.add("hidden");

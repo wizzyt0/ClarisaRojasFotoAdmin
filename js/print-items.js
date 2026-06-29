@@ -12,6 +12,7 @@ export const PRINT_ITEM_TYPES = {
 export const PRINT_ITEM_STATUSES = {
   PENDING: "Pendiente de subir",
   READY_FOR_REVIEW: "Lista para revisión",
+  CATALOG_SELECTED: "Catálogo seleccionado",
   SENT_FOR_APPROVAL: "Enviada a maestra",
   APPROVED_FOR_PRINT: "Aprobada para imprimir",
   PRINTING: "En impresión",

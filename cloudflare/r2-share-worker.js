@@ -202,11 +202,13 @@ async function handleCatalogUpload(request, env) {
   const catalogType = String(formData.get("catalog_type") || "");
   const packageId = String(formData.get("package_id") || "") || null;
   const name = String(formData.get("name") || "").trim();
+  const schoolLevel = String(formData.get("school_level") || "");
   const file = formData.get("file");
 
   if (!["PACKAGE", "DIPLOMA"].includes(catalogType)) return jsonError("Tipo de catálogo inválido.", 400);
   if (catalogType === "PACKAGE" && !packageId) return jsonError("Falta package_id.", 400);
   if (catalogType === "DIPLOMA" && !name) return jsonError("Falta el nombre del diploma.", 400);
+  if (catalogType === "DIPLOMA" && !["KINDER", "PRIMARY", "SECONDARY"].includes(schoolLevel)) return jsonError("Nivel escolar inválido.", 400);
   if (!file || typeof file.arrayBuffer !== "function") return jsonError("Falta archivo.", 400);
 
   const fileName = cleanFileName(file.name);
@@ -233,6 +235,7 @@ async function handleCatalogUpload(request, env) {
       file_name: file.name || fileName,
       content_type: contentType,
       size_bytes: file.size || null,
+      school_level: schoolLevel,
       is_active: true
     });
 
@@ -268,6 +271,29 @@ async function handleToggleDiplomaTemplate(request, env, fileId) {
   return new Response(JSON.stringify({ ok: true, file: row }), {
     headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
   });
+}
+
+async function handlePublicCatalogFile(request, env, table, fileId) {
+  const allowedTables = new Set(["package_images", "diploma_templates"]);
+  if (!allowedTables.has(table)) return jsonError("Catálogo inválido.", 400);
+
+  const url = new URL(request.url);
+  const token = url.searchParams.get("item_token") || "";
+  if (!token) return jsonError("Falta token.", 400);
+
+  const items = await supabaseFetch(
+    env,
+    `print_items?select=id&approval_token=eq.${encodeURIComponent(token)}&approval_revoked_at=is.null&limit=1`
+  );
+  if (!items.length) return jsonError("Link no disponible.", 404);
+
+  const files = await supabaseFetch(
+    env,
+    `${table}?select=id,r2_key,file_name,content_type&id=eq.${encodeURIComponent(fileId)}&limit=1`
+  );
+  const file = files[0];
+  if (!file) return jsonError("Archivo no encontrado.", 404);
+  return streamFile(env, file, false);
 }
 
 async function handleAdminGetFile(request, env, fileId) {
@@ -360,6 +386,10 @@ export default {
       if (url.pathname.startsWith("/admin/catalog/") && request.method === "GET") {
         const [, , , table, fileId] = url.pathname.split("/");
         return handleAdminGetCatalogFile(request, env, table, fileId);
+      }
+      if (url.pathname.startsWith("/catalog-file/") && request.method === "GET") {
+        const [, , table, fileId] = url.pathname.split("/");
+        return handlePublicCatalogFile(request, env, table, fileId);
       }
       if (url.pathname.startsWith("/admin/files/") && request.method === "GET") return handleAdminGetFile(request, env, url.pathname.split("/").pop());
       if (url.pathname.startsWith("/admin/files/") && request.method === "DELETE") return handleAdminDeleteFile(request, env, url.pathname.split("/").pop());

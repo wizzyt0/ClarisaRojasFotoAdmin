@@ -3,7 +3,7 @@ create table if not exists print_items (
   job_id uuid not null references jobs(id) on delete cascade,
   item_type text not null check (item_type in ('STUDENT_GALLERY','DIPLOMA','FOLDER_OPTION','GROUP_PHOTO','PHOTO_PACKAGE','OTHER')),
   title text not null,
-  status text not null default 'PENDING' check (status in ('PENDING','READY_FOR_REVIEW','SENT_FOR_APPROVAL','APPROVED_FOR_PRINT','PRINTING','PRINTED','DELIVERED','CHANGES_REQUESTED','CANCELLED')),
+  status text not null default 'PENDING' check (status in ('PENDING','READY_FOR_REVIEW','CATALOG_SELECTED','SENT_FOR_APPROVAL','APPROVED_FOR_PRINT','PRINTING','PRINTED','DELIVERED','CHANGES_REQUESTED','CANCELLED')),
   approval_token text not null unique default encode(gen_random_bytes(32), 'hex'),
   approval_token_expires_at timestamptz,
   approval_revoked_at timestamptz,
@@ -24,6 +24,9 @@ alter table job_files add column if not exists print_item_id uuid references pri
 alter table file_share_links add column if not exists print_item_id uuid references print_items(id) on delete cascade;
 alter table print_items add column if not exists client_notes text;
 alter table print_items add column if not exists changes_requested_at timestamptz;
+alter table print_items drop constraint if exists print_items_status_check;
+alter table print_items add constraint print_items_status_check
+  check (status in ('PENDING','READY_FOR_REVIEW','CATALOG_SELECTED','SENT_FOR_APPROVAL','APPROVED_FOR_PRINT','PRINTING','PRINTED','DELIVERED','CHANGES_REQUESTED','CANCELLED'));
 
 alter table message_logs drop constraint if exists message_logs_message_type_check;
 alter table message_logs add constraint message_logs_message_type_check
@@ -67,7 +70,9 @@ begin
       'status', pi.status,
       'approved_at', pi.approved_at,
       'approved_by_name', pi.approved_by_name,
-      'client_notes', pi.client_notes
+      'client_notes', pi.client_notes,
+      'selected_file_id', pi.selected_file_id,
+      'selected_package_id', pi.selected_package_id
     ),
     'job', jsonb_build_object(
       'id', j.id,

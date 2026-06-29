@@ -16,8 +16,10 @@ export async function getPackageImages(packageId = null) {
   return data || [];
 }
 
-export async function getDiplomaTemplates() {
-  const { data, error } = await supabase.from("diploma_templates").select("*").order("created_at", { ascending: false });
+export async function getDiplomaTemplates(schoolLevel = null) {
+  let query = supabase.from("diploma_templates").select("*").order("created_at", { ascending: false });
+  if (schoolLevel) query = query.eq("school_level", schoolLevel);
+  const { data, error } = await query;
   if (error) throw error;
   return data || [];
 }
@@ -37,10 +39,11 @@ export async function uploadPackageImage(packageId, file) {
   return result;
 }
 
-export async function uploadDiplomaTemplate(name, file) {
+export async function uploadDiplomaTemplate(name, schoolLevel, file) {
   const formData = new FormData();
   formData.append("catalog_type", "DIPLOMA");
   formData.append("name", name);
+  formData.append("school_level", schoolLevel);
   formData.append("file", file);
   const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/catalog/upload`, {
     method: "POST",

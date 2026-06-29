@@ -1,4 +1,5 @@
 import { supabase } from "./supabase.js";
+import { APP_CONFIG } from "./config.js";
 import { GALLERY_TYPES, getGalleryTypeLabel } from "./constants.js";
 import { formatMoney } from "./formatters.js";
 import { escapeHtml, getQueryParam, openInNewTab, showToast } from "./utils.js";
@@ -8,6 +9,7 @@ const itemToken = getQueryParam("item_token");
 const content = document.querySelector("#approvalContent");
 let approvalData = null;
 let printItemData = null;
+let catalogOptions = [];
 
 function galleryButton(gallery) {
   return `<button class="btn btn-secondary" data-open-url="${escapeHtml(gallery.google_photos_url)}">Ver ${getGalleryTypeLabel(gallery.gallery_type).toLowerCase()}</button>`;
@@ -63,6 +65,15 @@ function renderPrintItemApproval() {
     content.innerHTML = `<h1>Esta pieza ya fue aprobada para impresión.</h1><p class="muted">Fecha de aprobación: ${new Date(item.approved_at).toLocaleString("es-MX")}</p>`;
     return;
   }
+  if (item.status === "CATALOG_SELECTED") {
+    content.innerHTML = `<div class="alert alert-success"><h1>Selección recibida.</h1><p>Gracias. Clarisa preparará la versión personalizada y la enviará después para revisión y autorización final.</p></div>`;
+    return;
+  }
+  const needsCatalogSelection = ["DIPLOMA", "PHOTO_PACKAGE"].includes(item.item_type) && !item.selected_file_id;
+  if (needsCatalogSelection) {
+    renderCatalogSelection();
+    return;
+  }
   content.innerHTML = `
     <h1 class="approval-title">${escapeHtml(item.title)}</h1>
     <p class="muted">Aprobación por pieza de impresión.</p>
@@ -81,6 +92,20 @@ function renderPrintItemApproval() {
     </form>`;
 }
 
+function catalogFileUrl(option) {
+  return `${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/catalog-file/${option.table}/${option.id}?item_token=${encodeURIComponent(itemToken)}`;
+}
+
+function renderCatalogSelection() {
+  const { print_item: item, job, client, school_profile: school } = printItemData;
+  const title = item.item_type === "DIPLOMA" ? "Seleccione el diseño de diploma" : "Seleccione el paquete de fotos";
+  content.innerHTML = `
+    <h1 class="approval-title">${title}</h1>
+    <p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(job.title)}</p>
+    <div class="catalog-grid">${catalogOptions.length ? catalogOptions.map((option) => `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(catalogFileUrl(option))}" type="button"><span><img src="${escapeHtml(catalogFileUrl(option))}" alt="${escapeHtml(option.name)}"></span></button><div><h3>${escapeHtml(option.name)}</h3>${option.price != null ? `<p class="muted">${formatMoney(option.price)}</p>` : ""}${option.description ? `<p>${escapeHtml(option.description)}</p>` : ""}</div><button class="btn btn-primary" data-select-catalog="${option.table}:${option.id}">Elegir esta opción</button></article>`).join("") : `<div class="empty-state">No hay opciones disponibles para este catálogo.</div>`}</div>
+    <div class="form-group"><label>Observaciones para Clarisa</label><textarea id="catalogClientNotes" class="textarea" placeholder="Ejemplo: nos gusta este diseño, pero queremos usar color azul."></textarea></div>`;
+}
+
 async function load() {
   if (itemToken) {
     const { data, error } = await supabase.rpc("get_public_print_item_by_token", { token: itemToken });
@@ -90,6 +115,10 @@ async function load() {
       return;
     }
     printItemData = data;
+    if (["DIPLOMA", "PHOTO_PACKAGE"].includes(data.print_item?.item_type) && !data.print_item?.selected_file_id) {
+      const catalogResult = await supabase.rpc("get_public_catalog_by_print_item_token", { token: itemToken });
+      if (!catalogResult.error) catalogOptions = catalogResult.data || [];
+    }
     renderPrintItemApproval();
     return;
   }
@@ -108,7 +137,28 @@ async function load() {
 }
 
 document.addEventListener("click", (event) => {
-  if (event.target.dataset.openUrl) openInNewTab(event.target.dataset.openUrl);
+  const openButton = event.target.closest("[data-open-url]");
+  if (openButton) openInNewTab(openButton.dataset.openUrl);
+});
+
+document.addEventListener("click", async (event) => {
+  if (!event.target.dataset.selectCatalog) return;
+  const [optionTable, optionId] = event.target.dataset.selectCatalog.split(":");
+  const notes = document.querySelector("#catalogClientNotes")?.value || "";
+  const confirmed = confirm("¿Confirmar esta selección?");
+  if (!confirmed) return;
+  const { data, error } = await supabase.rpc("select_catalog_option_by_token", {
+    token: itemToken,
+    option_table: optionTable,
+    option_id: optionId,
+    client_notes: notes
+  });
+  if (error || !data?.ok) {
+    console.error(error || data);
+    showToast(data?.message || "No se pudo guardar la selección.", "error");
+    return;
+  }
+  content.innerHTML = `<div class="alert alert-success"><h1>Selección guardada.</h1><p>Gracias. Clarisa recibirá su selección para preparar la versión personalizada y enviarla a revisión final.</p><p><strong>Selección:</strong> ${escapeHtml(data.selected_name || "")}</p></div>`;
 });
 
 document.addEventListener("submit", async (event) => {

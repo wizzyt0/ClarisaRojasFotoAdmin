@@ -156,7 +156,7 @@ function renderDeliverablesSummary() {
 
 function printItemClass(status) {
   if (["APPROVED_FOR_PRINT", "PRINTING", "PRINTED", "DELIVERED"].includes(status)) return "approved";
-  if (["SENT_FOR_APPROVAL", "READY_FOR_REVIEW"].includes(status)) return "waiting";
+  if (["SENT_FOR_APPROVAL", "READY_FOR_REVIEW", "CATALOG_SELECTED"].includes(status)) return "waiting";
   if (status === "CHANGES_REQUESTED") return "changes";
   return "missing";
 }
@@ -172,7 +172,7 @@ function renderPrintItems() {
     const files = r2Files.filter((file) => file.print_item_id === item.id);
     const previewCount = files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
     const printCount = files.filter((file) => file.file_type === "PRINT_HIGH_RES").length;
-    return `<article class="print-item-card ${printItemClass(item.status)}"><div><strong>${escapeHtml(item.title)}</strong><span>${getPrintItemTypeLabel(item.item_type)}</span></div><span class="badge">${getPrintItemStatusLabel(item.status)}</span><p class="muted">Previews: ${previewCount} · Alta calidad: ${printCount}</p>${item.client_notes ? `<div class="review-note"><strong>Observaciones de la maestra:</strong><br>${escapeHtml(item.client_notes)}</div>` : ""}${renderCatalogPicker(item)}<div class="actions"><select class="select compact-select" data-print-item-status="${item.id}">${Object.entries(PRINT_ITEM_STATUSES).map(([value, label]) => `<option value="${value}" ${value === item.status ? "selected" : ""}>${label}</option>`).join("")}</select><button class="btn" data-send-print-item="${item.id}">WhatsApp</button><button class="btn" data-copy-print-item-approval="${item.id}">Copiar aprobación</button></div></article>`;
+    return `<article class="print-item-card ${printItemClass(item.status)}"><div><strong>${escapeHtml(item.title)}</strong><span>${getPrintItemTypeLabel(item.item_type)}</span></div><span class="badge">${getPrintItemStatusLabel(item.status)}</span><p class="muted">Previews: ${previewCount} · Alta calidad: ${printCount}</p>${item.notes ? `<p><strong>Selección:</strong><br>${escapeHtml(item.notes)}</p>` : ""}${item.client_notes ? `<div class="review-note"><strong>Observaciones de la maestra:</strong><br>${escapeHtml(item.client_notes)}</div>` : ""}${renderCatalogPicker(item)}<div class="actions"><select class="select compact-select" data-print-item-status="${item.id}">${Object.entries(PRINT_ITEM_STATUSES).map(([value, label]) => `<option value="${value}" ${value === item.status ? "selected" : ""}>${label}</option>`).join("")}</select><button class="btn" data-send-print-item="${item.id}">WhatsApp</button><button class="btn" data-copy-print-item-approval="${item.id}">Copiar aprobación</button></div></article>`;
   }).join("")}</div>`;
 
   const select = document.querySelector("#r2PrintItem");
@@ -184,14 +184,15 @@ function renderPrintItems() {
 
 function renderCatalogPicker(item) {
   if (item.item_type === "DIPLOMA") {
-    const activeDiplomas = diplomaTemplates.filter((template) => template.is_active !== false);
-    if (!activeDiplomas.length) return `<div class="inline-catalog"><h4>Catálogo de diplomas</h4><p class="muted">No hay diplomas activos.</p></div>`;
-    return `<div class="inline-catalog"><h4>Catálogo de diplomas</h4><div class="inline-catalog-grid">${activeDiplomas.map((template) => `<div class="inline-catalog-option"><button class="catalog-thumb" data-open-catalog-file="diploma_templates:${template.id}" type="button"><span data-catalog-thumb="diploma_templates:${template.id}">DIP</span></button><button class="btn" data-use-diploma-template="${template.id}" data-print-item-id="${item.id}">Usar</button><span class="muted">${escapeHtml(template.name)}</span></div>`).join("")}</div></div>`;
+    const school = job.clients.school_profiles?.[0] || {};
+    const activeDiplomas = diplomaTemplates.filter((template) => template.is_active !== false && (!school.school_level || template.school_level === school.school_level));
+    if (!activeDiplomas.length) return `<div class="inline-catalog"><h4>Catálogo de diplomas</h4><p class="muted">No hay diplomas activos para este nivel escolar.</p></div>`;
+    return `<div class="inline-catalog"><h4>Catálogo que verá la maestra</h4><div class="inline-catalog-grid">${activeDiplomas.map((template) => `<div class="inline-catalog-option"><button class="catalog-thumb" data-open-catalog-file="diploma_templates:${template.id}" type="button"><span data-catalog-thumb="diploma_templates:${template.id}">DIP</span></button><span class="muted">${escapeHtml(template.name)}</span></div>`).join("")}</div></div>`;
   }
   if (item.item_type === "PHOTO_PACKAGE") {
     const schoolPackages = packageCatalogImages.filter((image) => !image.packages?.package_type || image.packages.package_type === "SCHOOL_GRADUATION" || image.packages.package_type === "GENERAL");
     if (!schoolPackages.length) return `<div class="inline-catalog"><h4>Catálogo de paquetes</h4><p class="muted">No hay imágenes de paquetes.</p></div>`;
-    return `<div class="inline-catalog"><h4>Catálogo de paquetes</h4><div class="inline-catalog-grid">${schoolPackages.map((image) => `<div class="inline-catalog-option"><button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">PKG</span></button><button class="btn" data-use-package-image="${image.id}" data-print-item-id="${item.id}">Usar</button><span class="muted">${escapeHtml(image.packages?.name || image.file_name)}</span></div>`).join("")}</div></div>`;
+    return `<div class="inline-catalog"><h4>Catálogo que verá la maestra</h4><div class="inline-catalog-grid">${schoolPackages.map((image) => `<div class="inline-catalog-option"><button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">PKG</span></button><span class="muted">${escapeHtml(image.packages?.name || image.file_name)}</span></div>`).join("")}</div></div>`;
   }
   return "";
 }
@@ -400,18 +401,36 @@ Clarisa Rojas Fotografia`;
 async function sendPrintItemWhatsapp(itemId) {
   const item = printItems.find((entry) => entry.id === itemId);
   if (!item) return;
+  const isCatalogSelection = ["DIPLOMA", "PHOTO_PACKAGE"].includes(item.item_type) && !item.selected_file_id;
   const hasPreviewFiles = r2Files.some((file) => file.print_item_id === item.id && file.file_type === "TEACHER_PREVIEW");
-  if (!hasPreviewFiles) {
+  if (!hasPreviewFiles && !isCatalogSelection) {
     showToast("Primero suba previews para esta pieza.", "error");
     return;
   }
   const phone = document.querySelector("#whatsappPhone")?.value || job.clients.phone;
   const school = job.clients.school_profiles?.[0] || {};
   const contactName = school.teacher_name || school.principal_name || job.clients.name;
-  const expiresAt = new Date(defaultR2Expiry(7)).toISOString();
-  const link = await createR2ShareLink(jobId, "TEACHER_PREVIEW", expiresAt, item.id);
-  const previewUrl = r2ShareUrl(link);
-  const message = `Hola ${contactName} 👋
+  let message = "";
+  if (isCatalogSelection) {
+    message = `Hola ${contactName} 👋
+
+Ya está listo el catálogo de ${item.item_type === "DIPLOMA" ? "diplomas" : "paquetes de fotos"} para que pueda elegir la opción que más le guste.
+
+Escuela: ${school.school_name || job.clients.name}
+Trabajo: ${job.title}
+
+Puede revisar y seleccionar aquí:
+${printItemApprovalUrl(item)}
+
+Cuando elija una opción, prepararé la versión personalizada para su escuela y se la enviaré después para revisión y autorización de impresión.
+
+Muchas gracias.
+Clarisa Rojas Fotografia`;
+  } else {
+    const expiresAt = new Date(defaultR2Expiry(7)).toISOString();
+    const link = await createR2ShareLink(jobId, "TEACHER_PREVIEW", expiresAt, item.id);
+    const previewUrl = r2ShareUrl(link);
+    message = `Hola ${contactName} 👋
 
 Ya está lista la revisión de: ${item.title}
 
@@ -426,6 +445,7 @@ Una vez autorizada esta pieza para impresión, cualquier cambio adicional solici
 
 Muchas gracias.
 Clarisa Rojas Fotografia`;
+  }
   const waMeUrl = buildWhatsAppUrl(phone, message);
   currentMessage = message;
   selectedWhatsappUrl = waMeUrl;
