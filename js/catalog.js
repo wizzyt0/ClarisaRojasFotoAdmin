@@ -59,16 +59,20 @@ export async function getCatalogFileUrl(table, fileId) {
   return `${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/catalog/${table}/${fileId}?auth=${encodeURIComponent(await sessionToken())}`;
 }
 
-export async function toggleDiplomaTemplate(templateId, isActive) {
+export async function updateDiplomaTemplate(templateId, payload) {
   const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/catalog/diploma_templates/${templateId}`, {
     method: "PATCH",
     headers: {
       authorization: `Bearer ${await sessionToken()}`,
       "content-type": "application/json"
     },
-    body: JSON.stringify({ is_active: isActive })
+    body: JSON.stringify(payload)
   });
   const result = await response.json().catch(() => null);
   if (!response.ok) throw new Error(result?.error || "No se pudo actualizar el diploma.");
   return result;
+}
+
+export async function toggleDiplomaTemplate(templateId, isActive) {
+  return updateDiplomaTemplate(templateId, { is_active: isActive });
 }

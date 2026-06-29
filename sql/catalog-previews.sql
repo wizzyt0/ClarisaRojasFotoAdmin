@@ -87,7 +87,11 @@ begin
     into result
     from diploma_templates dt
     where dt.is_active = true
-      and (dt.school_level = school_level_value or (school_level_value is null and dt.school_level is null));
+      and (
+        dt.school_level = school_level_value
+        or school_level_value is null
+        or dt.school_level is null
+      );
 
     return coalesce(result, '[]'::jsonb);
   end if;

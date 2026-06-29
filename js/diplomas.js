@@ -1,5 +1,5 @@
 import { requireAuth } from "./auth.js";
-import { getCatalogFileUrl, getDiplomaTemplates, toggleDiplomaTemplate, uploadDiplomaTemplate } from "./catalog.js";
+import { getCatalogFileUrl, getDiplomaTemplates, toggleDiplomaTemplate, updateDiplomaTemplate, uploadDiplomaTemplate } from "./catalog.js";
 import { escapeHtml, showToast } from "./utils.js";
 import { formatDateTime } from "./formatters.js";
 
@@ -11,8 +11,21 @@ const form = document.querySelector("#diplomaForm");
 const schoolLevelLabel = (value) => ({ KINDER: "Preescolar / Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[value] || "Sin nivel");
 
 function render() {
-  document.querySelector("#diplomaTemplates").innerHTML = templates.length ? `<div class="catalog-grid">${templates.map((template) => `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(template.name)}</h3><p class="muted">${schoolLevelLabel(template.school_level)} · ${escapeHtml(template.file_name)} · ${formatDateTime(template.created_at)}</p></div><span class="badge">${template.is_active ? "Activo" : "Inactivo"}</span></div><button class="catalog-preview-large" data-open-catalog-file="diploma_templates:${template.id}" type="button"><span data-catalog-thumb="diploma_templates:${template.id}">DIPLOMA</span></button><div class="actions"><button class="btn" data-open-catalog-file="diploma_templates:${template.id}">Abrir</button><button class="btn ${template.is_active ? "btn-danger" : ""}" data-toggle-diploma="${template.id}" data-active="${template.is_active ? "false" : "true"}">${template.is_active ? "Desactivar" : "Activar"}</button></div></article>`).join("")}</div>` : `<div class="empty-state">Aún no hay diplomas en el catálogo.</div>`;
+  document.querySelector("#diplomaTemplates").innerHTML = templates.length ? `
+    ${renderSection("Preescolar / Kinder", "KINDER")}
+    ${renderSection("Primaria", "PRIMARY")}
+    ${renderSection("Sin nivel asignado", "")}
+  ` : `<div class="empty-state">Aún no hay diplomas en el catálogo.</div>`;
   hydrateThumbs();
+}
+
+function renderSection(title, schoolLevel) {
+  const rows = schoolLevel ? templates.filter((template) => template.school_level === schoolLevel) : templates.filter((template) => !template.school_level || !["KINDER", "PRIMARY"].includes(template.school_level));
+  return `<section class="catalog-section"><div class="page-header"><h2>${title}</h2><span class="badge">${rows.length}</span></div>${rows.length ? `<div class="catalog-grid">${rows.map(renderTemplateCard).join("")}</div>` : `<div class="empty-state">No hay diplomas en esta sección.</div>`}</section>`;
+}
+
+function renderTemplateCard(template) {
+  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(template.name)}</h3><p class="muted">${schoolLevelLabel(template.school_level)} · ${escapeHtml(template.file_name)} · ${formatDateTime(template.created_at)}</p></div><span class="badge">${template.is_active ? "Activo" : "Inactivo"}</span></div><button class="catalog-preview-large" data-open-catalog-file="diploma_templates:${template.id}" type="button"><span data-catalog-thumb="diploma_templates:${template.id}">DIPLOMA</span></button><div class="actions"><button class="btn" data-open-catalog-file="diploma_templates:${template.id}">Abrir</button><button class="btn" data-set-level="${template.id}" data-level="KINDER">Mover a preescolar</button><button class="btn" data-set-level="${template.id}" data-level="PRIMARY">Mover a primaria</button><button class="btn ${template.is_active ? "btn-danger" : ""}" data-toggle-diploma="${template.id}" data-active="${template.is_active ? "false" : "true"}">${template.is_active ? "Desactivar" : "Activar"}</button></div></article>`;
 }
 
 async function hydrateThumbs() {
@@ -44,6 +57,11 @@ document.addEventListener("click", async (event) => {
   if (event.target.dataset.toggleDiploma) {
     await toggleDiplomaTemplate(event.target.dataset.toggleDiploma, event.target.dataset.active === "true");
     showToast("Diploma actualizado.");
+    await load();
+  }
+  if (event.target.dataset.setLevel) {
+    await updateDiplomaTemplate(event.target.dataset.setLevel, { school_level: event.target.dataset.level });
+    showToast("Diploma movido de sección.");
     await load();
   }
 });

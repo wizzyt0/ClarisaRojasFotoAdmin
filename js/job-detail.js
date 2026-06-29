@@ -412,6 +412,9 @@ async function sendPrintItemWhatsapp(itemId) {
   const contactName = school.teacher_name || school.principal_name || job.clients.name;
   let message = "";
   if (isCatalogSelection) {
+    const followUpText = item.item_type === "PHOTO_PACKAGE"
+      ? "Cuando elija el paquete y nos indique la cantidad, quedará registrada su selección para calcular el total de paquetes de la escuela."
+      : "Cuando elija una opción, prepararé la versión personalizada para su escuela y se la enviaré después para revisión.";
     message = `Hola ${contactName} 👋
 
 Ya está listo el catálogo de ${item.item_type === "DIPLOMA" ? "diplomas" : "paquetes de fotos"} para que pueda elegir la opción que más le guste.
@@ -422,7 +425,7 @@ Trabajo: ${job.title}
 Puede revisar y seleccionar aquí:
 ${printItemApprovalUrl(item)}
 
-Cuando elija una opción, prepararé la versión personalizada para su escuela y se la enviaré después para revisión y autorización de impresión.
+${followUpText}
 
 Muchas gracias.
 Clarisa Rojas Fotografia`;

@@ -267,7 +267,14 @@ async function handleAdminGetCatalogFile(request, env, table, fileId) {
 async function handleToggleDiplomaTemplate(request, env, fileId) {
   await requireAdmin(request, env);
   const body = await request.json().catch(() => ({}));
-  const row = await supabaseUpdate(env, "diploma_templates", fileId, { is_active: Boolean(body.is_active) });
+  const payload = {};
+  if (Object.hasOwn(body, "is_active")) payload.is_active = Boolean(body.is_active);
+  if (Object.hasOwn(body, "school_level")) {
+    if (!["KINDER", "PRIMARY", "SECONDARY"].includes(body.school_level)) return jsonError("Nivel escolar inválido.", 400);
+    payload.school_level = body.school_level;
+  }
+  if (!Object.keys(payload).length) return jsonError("No hay cambios para guardar.", 400);
+  const row = await supabaseUpdate(env, "diploma_templates", fileId, payload);
   return new Response(JSON.stringify({ ok: true, file: row }), {
     headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
   });

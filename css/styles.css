@@ -197,6 +197,8 @@ label { font-weight: 650; }
 .file-meta strong, .file-meta span { overflow-wrap: anywhere; }
 .file-meta span { color: var(--muted); font-size: 0.86rem; }
 .catalog-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.catalog-section { display: grid; gap: 12px; margin-bottom: 24px; }
+.catalog-section .page-header { margin-bottom: 0; }
 .catalog-card {
   display: grid;
   gap: 12px;
