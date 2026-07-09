@@ -10,6 +10,7 @@ const content = document.querySelector("#approvalContent");
 let approvalData = null;
 let printItemData = null;
 let catalogOptions = [];
+let pendingCatalogSelection = null;
 
 function galleryButton(gallery) {
   return `<button class="btn btn-secondary" data-open-url="${escapeHtml(gallery.google_photos_url)}">Ver ${getGalleryTypeLabel(gallery.gallery_type).toLowerCase()}</button>`;
@@ -108,8 +109,44 @@ function renderCatalogSelection() {
     <h1 class="approval-title">${title}</h1>
     <p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p>
     <div class="catalog-grid">${catalogOptions.length ? catalogOptions.map((option) => `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(catalogFileUrl(option))}" type="button"><span><img src="${escapeHtml(catalogFileUrl(option))}" alt="${escapeHtml(option.name)}"></span></button><div><h3>${escapeHtml(option.name)}</h3>${option.price != null ? `<p class="muted">${formatMoney(option.price)}</p>` : ""}${option.description ? `<p>${escapeHtml(option.description)}</p>` : ""}</div><button class="btn btn-primary" data-select-catalog="${option.table}:${option.id}">Elegir esta opción</button></article>`).join("") : `<div class="empty-state">No hay opciones disponibles para este catálogo.</div>`}</div>
-    ${item.item_type === "PHOTO_PACKAGE" ? `<div class="form-group"><label>Cantidad de paquetes</label><input id="catalogPackageQuantity" class="input" type="number" min="1" step="1" value="1" required></div>` : ""}
-    <div class="form-group"><label>${notesLabel}</label><textarea id="catalogClientNotes" class="textarea" placeholder="${notesPlaceholder}"></textarea></div>`;
+    <div class="form-group"><label>${notesLabel}</label><textarea id="catalogClientNotes" class="textarea" placeholder="${notesPlaceholder}"></textarea></div>
+    ${item.item_type === "PHOTO_PACKAGE" ? renderPackageQuantityDialog() : ""}`;
+}
+
+function renderPackageQuantityDialog() {
+  const quantityOptions = Array.from({ length: 99 }, (_, index) => {
+    const value = index + 1;
+    return `<option value="${value}">${value}</option>`;
+  }).join("");
+  return `<div id="packageQuantityDialog" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content compact-modal">
+      <div class="page-header"><h2>Cantidad de paquetes</h2><button class="btn" data-cancel-package-selection type="button">Cerrar</button></div>
+      <p class="muted">Seleccione cuántos paquetes necesita para este grupo.</p>
+      <div class="form-group"><label>Cantidad</label><select id="catalogPackageQuantity" class="select">${quantityOptions}</select></div>
+      <div class="actions"><button class="btn btn-primary" data-confirm-package-selection type="button">Continuar</button><button class="btn" data-cancel-package-selection type="button">Cancelar</button></div>
+    </div>
+  </div>`;
+}
+
+function selectedCatalogOption(optionId) {
+  return catalogOptions.find((option) => option.id === optionId);
+}
+
+async function saveCatalogSelection(optionTable, optionId, packageQuantity = null) {
+  const notes = document.querySelector("#catalogClientNotes")?.value || "";
+  const { data, error } = await supabase.rpc("select_catalog_option_by_token", {
+    token: itemToken,
+    option_table: optionTable,
+    option_id: optionId,
+    client_notes: notes,
+    package_quantity: packageQuantity
+  });
+  if (error || !data?.ok) {
+    console.error(error || data);
+    showToast(data?.message || "No se pudo guardar la selección.", "error");
+    return;
+  }
+  content.innerHTML = `<div class="alert alert-success"><h1>Selección guardada.</h1><p>Gracias. Clarisa recibirá su selección para continuar con el pedido.</p><p><strong>Selección:</strong> ${escapeHtml(data.selected_name || "")}</p>${data.package_quantity ? `<p><strong>Cantidad:</strong> ${data.package_quantity}<br><strong>Total:</strong> ${formatMoney(data.price || 0)}</p>` : ""}</div>`;
 }
 
 async function load() {
@@ -150,28 +187,33 @@ document.addEventListener("click", (event) => {
 document.addEventListener("click", async (event) => {
   if (!event.target.dataset.selectCatalog) return;
   const [optionTable, optionId] = event.target.dataset.selectCatalog.split(":");
-  const notes = document.querySelector("#catalogClientNotes")?.value || "";
-  const quantityInput = document.querySelector("#catalogPackageQuantity");
-  const packageQuantity = quantityInput ? Number(quantityInput.value || 0) : null;
-  if (quantityInput && packageQuantity < 1) {
-    showToast("Indique cuántos paquetes necesita.", "error");
+  if (optionTable === "package_images") {
+    pendingCatalogSelection = { optionTable, optionId };
+    document.querySelector("#catalogPackageQuantity").value = "1";
+    document.querySelector("#packageQuantityDialog").classList.remove("hidden");
     return;
   }
   const confirmed = confirm("¿Confirmar esta selección?");
   if (!confirmed) return;
-  const { data, error } = await supabase.rpc("select_catalog_option_by_token", {
-    token: itemToken,
-    option_table: optionTable,
-    option_id: optionId,
-    client_notes: notes,
-    package_quantity: packageQuantity
-  });
-  if (error || !data?.ok) {
-    console.error(error || data);
-    showToast(data?.message || "No se pudo guardar la selección.", "error");
+  await saveCatalogSelection(optionTable, optionId);
+});
+
+document.addEventListener("click", async (event) => {
+  if (event.target.dataset.cancelPackageSelection !== undefined) {
+    pendingCatalogSelection = null;
+    document.querySelector("#packageQuantityDialog")?.classList.add("hidden");
     return;
   }
-  content.innerHTML = `<div class="alert alert-success"><h1>Selección guardada.</h1><p>Gracias. Clarisa recibirá su selección para continuar con el pedido.</p><p><strong>Selección:</strong> ${escapeHtml(data.selected_name || "")}</p>${data.package_quantity ? `<p><strong>Cantidad:</strong> ${data.package_quantity}<br><strong>Total:</strong> ${formatMoney(data.price || 0)}</p>` : ""}</div>`;
+  if (event.target.dataset.confirmPackageSelection === undefined || !pendingCatalogSelection) return;
+  const packageQuantity = Number(document.querySelector("#catalogPackageQuantity")?.value || 0);
+  const option = selectedCatalogOption(pendingCatalogSelection.optionId);
+  const optionName = option?.name || "este paquete";
+  const confirmed = confirm(`¿Confirmar ${packageQuantity} paquete${packageQuantity === 1 ? "" : "s"} de "${optionName}"?`);
+  if (!confirmed) return;
+  const selection = pendingCatalogSelection;
+  pendingCatalogSelection = null;
+  document.querySelector("#packageQuantityDialog")?.classList.add("hidden");
+  await saveCatalogSelection(selection.optionTable, selection.optionId, packageQuantity);
 });
 
 document.addEventListener("submit", async (event) => {
