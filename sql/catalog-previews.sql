@@ -266,7 +266,7 @@ begin
 
       update jobs
       set price = coalesce((select sum(price) from school_groups where job_id = item.job_id), 0),
-          package_quantity = coalesce((select sum(package_quantity) from school_groups where job_id = item.job_id), 0)
+          package_quantity = coalesce((select sum(sg.package_quantity) from school_groups sg where sg.job_id = item.job_id), 0)
       where id = item.job_id;
     else
       update jobs

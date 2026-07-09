@@ -1,7 +1,11 @@
 import { supabase } from "./supabase.js";
 
 export async function getDepositsByJob(jobId) {
-  const { data, error } = await supabase.from("deposits").select("*").eq("job_id", jobId).order("deposit_date", { ascending: false });
+  const { data, error } = await supabase
+    .from("deposits")
+    .select("*, school_groups(group_name, teacher_name)")
+    .eq("job_id", jobId)
+    .order("deposit_date", { ascending: false });
   if (error) throw error;
   return data || [];
 }

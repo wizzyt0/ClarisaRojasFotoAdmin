@@ -135,10 +135,11 @@ a { color: var(--primary); text-decoration: none; }
   width: 30px;
   height: 30px;
   border-radius: 999px;
-  background: var(--primary);
+  background: #173f42;
   color: white;
   font-weight: 800;
   flex: 0 0 auto;
+  box-shadow: 0 0 0 3px #e6f3f0;
 }
 .group-list { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .group-card {
@@ -163,10 +164,51 @@ a { color: var(--primary); text-decoration: none; }
   padding: 14px;
   background: #fbfcfd;
 }
-.group-workflow-header { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.group-workflow-header { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
 .group-workflow-header h3 { margin: 0; }
 .group-total { display: grid; gap: 2px; text-align: right; }
 .group-total span { color: var(--muted); font-size: 0.88rem; }
+.group-finance-strip {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(5, minmax(96px, 1fr));
+  min-width: min(720px, 100%);
+}
+.group-finance-strip > div {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: white;
+  padding: 8px 10px;
+}
+.group-finance-strip span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+.group-finance-strip strong {
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.25;
+}
+.deposit-summary {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-bottom: 14px;
+}
+.deposit-summary > div {
+  display: grid;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-muted);
+  padding: 10px 12px;
+}
+.deposit-summary span { color: var(--muted); font-size: 0.82rem; }
+.deposit-summary strong { font-size: 1.15rem; }
 .job-group-summary { display: grid; gap: 8px; margin-top: 8px; min-width: 220px; }
 .job-group-summary > div { border-top: 1px solid var(--border); padding-top: 8px; }
 .selected-visual { display: grid; gap: 8px; }
@@ -323,4 +365,6 @@ label { font-weight: 650; }
   .main { padding: 18px; }
   .page-header { align-items: stretch; flex-direction: column; }
   .filters { grid-template-columns: 1fr; }
+  .group-workflow-header { flex-direction: column; }
+  .group-finance-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

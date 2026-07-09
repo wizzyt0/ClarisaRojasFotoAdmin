@@ -103,6 +103,8 @@ async function ensureGroupPrintItems() {
 function render() {
   const totals = calculateTotals(job.price, deposits);
   const school = job.clients.school_profiles?.[0] || {};
+  const groupPackageTotal = schoolGroups.reduce((sum, group) => sum + Number(group.package_quantity || 0), 0);
+  const packageTotal = groupPackageTotal || Number(job.package_quantity || 0);
   document.querySelector("#jobTitle").textContent = job.title;
   document.querySelector("#summaryCard").innerHTML = `
     <div class="page-header"><h2>Resumen</h2><div class="actions"><select id="statusSelect" class="select">${Object.entries(JOB_STATUSES).map(([value, label]) => `<option value="${value}" ${value === job.status ? "selected" : ""}>${label}</option>`).join("")}</select><button id="saveStatusBtn" class="btn">Cambiar estado</button><button id="regenerateTokenBtn" class="btn">Regenerar token</button><button id="revokeTokenBtn" class="btn btn-danger">Revocar token</button></div></div>
@@ -113,7 +115,7 @@ function render() {
       <p><strong>Fecha evento:</strong><br>${formatDate(job.event_date)}</p>
       <p><strong>Fecha entrega:</strong><br>${formatDate(job.delivery_date)}</p>
       <p><strong>Paquetes:</strong><br>${schoolGroups.length ? "Por grupo" : escapeHtml(job.packages?.name || "Pendiente de selección")}</p>
-      <p><strong>Cantidad total:</strong><br>${Number(job.package_quantity || 0) > 0 ? job.package_quantity : "Pendiente"}</p>
+      <p><strong>Cantidad total:</strong><br>${packageTotal > 0 ? `${packageTotal} paquetes` : "Pendiente"}</p>
       <p><strong>Precio:</strong><br>${formatMoney(job.price)}</p>
       <p><strong>Total abonado:</strong><br>${formatMoney(totals.totalDeposited)}</p>
       <p><strong>Pendiente:</strong><br>${formatMoney(totals.remainingBalance)}</p>
@@ -187,7 +189,7 @@ function renderPrintItems() {
     const items = printItems
       .filter((item) => (group.id ? item.group_id === group.id : !item.group_id))
       .sort((a, b) => printItemStep(a.item_type).number - printItemStep(b.item_type).number);
-    return `<section class="group-workflow"><div class="group-workflow-header"><div><h3>${escapeHtml(group.group_name)}</h3><p class="muted">${escapeHtml(group.teacher_name || "Sin maestra")}${group.teacher_phone ? ` · WhatsApp ${escapeHtml(group.teacher_phone)}` : ""}</p></div><div class="group-total"><span>${escapeHtml(group.packages?.name || "Paquete pendiente")}</span><strong>${formatMoney(group.price || 0)}</strong></div></div><div class="print-item-grid">${items.map(renderPrintItemCard).join("")}</div></section>`;
+    return `<section class="group-workflow"><div class="group-workflow-header"><div><h3>${escapeHtml(group.group_name)}</h3><p class="muted">${escapeHtml(group.teacher_name || "Sin maestra")}${group.teacher_phone ? ` · WhatsApp ${escapeHtml(group.teacher_phone)}` : ""}</p></div>${renderGroupFinancialSummary(group)}</div><div class="print-item-grid">${items.map(renderPrintItemCard).join("")}</div></section>`;
   }).join("")}`;
 
   const select = document.querySelector("#r2PrintItem");
@@ -201,6 +203,21 @@ function renderPrintItems() {
   hydrateCatalogThumbs();
   hydrateR2Thumbnails();
   setupItemDropzones();
+}
+
+function renderGroupFinancialSummary(group) {
+  const groupPrice = Number(group.price || 0);
+  const groupDeposits = deposits
+    .filter((deposit) => deposit.group_id === group.id)
+    .reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
+  const pending = Math.max(groupPrice - groupDeposits, 0);
+  return `<div class="group-finance-strip">
+    <div><span>Paquete</span><strong>${escapeHtml(group.packages?.name || "Pendiente")}</strong></div>
+    <div><span>Cantidad</span><strong>${Number(group.package_quantity || 0) > 0 ? `${group.package_quantity}` : "Pendiente"}</strong></div>
+    <div><span>Total</span><strong>${formatMoney(groupPrice)}</strong></div>
+    <div><span>Abonos maestra</span><strong>${formatMoney(groupDeposits)}</strong></div>
+    <div><span>Pendiente</span><strong>${formatMoney(pending)}</strong></div>
+  </div>`;
 }
 
 function renderPrintItemCard(item) {
@@ -534,7 +551,13 @@ Clarisa Rojas Fotografia`;
 }
 
 function renderDeposits() {
-  document.querySelector("#depositsList").innerHTML = deposits.length ? `<table class="table"><thead><tr><th>Fecha</th><th>Monto</th><th>Nota</th><th>Acciones</th></tr></thead><tbody>${deposits.map((deposit) => `<tr><td>${formatDate(deposit.deposit_date)}</td><td>${formatMoney(deposit.amount)}</td><td>${escapeHtml(deposit.notes)}</td><td><button class="btn btn-danger" data-delete-deposit="${deposit.id}">Eliminar</button></td></tr>`).join("")}</tbody></table>` : `<div class="empty-state">No hay abonos registrados.</div>`;
+  const generalDeposits = deposits.filter((deposit) => !deposit.group_id).reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
+  const teacherDeposits = deposits.filter((deposit) => deposit.group_id).reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
+  const summary = `<div class="deposit-summary"><div><span>Abonos generales</span><strong>${formatMoney(generalDeposits)}</strong></div><div><span>Abonos por maestra</span><strong>${formatMoney(teacherDeposits)}</strong></div><div><span>Total abonado</span><strong>${formatMoney(generalDeposits + teacherDeposits)}</strong></div></div>`;
+  document.querySelector("#depositsList").innerHTML = deposits.length ? `${summary}<table class="table"><thead><tr><th>Fecha</th><th>Asignado a</th><th>Monto</th><th>Nota</th><th>Acciones</th></tr></thead><tbody>${deposits.map((deposit) => {
+    const assignee = deposit.group_id ? `${deposit.school_groups?.group_name || "Grupo"}${deposit.school_groups?.teacher_name ? ` · ${deposit.school_groups.teacher_name}` : ""}` : "General del trabajo";
+    return `<tr><td>${formatDate(deposit.deposit_date)}</td><td>${escapeHtml(assignee)}</td><td>${formatMoney(deposit.amount)}</td><td>${escapeHtml(deposit.notes)}</td><td><button class="btn btn-danger" data-delete-deposit="${deposit.id}">Eliminar</button></td></tr>`;
+  }).join("")}</tbody></table>` : `<div class="empty-state">No hay abonos registrados.</div>`;
 }
 
 function renderApproval() {
@@ -556,7 +579,8 @@ function openGalleryForm() {
 
 function openDepositForm() {
   document.querySelector("#detailModalTitle").textContent = "Agregar abono";
-  form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Monto abonado</label><input class="input" type="number" min="0.01" step="0.01" name="amount" required></div><div class="form-group"><label>Fecha del abono</label><input class="input" type="date" name="deposit_date" value="${today()}" required></div></div><div class="form-group"><label>Nota</label><textarea class="textarea" name="notes"></textarea></div><input type="hidden" name="form_type" value="deposit"><button class="btn btn-primary" type="submit">Guardar abono</button>`;
+  const groupOptions = schoolGroups.map((group) => `<option value="${group.id}">${escapeHtml(group.group_name)}${group.teacher_name ? ` · ${escapeHtml(group.teacher_name)}` : ""}</option>`).join("");
+  form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Asignar abono a</label><select class="select" name="group_id"><option value="">General del trabajo</option>${groupOptions}</select></div><div class="form-group"><label>Monto abonado</label><input class="input" type="number" min="0.01" step="0.01" name="amount" required></div><div class="form-group"><label>Fecha del abono</label><input class="input" type="date" name="deposit_date" value="${today()}" required></div></div><div class="form-group"><label>Nota</label><textarea class="textarea" name="notes"></textarea></div><input type="hidden" name="form_type" value="deposit"><button class="btn btn-primary" type="submit">Guardar abono</button>`;
   modal.classList.remove("hidden");
 }
 
@@ -639,7 +663,7 @@ form.addEventListener("submit", async (event) => {
   const data = formToObject(form);
   try {
     if (data.form_type === "gallery") await createGallery(jobId, { title: data.title, gallery_type: data.gallery_type, google_photos_url: data.google_photos_url, notes: data.notes || null, is_active: true });
-    if (data.form_type === "deposit") await createDeposit(jobId, { amount: Number(data.amount), deposit_date: data.deposit_date, notes: data.notes || null });
+    if (data.form_type === "deposit") await createDeposit(jobId, { group_id: data.group_id || null, amount: Number(data.amount), deposit_date: data.deposit_date, notes: data.notes || null });
     if (data.form_type === "school_group") {
       const payload = {
         group_name: data.group_name.trim(),
