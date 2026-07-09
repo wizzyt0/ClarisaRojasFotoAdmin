@@ -26,6 +26,9 @@ create table school_profiles (
   client_id uuid not null references clients(id) on delete cascade,
   school_name text not null,
   school_level text check (school_level is null or school_level in ('KINDER', 'PRIMARY', 'SECONDARY')),
+  contact_name text,
+  contact_phone text,
+  contact_email text,
   teacher_name text,
   teacher_phone text,
   principal_name text,
@@ -43,7 +46,7 @@ create table school_profiles (
 create table packages (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  package_type text not null check (package_type in ('PHOTO_SESSION', 'SCHOOL_GRADUATION', 'GENERAL')),
+  package_type text not null check (package_type in ('PHOTO_SESSION', 'SCHOOL_GRADUATION', 'SCHOOL_MEMORY', 'SCHOOL_CHRISTMAS', 'GENERAL')),
   description text,
   price numeric(12,2) not null default 0 check (price >= 0),
   is_active boolean default true,

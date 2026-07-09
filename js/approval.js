@@ -82,7 +82,7 @@ function renderPrintItemApproval() {
       <p><strong>Tipo:</strong><br>${escapeHtml(printItemTypeLabel(item.item_type))}</p>
       <p><strong>Cliente/Escuela:</strong><br>${escapeHtml(school?.school_name || client.name)}</p>
       <p><strong>Grupo:</strong><br>${escapeHtml(group?.group_name || school?.grade_or_class || "")}</p>
-      <p><strong>Contacto:</strong><br>${escapeHtml(group?.teacher_name || school?.teacher_name || school?.principal_name || client.name)}</p>
+      <p><strong>Contacto:</strong><br>${escapeHtml(group?.teacher_name || school?.contact_name || school?.teacher_name || school?.principal_name || client.name)}</p>
     </div>
     <div class="alert alert-warning"><strong>IMPORTANTE:</strong><br>Una vez aprobada esta pieza para impresión, cualquier cambio adicional solicitado después de la aprobación tendrá un costo extra. Por favor revise cuidadosamente antes de aprobar.</div>
     <form id="printItemApprovalForm">

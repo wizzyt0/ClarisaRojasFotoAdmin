@@ -121,6 +121,9 @@ begin
       when sp.id is null then null
       else jsonb_build_object(
         'school_name', sp.school_name,
+        'contact_name', sp.contact_name,
+        'contact_phone', sp.contact_phone,
+        'contact_email', sp.contact_email,
         'teacher_name', sp.teacher_name,
         'principal_name', sp.principal_name,
         'grade_or_class', sp.grade_or_class

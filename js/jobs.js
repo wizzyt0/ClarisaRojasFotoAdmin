@@ -1,6 +1,6 @@
 import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
-import { JOB_STATUSES, JOB_TYPES, getJobStatusLabel, getJobTypeLabel } from "./constants.js";
+import { JOB_STATUSES, JOB_TYPES, SCHOOL_EVENT_PACKAGE_TYPES, SCHOOL_EVENT_TYPES, getJobStatusLabel, getJobTypeLabel, getSchoolEventTypeLabel } from "./constants.js";
 import { calculateJobPrice, escapeHtml, formToObject, generateToken, getQueryParam, showToast, today, openInNewTab } from "./utils.js";
 import { generateAndLogWhatsAppMessage } from "./whatsapp.js";
 import { formatDate, formatMoney } from "./formatters.js";
@@ -23,10 +23,11 @@ function renderForm(job = {}) {
       <div class="form-group"><label>Cliente</label><select class="select" name="client_id" required><option value="">Seleccione</option>${clients.map((client) => `<option value="${client.id}" data-type="${client.client_type}" ${client.id === job.client_id ? "selected" : ""}>${escapeHtml(client.name)}</option>`).join("")}</select></div>
       <div class="form-group"><label>Tipo de trabajo</label><select class="select" name="job_type" required>${Object.entries(JOB_TYPES).map(([value, label]) => `<option value="${value}" ${value === (job.job_type || "PHOTO_SESSION") ? "selected" : ""}>${label}</option>`).join("")}</select></div>
       <div class="form-group"><label>Título</label><input class="input" name="title" required value="${escapeHtml(job.title)}"></div>
-      <div class="form-group"><label>Tipo de evento</label><input class="input" name="event_type" value="${escapeHtml(job.event_type)}"></div>
+      <div class="form-group" id="schoolEventField"><label>Evento escolar</label><select class="select" name="event_type"><option value="">Seleccione</option>${Object.entries(SCHOOL_EVENT_TYPES).map(([value, label]) => `<option value="${value}" ${value === job.event_type ? "selected" : ""}>${label}</option>`).join("")}</select></div>
+      <div class="form-group" id="privateEventField"><label>Tipo de evento</label><input class="input" name="private_event_type" value="${escapeHtml(job.job_type === "PHOTO_SESSION" ? job.event_type : "")}"></div>
       <div class="form-group"><label>Fecha del evento</label><input class="input" type="date" name="event_date" value="${escapeHtml(job.event_date)}"></div>
       <div class="form-group"><label>Fecha de entrega</label><input class="input" type="date" name="delivery_date" value="${escapeHtml(job.delivery_date)}"></div>
-      <div class="form-group"><label>Paquete</label><select class="select" name="package_id"><option value="">Pendiente de selección</option>${packages.map((pkg) => `<option value="${pkg.id}" data-price="${pkg.price}" ${pkg.id === job.package_id ? "selected" : ""}>${escapeHtml(pkg.name)} - ${formatMoney(pkg.price)}</option>`).join("")}</select><span class="muted">En graduaciones escolares normalmente se rellena cuando la maestra elige del catálogo.</span></div>
+      <div class="form-group"><label>Paquete inicial</label><select class="select" name="package_id"></select><span class="muted">En escuelas puede quedar pendiente; cada maestra podrá elegir por grupo.</span></div>
       <div class="form-group"><label>Cantidad de paquetes</label><input class="input" type="number" min="0" name="package_quantity" value="${job.package_quantity ?? 0}"></div>
       <div class="form-group"><label>Precio total</label><input class="input" type="number" min="0" step="0.01" name="price" value="${job.price ?? 0}"></div>
       <div class="form-group"><label>Estado</label><select class="select" name="status">${Object.entries(JOB_STATUSES).map(([value, label]) => `<option value="${value}" ${value === (job.status || "CREATED") ? "selected" : ""}>${label}</option>`).join("")}</select></div>
@@ -49,14 +50,43 @@ function renderForm(job = {}) {
     const packagePrice = Number(packageOption?.dataset.price || 0);
     if (packagePrice && Number(form.package_quantity.value || 0) > 0) form.price.value = calculateJobPrice(packagePrice, form.package_quantity.value, form.job_type.value);
   };
+  const filteredPackages = () => {
+    const schoolPackageType = SCHOOL_EVENT_PACKAGE_TYPES[form.event_type.value];
+    const allowed = form.job_type.value === "SCHOOL_GRADUATION"
+      ? packages.filter((pkg) => !schoolPackageType || pkg.package_type === schoolPackageType || pkg.package_type === "GENERAL")
+      : packages.filter((pkg) => pkg.package_type === "PHOTO_SESSION" || pkg.package_type === "GENERAL");
+    return allowed;
+  };
+  const refreshPackageOptions = () => {
+    const current = form.package_id.value || job.package_id || "";
+    form.package_id.innerHTML = `<option value="">Pendiente de selección</option>${filteredPackages().map((pkg) => `<option value="${pkg.id}" data-price="${pkg.price}" ${pkg.id === current ? "selected" : ""}>${escapeHtml(pkg.name)} - ${formatMoney(pkg.price)}</option>`).join("")}`;
+  };
+  const refreshTitle = () => {
+    if (editingJob || form.title.value.trim()) return;
+    const clientName = form.client_id.selectedOptions[0]?.textContent?.trim() || "";
+    const eventLabel = form.job_type.value === "SCHOOL_GRADUATION" ? getSchoolEventTypeLabel(form.event_type.value) : form.private_event_type.value.trim();
+    const year = new Date().getFullYear();
+    if (clientName && eventLabel) form.title.value = `${clientName} - ${eventLabel} - ${year}`;
+  };
+  const toggleEventFields = () => {
+    const isSchool = form.job_type.value === "SCHOOL_GRADUATION";
+    document.querySelector("#schoolEventField").classList.toggle("hidden", !isSchool);
+    document.querySelector("#privateEventField").classList.toggle("hidden", isSchool);
+    refreshPackageOptions();
+    refreshTitle();
+  };
   form.client_id.addEventListener("change", () => {
     const type = form.client_id.selectedOptions[0]?.dataset.type;
     if (type) form.job_type.value = type;
+    toggleEventFields();
     updatePrice();
   });
   form.package_id.addEventListener("change", updatePrice);
   form.package_quantity.addEventListener("input", updatePrice);
-  form.job_type.addEventListener("change", updatePrice);
+  form.job_type.addEventListener("change", () => { toggleEventFields(); updatePrice(); });
+  form.event_type.addEventListener("change", () => { refreshPackageOptions(); refreshTitle(); updatePrice(); });
+  form.private_event_type.addEventListener("input", refreshTitle);
+  toggleEventFields();
   updatePrice();
 }
 
@@ -68,16 +98,23 @@ function render() {
     const text = `${job.title} ${job.clients?.name || ""}`.toLowerCase();
     return (!search || text.includes(search)) && (!type || job.job_type === type) && (!status || job.status === status);
   });
-  document.querySelector("#jobsTable").innerHTML = rows.length ? `<table class="table"><thead><tr><th>Trabajo</th><th>Cliente/Escuela</th><th>Tipo</th><th>Estado</th><th>Paquete</th><th>Cantidad</th><th>Precio</th><th>Abonado</th><th>Pendiente</th><th>Entrega</th><th>Acciones</th></tr></thead><tbody>${rows.map((job) => {
+  document.querySelector("#jobsTable").innerHTML = rows.length ? `<table class="table"><thead><tr><th>Trabajo</th><th>Cliente/Escuela</th><th>Tipo</th><th>Estado</th><th>Grupos/Paquete</th><th>Precio</th><th>Abonado</th><th>Pendiente</th><th>Entrega</th><th>Acciones</th></tr></thead><tbody>${rows.map((job) => {
     const total = (job.deposits || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
     const pending = Math.max(Number(job.price || 0) - total, 0);
-    return `<tr><td>${escapeHtml(job.title)}</td><td>${escapeHtml(job.clients?.name)}</td><td>${getJobTypeLabel(job.job_type)}</td><td><span class="badge badge-status ${job.status}">${getJobStatusLabel(job.status)}</span></td><td>${escapeHtml(job.packages?.name || "Pendiente")}</td><td>${Number(job.package_quantity || 0) > 0 ? job.package_quantity : "Pendiente"}</td><td>${formatMoney(job.price)}</td><td>${formatMoney(total)}</td><td>${formatMoney(pending)}</td><td>${formatDate(job.delivery_date)}</td><td class="actions"><a class="btn" href="job-detail.html?id=${job.id}">Abrir</a><button class="btn" data-edit="${job.id}">Editar</button><button class="btn btn-danger" data-delete-job="${job.id}">Eliminar</button></td></tr>`;
+    const groupSummary = renderJobGroups(job);
+    return `<tr><td>${escapeHtml(job.title)}<br><span class="muted">${job.job_type === "SCHOOL_GRADUATION" ? getSchoolEventTypeLabel(job.event_type) : escapeHtml(job.event_type || "")}</span></td><td>${escapeHtml(job.clients?.name)}</td><td>${getJobTypeLabel(job.job_type)}</td><td><span class="badge badge-status ${job.status}">${getJobStatusLabel(job.status)}</span></td><td>${groupSummary}</td><td>${formatMoney(job.price)}</td><td>${formatMoney(total)}</td><td>${formatMoney(pending)}</td><td>${formatDate(job.delivery_date)}</td><td class="actions"><a class="btn" href="job-detail.html?id=${job.id}">Abrir</a><button class="btn" data-edit="${job.id}">Editar</button><button class="btn btn-danger" data-delete-job="${job.id}">Eliminar</button></td></tr>`;
   }).join("")}</tbody></table>` : `<div class="empty-state">No hay trabajos para mostrar.</div>`;
+}
+
+function renderJobGroups(job) {
+  const groups = job.school_groups || [];
+  if (!groups.length) return `${escapeHtml(job.packages?.name || "Pendiente")} · ${Number(job.package_quantity || 0) > 0 ? job.package_quantity : "Pendiente"}`;
+  return `<details><summary>${groups.length} grupo${groups.length === 1 ? "" : "s"}</summary><div class="job-group-summary">${groups.map((group) => `<div><strong>${escapeHtml(group.group_name)}</strong><br><span class="muted">${escapeHtml(group.teacher_name || "Sin maestra")} · ${escapeHtml(group.packages?.name || "Paquete pendiente")} · ${Number(group.package_quantity || 0) > 0 ? `${group.package_quantity} paquetes` : "Cantidad pendiente"}</span></div>`).join("")}</div></details>`;
 }
 
 async function load() {
   const [{ data: jobsData, error }, { data: clientsData }, { data: packagesData }] = await Promise.all([
-    supabase.from("jobs").select("*, clients(name, is_active), packages(name), deposits(amount, deposit_date, notes, created_at), galleries(id, is_active, google_photos_url)").order("created_at", { ascending: false }),
+    supabase.from("jobs").select("*, clients(name, is_active), packages(name), school_groups(*, packages(name, price)), deposits(amount, deposit_date, notes, created_at), galleries(id, is_active, google_photos_url)").order("created_at", { ascending: false }),
     supabase.from("clients").select("*").eq("is_active", true).order("name"),
     supabase.from("packages").select("*").eq("is_active", true).order("name")
   ]);
@@ -97,6 +134,7 @@ async function load() {
     openModal({
       client_id: clientParam,
       job_type: client?.client_type || "SCHOOL_GRADUATION",
+      event_type: client?.client_type === "SCHOOL_GRADUATION" ? "GRADUATION" : "",
       status: "CREATED",
       package_quantity: 0,
       price: 0
@@ -114,6 +152,7 @@ function openModal(job = null) {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = formToObject(form);
+  if (data.job_type === "SCHOOL_GRADUATION" && !data.event_type) return showToast("Seleccione el evento escolar.", "error");
   if (Number(data.package_quantity || 0) < 0 || Number(data.price || 0) < 0) return showToast("Revise cantidad y precio.", "error");
   let galleryUrl = "";
   const hasActiveGallery = (editingJob?.galleries || []).some((gallery) => gallery.is_active && gallery.google_photos_url);
@@ -129,10 +168,10 @@ form.addEventListener("submit", async (event) => {
     package_id: data.package_id || null,
     job_type: data.job_type,
     title: data.title.trim(),
-    event_type: data.event_type || null,
     event_date: data.event_date || null,
     delivery_date: data.delivery_date || null,
     status: data.status || "CREATED",
+    event_type: data.job_type === "SCHOOL_GRADUATION" ? data.event_type || null : data.private_event_type || null,
     price: Number(data.price || 0),
     package_quantity: Number(data.package_quantity || 0),
     notes: data.notes || null

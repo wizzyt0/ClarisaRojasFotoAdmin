@@ -27,9 +27,9 @@ function renderForm(client = {}, profile = {}) {
   form.innerHTML = `
     <div class="form-grid">
       <div class="form-group"><label>Tipo de cliente</label><select class="select" name="client_type" required>${options(CLIENT_TYPES, client.client_type)}</select></div>
-      <div class="form-group"><label>Nombre</label><input class="input" name="name" required value="${escapeHtml(client.name)}"></div>
-      <div class="form-group"><label>Teléfono principal</label><input class="input" name="phone" required value="${escapeHtml(client.phone)}"></div>
-      <div class="form-group"><label>Email</label><input class="input" type="email" name="email" value="${escapeHtml(client.email)}"></div>
+      <div class="form-group client-field"><label>Nombre</label><input class="input" name="name" required value="${escapeHtml(client.name)}"></div>
+      <div class="form-group client-field"><label>Teléfono / WhatsApp</label><input class="input" name="phone" required value="${escapeHtml(client.phone)}"></div>
+      <div class="form-group client-field"><label>Email</label><input class="input" type="email" name="email" value="${escapeHtml(client.email)}"></div>
       <div class="form-group"><label>Activo</label><select class="select" name="is_active"><option value="true" ${client.is_active !== false ? "selected" : ""}>Sí</option><option value="false" ${client.is_active === false ? "selected" : ""}>No</option></select></div>
     </div>
     <div class="form-group"><label>Notas</label><textarea class="textarea" name="notes">${escapeHtml(client.notes)}</textarea></div>
@@ -38,12 +38,11 @@ function renderForm(client = {}, profile = {}) {
       <div class="form-grid">
         <div class="form-group"><label>Nombre de la escuela</label><input class="input" name="school_name" value="${escapeHtml(profile.school_name)}"></div>
         <div class="form-group"><label>Nivel escolar</label><select class="select" name="school_level"><option value="">Seleccione</option>${schoolLevelOptions(profile.school_level)}</select></div>
-        <div class="form-group"><label>Maestra</label><input class="input" name="teacher_name" value="${escapeHtml(profile.teacher_name)}"></div>
-        <div class="form-group"><label>Teléfono maestra</label><input class="input" name="teacher_phone" value="${escapeHtml(profile.teacher_phone)}"></div>
+        <div class="form-group"><label>Contacto principal</label><input class="input" name="contact_name" value="${escapeHtml(profile.contact_name || profile.teacher_name)}"></div>
+        <div class="form-group"><label>Teléfono / WhatsApp contacto</label><input class="input" name="contact_phone" value="${escapeHtml(profile.contact_phone || profile.teacher_phone)}"></div>
+        <div class="form-group"><label>Correo contacto</label><input class="input" type="email" name="contact_email" value="${escapeHtml(profile.contact_email || client.email)}"></div>
         <div class="form-group"><label>Directora</label><input class="input" name="principal_name" value="${escapeHtml(profile.principal_name)}"></div>
         <div class="form-group"><label>Teléfono directora</label><input class="input" name="principal_phone" value="${escapeHtml(profile.principal_phone)}"></div>
-        <div class="form-group"><label>Curso o grado</label><input class="input" name="grade_or_class" value="${escapeHtml(profile.grade_or_class)}"></div>
-        <div class="form-group"><label>Cantidad de estudiantes</label><input class="input" type="number" min="0" name="student_count" value="${escapeHtml(profile.student_count)}"></div>
         <div class="form-group"><label>Último contacto</label><input class="input" type="date" name="last_contact_date" value="${escapeHtml(profile.last_contact_date)}"></div>
         <div class="form-group"><label>Próximo seguimiento</label><input class="input" type="date" name="next_follow_up_date" value="${escapeHtml(profile.next_follow_up_date)}"></div>
         <div class="form-group"><label>Estado</label><select class="select" name="follow_up_status">${options(FOLLOW_UP_STATUSES, profile.follow_up_status || "NEW_CONTACT")}</select></div>
@@ -55,7 +54,17 @@ function renderForm(client = {}, profile = {}) {
       <button class="btn btn-secondary" type="submit" name="after_save_action" value="new_job">Guardar y crear trabajo</button>
     </div>
   `;
-  const toggleSchool = () => document.querySelector("#schoolFields").classList.toggle("hidden", form.client_type.value !== "SCHOOL_GRADUATION");
+  const toggleSchool = () => {
+    const isSchool = form.client_type.value === "SCHOOL_GRADUATION";
+    document.querySelector("#schoolFields").classList.toggle("hidden", !isSchool);
+    form.name.closest(".form-group").classList.toggle("hidden", isSchool);
+    form.phone.closest(".form-group").classList.toggle("hidden", isSchool);
+    form.email.closest(".form-group").classList.toggle("hidden", isSchool);
+    form.name.required = !isSchool;
+    form.phone.required = !isSchool;
+    form.contact_name.required = isSchool;
+    form.contact_phone.required = isSchool;
+  };
   form.client_type.addEventListener("change", toggleSchool);
   toggleSchool();
 }
@@ -101,12 +110,17 @@ form.addEventListener("submit", async (event) => {
     showToast("Si es escuela, el nombre de la escuela es requerido.", "error");
     return;
   }
+  if (data.client_type === "SCHOOL_GRADUATION" && (!data.contact_name.trim() || !data.contact_phone.trim())) {
+    showToast("Capture el contacto principal y su WhatsApp.", "error");
+    return;
+  }
+  const isSchool = data.client_type === "SCHOOL_GRADUATION";
   const clientPayload = {
     client_type: data.client_type,
-    name: data.name.trim(),
-    phone: data.phone.trim(),
+    name: isSchool ? data.school_name.trim() : data.name.trim(),
+    phone: isSchool ? (data.contact_phone || "").trim() : data.phone.trim(),
     secondary_phone: null,
-    email: data.email || null,
+    email: isSchool ? (data.contact_email || null) : (data.email || null),
     notes: data.notes || null,
     is_active: data.is_active === "true"
   };
@@ -123,12 +137,15 @@ form.addEventListener("submit", async (event) => {
       client_id: saved.id,
       school_name: data.school_name.trim(),
       school_level: data.school_level || null,
-      teacher_name: data.teacher_name || null,
-      teacher_phone: data.teacher_phone || null,
+      contact_name: data.contact_name || null,
+      contact_phone: data.contact_phone || null,
+      contact_email: data.contact_email || null,
+      teacher_name: null,
+      teacher_phone: null,
       principal_name: data.principal_name || null,
       principal_phone: data.principal_phone || null,
-      grade_or_class: data.grade_or_class || null,
-      student_count: data.student_count ? Number(data.student_count) : null,
+      grade_or_class: null,
+      student_count: null,
       last_contact_date: data.last_contact_date || null,
       next_follow_up_date: data.next_follow_up_date || null,
       follow_up_status: data.follow_up_status || "NEW_CONTACT",

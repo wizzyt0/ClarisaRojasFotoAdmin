@@ -93,8 +93,8 @@ async function ensureSchoolGroups() {
   const school = job.clients.school_profiles?.[0] || {};
   const created = await createSchoolGroup(jobId, {
     group_name: school.grade_or_class || "Grupo principal",
-    teacher_name: school.teacher_name || null,
-    teacher_phone: school.teacher_phone || null,
+    teacher_name: school.teacher_name || school.contact_name || null,
+    teacher_phone: school.teacher_phone || school.contact_phone || null,
     student_count: school.student_count || null,
     sort_order: 1
   });
@@ -134,7 +134,7 @@ function render() {
     document.querySelector("#schoolCard").innerHTML = `<div class="page-header"><h2>Datos escolares</h2><button id="newSchoolGroupBtn" class="btn btn-primary">Agregar grupo</button></div><div class="grid">
       <p><strong>Escuela:</strong><br>${escapeHtml(school.school_name || job.clients.name)}</p>
       <p><strong>Nivel:</strong><br>${escapeHtml({ KINDER: "Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[school.school_level] || "")}</p>
-      <p><strong>Maestra:</strong><br>${escapeHtml(school.teacher_name)}<br>${escapeHtml(school.teacher_phone)}</p>
+      <p><strong>Contacto principal:</strong><br>${escapeHtml(school.contact_name || school.teacher_name)}<br>${escapeHtml(school.contact_phone || school.teacher_phone)}<br>${escapeHtml(school.contact_email || "")}</p>
       <p><strong>Directora:</strong><br>${escapeHtml(school.principal_name)}<br>${escapeHtml(school.principal_phone)}</p>
       <p><strong>Curso:</strong><br>${escapeHtml(school.grade_or_class)}</p>
       <p><strong>Estudiantes:</strong><br>${school.student_count || ""}</p>
@@ -336,7 +336,7 @@ function renderPhones() {
     const school = job.clients.school_profiles?.[0] || {};
   const phones = [
     ["Teléfono principal", job.clients.phone],
-    ["Maestra", school.teacher_phone],
+    ["Contacto escuela", school.contact_phone || school.teacher_phone],
     ["Directora", school.principal_phone]
   ].filter(([, phone]) => phone);
   document.querySelector("#phoneChoice").innerHTML = `<div class="form-group"><label>Número para WhatsApp</label><select id="whatsappPhone" class="select">${phones.map(([label, phone]) => `<option value="${escapeHtml(phone)}">${label}: ${escapeHtml(phone)}</option>`).join("")}</select></div>`;

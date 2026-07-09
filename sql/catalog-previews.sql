@@ -55,6 +55,8 @@ as $$
 declare
   item print_items;
   school_level_value text;
+  event_type_value text;
+  package_type_value text;
   result jsonb;
 begin
   select *
@@ -75,6 +77,19 @@ begin
   left join school_profiles sp on sp.client_id = c.id
   where j.id = item.job_id
   limit 1;
+
+  select j.event_type
+  into event_type_value
+  from jobs j
+  where j.id = item.job_id
+  limit 1;
+
+  package_type_value := case event_type_value
+    when 'GRADUATION' then 'SCHOOL_GRADUATION'
+    when 'MEMORY' then 'SCHOOL_MEMORY'
+    when 'CHRISTMAS' then 'SCHOOL_CHRISTMAS'
+    else 'SCHOOL_GRADUATION'
+  end;
 
   if item.item_type = 'DIPLOMA' then
     select jsonb_agg(jsonb_build_object(
@@ -110,7 +125,7 @@ begin
     from package_images pi
     join packages p on p.id = pi.package_id
     where p.is_active = true
-      and p.package_type in ('SCHOOL_GRADUATION','GENERAL');
+      and p.package_type in (package_type_value, 'GENERAL');
 
     return coalesce(result, '[]'::jsonb);
   end if;

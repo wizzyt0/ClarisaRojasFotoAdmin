@@ -1,9 +1,24 @@
 export const CLIENT_TYPES = {
-  PHOTO_SESSION: "Sesión de fotos",
-  SCHOOL_GRADUATION: "Graduación escolar"
+  SCHOOL_GRADUATION: "Escuela",
+  PHOTO_SESSION: "Particular"
 };
 
-export const JOB_TYPES = { ...CLIENT_TYPES };
+export const JOB_TYPES = {
+  SCHOOL_GRADUATION: "Escuela",
+  PHOTO_SESSION: "Particular"
+};
+
+export const SCHOOL_EVENT_TYPES = {
+  GRADUATION: "Graduación",
+  MEMORY: "Fotografía de recuerdo",
+  CHRISTMAS: "Fotografía navideña"
+};
+
+export const SCHOOL_EVENT_PACKAGE_TYPES = {
+  GRADUATION: "SCHOOL_GRADUATION",
+  MEMORY: "SCHOOL_MEMORY",
+  CHRISTMAS: "SCHOOL_CHRISTMAS"
+};
 
 export const JOB_STATUSES = {
   CREATED: "Creado",
@@ -40,8 +55,10 @@ export const FOLLOW_UP_STATUSES = {
 
 export const PACKAGE_TYPES = {
   GENERAL: "General",
-  PHOTO_SESSION: "Sesión de fotos",
-  SCHOOL_GRADUATION: "Graduación escolar"
+  PHOTO_SESSION: "Particular",
+  SCHOOL_GRADUATION: "Graduación escolar",
+  SCHOOL_MEMORY: "Fotografía de recuerdo",
+  SCHOOL_CHRISTMAS: "Fotografía navideña"
 };
 
 const label = (map, value) => map[value] || value || "";
@@ -52,3 +69,4 @@ export const getJobStatusLabel = (value) => label(JOB_STATUSES, value);
 export const getGalleryTypeLabel = (value) => label(GALLERY_TYPES, value);
 export const getFollowUpStatusLabel = (value) => label(FOLLOW_UP_STATUSES, value);
 export const getPackageTypeLabel = (value) => label(PACKAGE_TYPES, value);
+export const getSchoolEventTypeLabel = (value) => label(SCHOOL_EVENT_TYPES, value);
