@@ -113,6 +113,17 @@ begin
       'title', j.title,
       'job_type', j.job_type
     ),
+    'preview_files', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', jf.id,
+        'file_name', jf.file_name,
+        'content_type', jf.content_type,
+        'size_bytes', jf.size_bytes
+      ) order by jf.created_at desc)
+      from job_files jf
+      where jf.print_item_id = pi.id
+        and jf.file_type = 'TEACHER_PREVIEW'
+    ), '[]'::jsonb),
     'client', jsonb_build_object(
       'name', c.name,
       'client_type', c.client_type

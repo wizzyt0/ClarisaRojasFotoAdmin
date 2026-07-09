@@ -61,7 +61,7 @@ function printItemTypeLabel(type) {
 }
 
 function renderPrintItemApproval() {
-  const { print_item: item, job, client, school_profile: school, school_group: group } = printItemData;
+  const { print_item: item, job, client, school_profile: school, school_group: group, preview_files: previewFiles = [] } = printItemData;
   if (item.approved_at) {
     content.innerHTML = `<h1>Esta pieza ya fue aprobada para impresión.</h1><p class="muted">Fecha de aprobación: ${new Date(item.approved_at).toLocaleString("es-MX")}</p>`;
     return;
@@ -85,6 +85,8 @@ function renderPrintItemApproval() {
       <p><strong>Grupo:</strong><br>${escapeHtml(group?.group_name || school?.grade_or_class || "")}</p>
       <p><strong>Contacto:</strong><br>${escapeHtml(group?.teacher_name || school?.contact_name || school?.teacher_name || school?.principal_name || client.name)}</p>
     </div>
+    <h2>Archivo para revisar</h2>
+    ${renderPrintItemPreviewFiles(previewFiles)}
     <div class="alert alert-warning"><strong>IMPORTANTE:</strong><br>Una vez aprobada esta pieza para impresión, cualquier cambio adicional solicitado después de la aprobación tendrá un costo extra. Por favor revise cuidadosamente antes de aprobar.</div>
     <form id="printItemApprovalForm">
       <div class="form-group"><label>Nombre de quien aprueba</label><input class="input" name="approval_name" required></div>
@@ -92,6 +94,19 @@ function renderPrintItemApproval() {
       <label class="form-group"><span><input type="checkbox" name="terms"> Confirmo que revisé esta pieza y autorizo enviarla a impresión. Entiendo que cualquier cambio solicitado después de esta aprobación tendrá costo adicional.</span></label>
       <div class="actions"><button class="btn btn-primary" type="submit" name="action" value="approve">Autorizar esta pieza para impresión</button><button class="btn" type="submit" name="action" value="changes">Solicitar cambios</button></div>
     </form>`;
+}
+
+function printItemFileUrl(file) {
+  return `${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/print-item-file/${file.id}?item_token=${encodeURIComponent(itemToken)}`;
+}
+
+function renderPrintItemPreviewFiles(files) {
+  if (!files.length) return `<div class="empty-state">No hay preview registrado para esta pieza.</div>`;
+  return `<div class="catalog-grid">${files.map((file) => {
+    const url = printItemFileUrl(file);
+    const isImage = String(file.content_type || "").startsWith("image/");
+    return `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(url)}" type="button"><span>${isImage ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(file.file_name)}">` : escapeHtml(file.file_name)}</span></button><div><h3>${escapeHtml(file.file_name)}</h3></div></article>`;
+  }).join("")}</div>`;
 }
 
 function catalogFileUrl(option) {

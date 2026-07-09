@@ -307,6 +307,27 @@ async function handlePublicCatalogFile(request, env, table, fileId) {
   return streamFile(env, file, false);
 }
 
+async function handlePublicPrintItemFile(request, env, fileId) {
+  const url = new URL(request.url);
+  const token = url.searchParams.get("item_token") || "";
+  if (!token) return jsonError("Falta token.", 400);
+
+  const items = await supabaseFetch(
+    env,
+    `print_items?select=id&approval_token=eq.${encodeURIComponent(token)}&approval_revoked_at=is.null&limit=1`
+  );
+  const item = items[0];
+  if (!item) return jsonError("Link no disponible.", 404);
+
+  const files = await supabaseFetch(
+    env,
+    `job_files?select=id,print_item_id,r2_key,file_name,content_type&id=eq.${encodeURIComponent(fileId)}&file_type=eq.TEACHER_PREVIEW&limit=1`
+  );
+  const file = files[0];
+  if (!file || file.print_item_id !== item.id) return jsonError("Archivo no disponible para esta pieza.", 404);
+  return streamFile(env, file, false);
+}
+
 async function handleAdminGetFile(request, env, fileId) {
   const url = new URL(request.url);
   const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || url.searchParams.get("auth") || "";
@@ -403,6 +424,7 @@ export default {
         const [, , table, fileId] = url.pathname.split("/");
         return handlePublicCatalogFile(request, env, table, fileId);
       }
+      if (url.pathname.startsWith("/print-item-file/") && request.method === "GET") return handlePublicPrintItemFile(request, env, url.pathname.split("/").pop());
       if (url.pathname.startsWith("/admin/files/") && request.method === "GET") return handleAdminGetFile(request, env, url.pathname.split("/").pop());
       if (url.pathname.startsWith("/admin/files/") && request.method === "DELETE") return handleAdminDeleteFile(request, env, url.pathname.split("/").pop());
       const token = url.searchParams.get("token");
