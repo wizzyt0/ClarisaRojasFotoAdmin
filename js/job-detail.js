@@ -162,7 +162,13 @@ function deliverableState(deliverable) {
 
 function renderDeliverablesSummary() {
   if (printItems.length) {
-    return `<div class="deliverables"><h3>Piezas de impresión</h3><div class="deliverable-grid">${printItems.map((item) => `<div class="deliverable ${printItemClass(item.status)}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(statusText(item))}</span></div>`).join("")}</div></div>`;
+    const groupsToRender = schoolGroups.length ? schoolGroups : [{ id: null, group_name: "Trabajo", teacher_name: "" }];
+    return `<div class="deliverables"><h3>Piezas de impresión</h3><div class="deliverable-groups">${groupsToRender.map((group) => {
+      const items = printItems
+        .filter((item) => (group.id ? item.group_id === group.id : !item.group_id))
+        .sort((a, b) => printItemStep(a.item_type).number - printItemStep(b.item_type).number);
+      return `<section class="deliverable-group"><div class="deliverable-group-header"><strong>${escapeHtml(group.group_name)}</strong><span>${escapeHtml(group.teacher_name || "Sin maestra")}</span></div><div class="deliverable-grid">${items.map((item) => `<div class="deliverable ${printItemClass(item.status)}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(statusText(item))}</span></div>`).join("")}</div></section>`;
+    }).join("")}</div></div>`;
   }
   return `<div class="deliverables"><h3>Entregables</h3><div class="deliverable-grid">${DELIVERABLES.map((item) => {
     const state = deliverableState(item);
@@ -225,13 +231,14 @@ function renderPrintItemCard(item) {
   const files = r2Files.filter((file) => file.print_item_id === item.id);
   const previewCount = files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
   const step = printItemStep(item.item_type);
-  const isCatalogOnly = ["PHOTO_PACKAGE", "DIPLOMA", "FOLDER_OPTION"].includes(item.item_type);
+  const isCatalogOnly = ["PHOTO_PACKAGE", "DIPLOMA", "FOLDER_OPTION"].includes(item.item_type) && !item.selected_file_id;
+  const canUploadPreview = !isCatalogOnly && item.item_type !== "PHOTO_PACKAGE";
   const actionLabel = isCatalogOnly ? "Enviar catálogo por WhatsApp" : "Enviar revisión por WhatsApp";
   return `<article class="print-item-card ${printItemClass(item.status)}">
     <div class="step-heading"><span class="step-number">${step.number}</span><div><strong>${escapeHtml(step.title)}</strong><span>${escapeHtml(step.description)}</span></div></div>
     <span class="badge">${statusText(item)}</span>
     ${renderSelectedVisual(item, files)}
-    ${isCatalogOnly ? "" : `<p class="muted">Previews subidos: ${previewCount}</p><div class="mini-dropzone" tabindex="0" data-item-dropzone="${item.id}" data-file-type="TEACHER_PREVIEW"><strong>Subir preview</strong><span>Arrastre aquí o haga clic</span><input type="file" multiple hidden data-item-file-input="${item.id}" data-file-type="TEACHER_PREVIEW"></div>`}
+    ${canUploadPreview ? `<p class="muted">Previews subidos: ${previewCount}</p><div class="mini-dropzone" tabindex="0" data-item-dropzone="${item.id}" data-file-type="TEACHER_PREVIEW"><strong>Subir preview</strong><span>Arrastre aquí o haga clic</span><input type="file" multiple hidden data-item-file-input="${item.id}" data-file-type="TEACHER_PREVIEW"></div>` : ""}
     ${item.client_notes ? `<div class="review-note"><strong>Observaciones de la maestra:</strong><br>${escapeHtml(item.client_notes)}</div>` : ""}
     <div class="actions"><button class="btn btn-primary" data-send-print-item="${item.id}">${actionLabel}</button></div>
   </article>`;
@@ -349,6 +356,10 @@ async function uploadPrintItemFiles(itemId, fileType, files) {
   if (!files.length) return;
   try {
     for (const file of files) await uploadR2File(jobId, fileType, file, itemId);
+    const item = printItems.find((entry) => entry.id === itemId);
+    if (item && ["PENDING", "CATALOG_SELECTED", "CHANGES_REQUESTED"].includes(item.status)) {
+      await updatePrintItem(itemId, { status: "READY_FOR_REVIEW" });
+    }
     showToast(files.length === 1 ? "Archivo subido a la pieza." : "Archivos subidos a la pieza.");
     await loadJob();
   } catch (error) {

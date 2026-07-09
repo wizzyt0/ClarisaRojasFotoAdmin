@@ -212,6 +212,10 @@ begin
         notes = 'Diploma de catálogo seleccionado: ' || selected_name
     where id = item.id;
 
+    update jobs
+    set status = 'EDITING'
+    where id = item.job_id;
+
     return jsonb_build_object('ok', true, 'selected_name', selected_name);
   end if;
 
@@ -228,6 +232,10 @@ begin
         changes_requested_at = now(),
         notes = 'Carpeta de catálogo seleccionada: ' || selected_name
     where id = item.id;
+
+    update jobs
+    set status = 'EDITING'
+    where id = item.job_id;
 
     return jsonb_build_object('ok', true, 'selected_name', selected_name);
   end if;

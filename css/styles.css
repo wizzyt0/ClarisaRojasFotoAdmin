@@ -91,6 +91,22 @@ a { color: var(--primary); text-decoration: none; }
 .badge-status.WAITING_APPROVAL, .badge-status.PRINTING { background: #fff4df; color: var(--warning); }
 .badge-status.CANCELLED { background: #fde8e6; color: var(--danger); }
 .deliverables { margin-top: 16px; }
+.deliverable-groups { display: grid; gap: 14px; }
+.deliverable-group {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fbfcfd;
+  padding: 12px;
+}
+.deliverable-group-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+}
+.deliverable-group-header span { color: var(--muted); }
 .deliverable-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .deliverable {
   display: grid;
