@@ -100,12 +100,16 @@ function catalogFileUrl(option) {
 function renderCatalogSelection() {
   const { print_item: item, job, client, school_profile: school, school_group: group } = printItemData;
   const title = item.item_type === "DIPLOMA" ? "Seleccione el diseño de diploma" : item.item_type === "FOLDER_OPTION" ? "Seleccione la carpeta" : "Seleccione el paquete de fotos";
+  const notesLabel = item.item_type === "PHOTO_PACKAGE" ? "Dudas sobre el paquete" : "Comentario para Clarisa";
+  const notesPlaceholder = item.item_type === "PHOTO_PACKAGE"
+    ? "Si tiene alguna duda sobre este paquete o sobre lo que incluye, escríbala aquí."
+    : "Si necesita aclarar algún dato de su selección, escríbalo aquí.";
   content.innerHTML = `
     <h1 class="approval-title">${title}</h1>
     <p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p>
     <div class="catalog-grid">${catalogOptions.length ? catalogOptions.map((option) => `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(catalogFileUrl(option))}" type="button"><span><img src="${escapeHtml(catalogFileUrl(option))}" alt="${escapeHtml(option.name)}"></span></button><div><h3>${escapeHtml(option.name)}</h3>${option.price != null ? `<p class="muted">${formatMoney(option.price)}</p>` : ""}${option.description ? `<p>${escapeHtml(option.description)}</p>` : ""}</div><button class="btn btn-primary" data-select-catalog="${option.table}:${option.id}">Elegir esta opción</button></article>`).join("") : `<div class="empty-state">No hay opciones disponibles para este catálogo.</div>`}</div>
     ${item.item_type === "PHOTO_PACKAGE" ? `<div class="form-group"><label>Cantidad de paquetes</label><input id="catalogPackageQuantity" class="input" type="number" min="1" step="1" value="1" required></div>` : ""}
-    <div class="form-group"><label>Observaciones para Clarisa</label><textarea id="catalogClientNotes" class="textarea" placeholder="Ejemplo: nos gusta este diseño, pero queremos usar color azul."></textarea></div>`;
+    <div class="form-group"><label>${notesLabel}</label><textarea id="catalogClientNotes" class="textarea" placeholder="${notesPlaceholder}"></textarea></div>`;
 }
 
 async function load() {
