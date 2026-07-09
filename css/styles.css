@@ -126,17 +126,33 @@ a { color: var(--primary); text-decoration: none; }
   border-radius: 6px;
   padding: 8px 10px;
 }
-.group-list { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-.group-chip {
+.group-list { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.group-card {
   display: grid;
-  gap: 5px;
+  gap: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 10px;
-  background: var(--surface-muted);
+  padding: 14px;
+  background: white;
 }
-.group-chip span { color: var(--muted); font-size: 0.9rem; }
-.group-workflow { display: grid; gap: 10px; margin-top: 16px; }
+.group-card-top { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+.group-card-top > div { display: grid; gap: 3px; }
+.group-card-top span, .group-card-body p { color: var(--muted); font-size: 0.9rem; }
+.group-card-body { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.group-card-body p { margin: 0; }
+.group-workflow {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  background: #fbfcfd;
+}
+.group-workflow-header { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.group-workflow-header h3 { margin: 0; }
+.group-total { display: grid; gap: 2px; text-align: right; }
+.group-total span { color: var(--muted); font-size: 0.88rem; }
 .job-group-summary { display: grid; gap: 8px; margin-top: 8px; min-width: 220px; }
 .job-group-summary > div { border-top: 1px solid var(--border); padding-top: 8px; }
 .selected-visual { display: grid; gap: 8px; }

@@ -1,7 +1,7 @@
 import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { APP_CONFIG } from "./config.js";
-import { GALLERY_TYPES, JOB_STATUSES, getGalleryTypeLabel, getJobStatusLabel, getJobTypeLabel } from "./constants.js";
+import { GALLERY_TYPES, JOB_STATUSES, SCHOOL_EVENT_PACKAGE_TYPES, getGalleryTypeLabel, getJobStatusLabel, getJobTypeLabel } from "./constants.js";
 import { getCatalogFileUrl, getDiplomaTemplates, getPackageImages } from "./catalog.js";
 import { createDeposit, deleteDeposit, getDepositsByJob } from "./deposits.js";
 import { createGallery, deactivateGallery, getGalleriesByJob } from "./galleries.js";
@@ -22,6 +22,7 @@ let r2Files = [];
 let r2ShareLinks = [];
 let printItems = [];
 let schoolGroups = [];
+let packages = [];
 let packageCatalogImages = [];
 let diplomaTemplates = [];
 let selectedWhatsappUrl = "";
@@ -81,6 +82,9 @@ async function loadJob() {
   r2ShareLinks = await getR2ShareLinksByJob(jobId);
   schoolGroups = job.job_type === "SCHOOL_GRADUATION" ? await ensureSchoolGroups() : [];
   printItems = job.job_type === "SCHOOL_GRADUATION" ? await ensureGroupPrintItems() : [];
+  const { data: packagesData, error: packagesError } = await supabase.from("packages").select("*").eq("is_active", true).order("name");
+  if (packagesError) throw packagesError;
+  packages = packagesData || [];
   packageCatalogImages = await getPackageImages();
   diplomaTemplates = await getDiplomaTemplates();
   render();
@@ -88,25 +92,16 @@ async function loadJob() {
 }
 
 async function ensureSchoolGroups() {
-  let groups = await getSchoolGroupsByJob(jobId);
-  if (groups.length) return groups;
-  const school = job.clients.school_profiles?.[0] || {};
-  const created = await createSchoolGroup(jobId, {
-    group_name: school.grade_or_class || "Grupo principal",
-    teacher_name: school.teacher_name || school.contact_name || null,
-    teacher_phone: school.teacher_phone || school.contact_phone || null,
-    student_count: school.student_count || null,
-    sort_order: 1
-  });
-  return [created];
+  return getSchoolGroupsByJob(jobId);
 }
 
 async function ensureGroupPrintItems() {
+  if (!schoolGroups.length) return [];
   let items = printItems.length ? printItems : [];
   for (const group of schoolGroups) {
     items = await ensureDefaultPrintItems(jobId, group.id);
   }
-  return items.length ? items : await ensureDefaultPrintItems(jobId);
+  return items;
 }
 
 function render() {
@@ -136,9 +131,7 @@ function render() {
       <p><strong>Nivel:</strong><br>${escapeHtml({ KINDER: "Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[school.school_level] || "")}</p>
       <p><strong>Contacto principal:</strong><br>${escapeHtml(school.contact_name || school.teacher_name)}<br>${escapeHtml(school.contact_phone || school.teacher_phone)}<br>${escapeHtml(school.contact_email || "")}</p>
       <p><strong>Directora:</strong><br>${escapeHtml(school.principal_name)}<br>${escapeHtml(school.principal_phone)}</p>
-      <p><strong>Curso:</strong><br>${escapeHtml(school.grade_or_class)}</p>
-      <p><strong>Estudiantes:</strong><br>${school.student_count || ""}</p>
-    </div><h3>Grupos</h3><div class="group-list">${schoolGroups.map((group) => `<article class="group-chip"><strong>${escapeHtml(group.group_name)}</strong><span>${escapeHtml(group.teacher_name || "Sin maestra")} · ${escapeHtml(group.teacher_phone || "Sin teléfono")}</span><span>${Number(group.package_quantity || 0) > 0 ? `${group.package_quantity} paquetes · ${formatMoney(group.price)}` : "Paquete pendiente"}</span><div class="actions"><button class="btn" data-edit-group="${group.id}">Editar</button>${schoolGroups.length > 1 ? `<button class="btn btn-danger" data-delete-group="${group.id}">Eliminar</button>` : ""}</div></article>`).join("")}</div>`;
+    </div><h3>Grupos</h3><div class="group-list">${schoolGroups.length ? schoolGroups.map((group) => `<article class="group-card"><div class="group-card-top"><div><strong>${escapeHtml(group.group_name)}</strong><span>${escapeHtml(group.teacher_name || "Sin maestra")}</span></div><span class="badge">${Number(group.package_quantity || 0) > 0 ? `${group.package_quantity} paquetes` : "Pendiente"}</span></div><div class="group-card-body"><p><strong>WhatsApp:</strong><br>${escapeHtml(group.teacher_phone || "Sin WhatsApp")}</p><p><strong>Paquete:</strong><br>${escapeHtml(group.packages?.name || "Pendiente")}</p><p><strong>Total:</strong><br>${formatMoney(group.price || 0)}</p></div><div class="actions"><button class="btn" data-edit-group="${group.id}">Editar grupo</button><button class="btn btn-danger" data-delete-group="${group.id}">Eliminar</button></div></article>`).join("") : `<div class="empty-state">Agregue los grupos manualmente, por ejemplo 6to A, 6to B o Kinder 3.</div>`}</div>`;
   }
   renderPrintItems();
   renderGalleries();
@@ -196,7 +189,7 @@ function renderPrintItems() {
   const groupsToRender = schoolGroups.length ? schoolGroups : [{ id: null, group_name: "Trabajo" }];
   card.innerHTML = `<div class="page-header"><h2>Piezas por grupo</h2></div>${groupsToRender.map((group) => {
     const items = printItems.filter((item) => (group.id ? item.group_id === group.id : !item.group_id));
-    return `<section class="group-workflow"><div class="page-header"><div><h3>${escapeHtml(group.group_name)}</h3><p class="muted">${escapeHtml(group.teacher_name || "")}${group.teacher_phone ? ` · ${escapeHtml(group.teacher_phone)}` : ""}</p></div></div><div class="print-item-grid">${items.map(renderPrintItemCard).join("")}</div></section>`;
+    return `<section class="group-workflow"><div class="group-workflow-header"><div><h3>${escapeHtml(group.group_name)}</h3><p class="muted">${escapeHtml(group.teacher_name || "Sin maestra")}${group.teacher_phone ? ` · WhatsApp ${escapeHtml(group.teacher_phone)}` : ""}</p></div><div class="group-total"><span>${escapeHtml(group.packages?.name || "Paquete pendiente")}</span><strong>${formatMoney(group.price || 0)}</strong></div></div><div class="print-item-grid">${items.map(renderPrintItemCard).join("")}</div></section>`;
   }).join("")}`;
 
   const select = document.querySelector("#r2PrintItem");
@@ -330,6 +323,13 @@ async function uploadPrintItemFiles(itemId, fileType, files) {
     console.error(error);
     showToast(error.message || "No se pudo subir el archivo.", "error");
   }
+}
+
+async function recalculateJobFromGroups() {
+  const groups = await getSchoolGroupsByJob(jobId);
+  const totalPrice = groups.reduce((sum, group) => sum + Number(group.price || 0), 0);
+  const totalQuantity = groups.reduce((sum, group) => sum + Number(group.package_quantity || 0), 0);
+  await supabase.from("jobs").update({ price: totalPrice, package_quantity: totalQuantity }).eq("id", jobId);
 }
 
 function renderPhones() {
@@ -585,7 +585,20 @@ function openDepositForm() {
 
 function openGroupForm(group = null) {
   document.querySelector("#detailModalTitle").textContent = group ? "Editar grupo" : "Agregar grupo";
-  form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Grupo</label><input class="input" name="group_name" required value="${escapeHtml(group?.group_name || "")}" placeholder="6to A"></div><div class="form-group"><label>Maestra</label><input class="input" name="teacher_name" value="${escapeHtml(group?.teacher_name || "")}"></div><div class="form-group"><label>Teléfono maestra</label><input class="input" name="teacher_phone" value="${escapeHtml(group?.teacher_phone || "")}"></div><div class="form-group"><label>Alumnos</label><input class="input" type="number" min="0" name="student_count" value="${group?.student_count || ""}"></div></div><div class="form-group"><label>Notas</label><textarea class="textarea" name="notes">${escapeHtml(group?.notes || "")}</textarea></div><input type="hidden" name="group_id" value="${group?.id || ""}"><input type="hidden" name="form_type" value="school_group"><button class="btn btn-primary" type="submit">Guardar grupo</button>`;
+  const eventPackageType = SCHOOL_EVENT_PACKAGE_TYPES[job.event_type] || "SCHOOL_GRADUATION";
+  const packageOptions = packages
+    .filter((pkg) => pkg.package_type === eventPackageType || pkg.package_type === "GENERAL")
+    .map((pkg) => `<option value="${pkg.id}" data-price="${pkg.price}" ${pkg.id === group?.selected_package_id ? "selected" : ""}>${escapeHtml(pkg.name)} - ${formatMoney(pkg.price)}</option>`)
+    .join("");
+  form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Grupo</label><input class="input" name="group_name" required value="${escapeHtml(group?.group_name || "")}" placeholder="6to A"></div><div class="form-group"><label>Maestra</label><input class="input" name="teacher_name" value="${escapeHtml(group?.teacher_name || "")}"></div><div class="form-group"><label>WhatsApp maestra</label><input class="input" name="teacher_phone" value="${escapeHtml(group?.teacher_phone || "")}"></div><div class="form-group"><label>Paquete</label><select class="select" name="selected_package_id"><option value="">Pendiente</option>${packageOptions}</select></div><div class="form-group"><label>Cantidad de paquetes</label><input class="input" type="number" min="0" name="package_quantity" value="${group?.package_quantity || 0}"></div><div class="form-group"><label>Total grupo</label><input class="input" type="number" min="0" step="0.01" name="price" value="${group?.price || 0}"></div></div><div class="form-group"><label>Notas</label><textarea class="textarea" name="notes">${escapeHtml(group?.notes || "")}</textarea></div><input type="hidden" name="group_id" value="${group?.id || ""}"><input type="hidden" name="form_type" value="school_group"><button class="btn btn-primary" type="submit">Guardar grupo</button>`;
+  const updateGroupPrice = () => {
+    const selected = form.selected_package_id.selectedOptions[0];
+    const packagePrice = Number(selected?.dataset.price || 0);
+    const quantity = Number(form.package_quantity.value || 0);
+    if (packagePrice && quantity >= 0) form.price.value = packagePrice * quantity;
+  };
+  form.selected_package_id.addEventListener("change", updateGroupPrice);
+  form.package_quantity.addEventListener("input", updateGroupPrice);
   modal.classList.remove("hidden");
 }
 
@@ -655,12 +668,15 @@ form.addEventListener("submit", async (event) => {
         group_name: data.group_name.trim(),
         teacher_name: data.teacher_name || null,
         teacher_phone: data.teacher_phone || null,
-        student_count: data.student_count ? Number(data.student_count) : null,
+        selected_package_id: data.selected_package_id || null,
+        package_quantity: Number(data.package_quantity || 0),
+        price: Number(data.price || 0),
         notes: data.notes || null,
         sort_order: schoolGroups.length + 1
       };
       const group = data.group_id ? await updateSchoolGroup(data.group_id, payload) : await createSchoolGroup(jobId, payload);
       await ensureDefaultPrintItems(jobId, group.id);
+      await recalculateJobFromGroups();
     }
     if (data.form_type === "r2_file") await createR2File(jobId, { print_item_id: data.print_item_id || null, file_type: data.file_type, r2_key: data.r2_key.trim(), file_name: data.file_name.trim(), content_type: data.content_type || null, size_bytes: data.size_bytes ? Number(data.size_bytes) : null, notes: data.notes || null });
     if (data.form_type === "r2_share_link") {
@@ -699,6 +715,7 @@ document.addEventListener("click", async (event) => {
     if (event.target.dataset.editGroup) openGroupForm(schoolGroups.find((group) => group.id === event.target.dataset.editGroup));
     if (event.target.dataset.deleteGroup && confirm("¿Eliminar este grupo y sus validaciones?")) {
       await deleteSchoolGroup(event.target.dataset.deleteGroup);
+      await recalculateJobFromGroups();
       showToast("Grupo eliminado.");
       await loadJob();
       return;
