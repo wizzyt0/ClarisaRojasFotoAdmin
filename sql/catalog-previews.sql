@@ -185,11 +185,24 @@ begin
         notes = 'Paquete seleccionado: ' || selected_name
     where id = item.id;
 
-    update jobs
-    set package_id = selected_package,
-        package_quantity = quantity,
-        price = package_price * quantity
-    where id = item.job_id;
+    if item.group_id is not null then
+      update school_groups
+      set selected_package_id = selected_package,
+          package_quantity = quantity,
+          price = package_price * quantity
+      where id = item.group_id;
+
+      update jobs
+      set price = coalesce((select sum(price) from school_groups where job_id = item.job_id), 0),
+          package_quantity = coalesce((select sum(package_quantity) from school_groups where job_id = item.job_id), 0)
+      where id = item.job_id;
+    else
+      update jobs
+      set package_id = selected_package,
+          package_quantity = quantity,
+          price = package_price * quantity
+      where id = item.job_id;
+    end if;
 
     return jsonb_build_object('ok', true, 'selected_name', selected_name, 'package_quantity', quantity, 'price', package_price * quantity);
   end if;

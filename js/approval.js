@@ -60,7 +60,7 @@ function printItemTypeLabel(type) {
 }
 
 function renderPrintItemApproval() {
-  const { print_item: item, job, client, school_profile: school } = printItemData;
+  const { print_item: item, job, client, school_profile: school, school_group: group } = printItemData;
   if (item.approved_at) {
     content.innerHTML = `<h1>Esta pieza ya fue aprobada para impresión.</h1><p class="muted">Fecha de aprobación: ${new Date(item.approved_at).toLocaleString("es-MX")}</p>`;
     return;
@@ -81,7 +81,8 @@ function renderPrintItemApproval() {
       <p><strong>Trabajo:</strong><br>${escapeHtml(job.title)}</p>
       <p><strong>Tipo:</strong><br>${escapeHtml(printItemTypeLabel(item.item_type))}</p>
       <p><strong>Cliente/Escuela:</strong><br>${escapeHtml(school?.school_name || client.name)}</p>
-      <p><strong>Contacto:</strong><br>${escapeHtml(school?.teacher_name || school?.principal_name || client.name)}</p>
+      <p><strong>Grupo:</strong><br>${escapeHtml(group?.group_name || school?.grade_or_class || "")}</p>
+      <p><strong>Contacto:</strong><br>${escapeHtml(group?.teacher_name || school?.teacher_name || school?.principal_name || client.name)}</p>
     </div>
     <div class="alert alert-warning"><strong>IMPORTANTE:</strong><br>Una vez aprobada esta pieza para impresión, cualquier cambio adicional solicitado después de la aprobación tendrá un costo extra. Por favor revise cuidadosamente antes de aprobar.</div>
     <form id="printItemApprovalForm">
@@ -97,11 +98,11 @@ function catalogFileUrl(option) {
 }
 
 function renderCatalogSelection() {
-  const { print_item: item, job, client, school_profile: school } = printItemData;
+  const { print_item: item, job, client, school_profile: school, school_group: group } = printItemData;
   const title = item.item_type === "DIPLOMA" ? "Seleccione el diseño de diploma" : "Seleccione el paquete de fotos";
   content.innerHTML = `
     <h1 class="approval-title">${title}</h1>
-    <p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(job.title)}</p>
+    <p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p>
     <div class="catalog-grid">${catalogOptions.length ? catalogOptions.map((option) => `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(catalogFileUrl(option))}" type="button"><span><img src="${escapeHtml(catalogFileUrl(option))}" alt="${escapeHtml(option.name)}"></span></button><div><h3>${escapeHtml(option.name)}</h3>${option.price != null ? `<p class="muted">${formatMoney(option.price)}</p>` : ""}${option.description ? `<p>${escapeHtml(option.description)}</p>` : ""}</div><button class="btn btn-primary" data-select-catalog="${option.table}:${option.id}">Elegir esta opción</button></article>`).join("") : `<div class="empty-state">No hay opciones disponibles para este catálogo.</div>`}</div>
     ${item.item_type === "PHOTO_PACKAGE" ? `<div class="form-group"><label>Cantidad de paquetes</label><input id="catalogPackageQuantity" class="input" type="number" min="1" step="1" value="1" required></div>` : ""}
     <div class="form-group"><label>Observaciones para Clarisa</label><textarea id="catalogClientNotes" class="textarea" placeholder="Ejemplo: nos gusta este diseño, pero queremos usar color azul."></textarea></div>`;

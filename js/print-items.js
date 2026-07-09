@@ -48,13 +48,14 @@ export async function getPrintItemsByJob(jobId) {
   return data || [];
 }
 
-export async function ensureDefaultPrintItems(jobId) {
+export async function ensureDefaultPrintItems(jobId, groupId = null) {
   const existing = await getPrintItemsByJob(jobId);
-  if (existing.length) return existing;
-  const rows = DEFAULT_SCHOOL_PRINT_ITEMS.map((item) => ({ ...item, job_id: jobId }));
+  if (groupId && existing.some((item) => item.group_id === groupId)) return existing;
+  if (!groupId && existing.length) return existing;
+  const rows = DEFAULT_SCHOOL_PRINT_ITEMS.map((item) => ({ ...item, job_id: jobId, group_id: groupId }));
   const { data, error } = await supabase.from("print_items").insert(rows).select("*");
   if (error) throw error;
-  return data || [];
+  return groupId ? getPrintItemsByJob(jobId) : data || [];
 }
 
 export async function updatePrintItem(itemId, payload) {

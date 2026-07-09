@@ -7,6 +7,7 @@ import { createDeposit, deleteDeposit, getDepositsByJob } from "./deposits.js";
 import { createGallery, deactivateGallery, getGalleriesByJob } from "./galleries.js";
 import { PRINT_ITEM_STATUSES, ensureDefaultPrintItems, getPrintItemStatusLabel, getPrintItemTypeLabel, updatePrintItem } from "./print-items.js";
 import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, getAdminFileUrl, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink, uploadR2File } from "./r2-files.js";
+import { createSchoolGroup, deleteSchoolGroup, getSchoolGroupsByJob, updateSchoolGroup } from "./school-groups.js";
 import { buildWhatsAppUrl, generateAndLogWhatsAppMessage } from "./whatsapp.js";
 import { calculateTotals, copyToClipboard, escapeHtml, formToObject, generateToken, getQueryParam, openInNewTab, showToast, today } from "./utils.js";
 import { formatDate, formatDateTime, formatMoney } from "./formatters.js";
@@ -20,6 +21,7 @@ let deposits = [];
 let r2Files = [];
 let r2ShareLinks = [];
 let printItems = [];
+let schoolGroups = [];
 let packageCatalogImages = [];
 let diplomaTemplates = [];
 let selectedWhatsappUrl = "";
@@ -77,11 +79,34 @@ async function loadJob() {
   deposits = await getDepositsByJob(jobId);
   r2Files = await getR2FilesByJob(jobId);
   r2ShareLinks = await getR2ShareLinksByJob(jobId);
-  printItems = job.job_type === "SCHOOL_GRADUATION" ? await ensureDefaultPrintItems(jobId) : [];
+  schoolGroups = job.job_type === "SCHOOL_GRADUATION" ? await ensureSchoolGroups() : [];
+  printItems = job.job_type === "SCHOOL_GRADUATION" ? await ensureGroupPrintItems() : [];
   packageCatalogImages = await getPackageImages();
   diplomaTemplates = await getDiplomaTemplates();
   render();
   await loadLogs();
+}
+
+async function ensureSchoolGroups() {
+  let groups = await getSchoolGroupsByJob(jobId);
+  if (groups.length) return groups;
+  const school = job.clients.school_profiles?.[0] || {};
+  const created = await createSchoolGroup(jobId, {
+    group_name: school.grade_or_class || "Grupo principal",
+    teacher_name: school.teacher_name || null,
+    teacher_phone: school.teacher_phone || null,
+    student_count: school.student_count || null,
+    sort_order: 1
+  });
+  return [created];
+}
+
+async function ensureGroupPrintItems() {
+  let items = printItems.length ? printItems : [];
+  for (const group of schoolGroups) {
+    items = await ensureDefaultPrintItems(jobId, group.id);
+  }
+  return items.length ? items : await ensureDefaultPrintItems(jobId);
 }
 
 function render() {
@@ -96,8 +121,8 @@ function render() {
       <p><strong>Estado:</strong><br><span class="badge badge-status ${job.status}">${getJobStatusLabel(job.status)}</span></p>
       <p><strong>Fecha evento:</strong><br>${formatDate(job.event_date)}</p>
       <p><strong>Fecha entrega:</strong><br>${formatDate(job.delivery_date)}</p>
-      <p><strong>Paquete:</strong><br>${escapeHtml(job.packages?.name || "Pendiente de selección")}</p>
-      <p><strong>Cantidad:</strong><br>${Number(job.package_quantity || 0) > 0 ? job.package_quantity : "Pendiente"}</p>
+      <p><strong>Paquetes:</strong><br>${schoolGroups.length ? "Por grupo" : escapeHtml(job.packages?.name || "Pendiente de selección")}</p>
+      <p><strong>Cantidad total:</strong><br>${Number(job.package_quantity || 0) > 0 ? job.package_quantity : "Pendiente"}</p>
       <p><strong>Precio:</strong><br>${formatMoney(job.price)}</p>
       <p><strong>Total abonado:</strong><br>${formatMoney(totals.totalDeposited)}</p>
       <p><strong>Pendiente:</strong><br>${formatMoney(totals.remainingBalance)}</p>
@@ -106,14 +131,14 @@ function render() {
     ${renderDeliverablesSummary()}`;
   if (job.job_type === "SCHOOL_GRADUATION") {
     document.querySelector("#schoolCard").classList.remove("hidden");
-    document.querySelector("#schoolCard").innerHTML = `<h2>Datos escolares</h2><div class="grid">
+    document.querySelector("#schoolCard").innerHTML = `<div class="page-header"><h2>Datos escolares</h2><button id="newSchoolGroupBtn" class="btn btn-primary">Agregar grupo</button></div><div class="grid">
       <p><strong>Escuela:</strong><br>${escapeHtml(school.school_name || job.clients.name)}</p>
       <p><strong>Nivel:</strong><br>${escapeHtml({ KINDER: "Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[school.school_level] || "")}</p>
       <p><strong>Maestra:</strong><br>${escapeHtml(school.teacher_name)}<br>${escapeHtml(school.teacher_phone)}</p>
       <p><strong>Directora:</strong><br>${escapeHtml(school.principal_name)}<br>${escapeHtml(school.principal_phone)}</p>
       <p><strong>Curso:</strong><br>${escapeHtml(school.grade_or_class)}</p>
       <p><strong>Estudiantes:</strong><br>${school.student_count || ""}</p>
-    </div>`;
+    </div><h3>Grupos</h3><div class="group-list">${schoolGroups.map((group) => `<article class="group-chip"><strong>${escapeHtml(group.group_name)}</strong><span>${escapeHtml(group.teacher_name || "Sin maestra")} · ${escapeHtml(group.teacher_phone || "Sin teléfono")}</span><span>${Number(group.package_quantity || 0) > 0 ? `${group.package_quantity} paquetes · ${formatMoney(group.price)}` : "Paquete pendiente"}</span><div class="actions"><button class="btn" data-edit-group="${group.id}">Editar</button>${schoolGroups.length > 1 ? `<button class="btn btn-danger" data-delete-group="${group.id}">Eliminar</button>` : ""}</div></article>`).join("")}</div>`;
   }
   renderPrintItems();
   renderGalleries();
@@ -168,18 +193,46 @@ function renderPrintItems() {
     return;
   }
   card.classList.remove("hidden");
-  card.innerHTML = `<div class="page-header"><h2>Piezas de impresión</h2></div><div class="print-item-grid">${printItems.map((item) => {
-    const files = r2Files.filter((file) => file.print_item_id === item.id);
-    const previewCount = files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
-    const printCount = files.filter((file) => file.file_type === "PRINT_HIGH_RES").length;
-    return `<article class="print-item-card ${printItemClass(item.status)}"><div><strong>${escapeHtml(item.title)}</strong><span>${getPrintItemTypeLabel(item.item_type)}</span></div><span class="badge">${getPrintItemStatusLabel(item.status)}</span><p class="muted">Previews: ${previewCount} · Alta calidad: ${printCount}</p>${item.notes ? `<p><strong>Selección:</strong><br>${escapeHtml(item.notes)}</p>` : ""}${item.client_notes ? `<div class="review-note"><strong>Observaciones de la maestra:</strong><br>${escapeHtml(item.client_notes)}</div>` : ""}${renderCatalogPicker(item)}<div class="actions"><select class="select compact-select" data-print-item-status="${item.id}">${Object.entries(PRINT_ITEM_STATUSES).map(([value, label]) => `<option value="${value}" ${value === item.status ? "selected" : ""}>${label}</option>`).join("")}</select><button class="btn" data-send-print-item="${item.id}">WhatsApp</button><button class="btn" data-copy-print-item-approval="${item.id}">Copiar aprobación</button></div></article>`;
-  }).join("")}</div>`;
+  const groupsToRender = schoolGroups.length ? schoolGroups : [{ id: null, group_name: "Trabajo" }];
+  card.innerHTML = `<div class="page-header"><h2>Piezas por grupo</h2></div>${groupsToRender.map((group) => {
+    const items = printItems.filter((item) => (group.id ? item.group_id === group.id : !item.group_id));
+    return `<section class="group-workflow"><div class="page-header"><div><h3>${escapeHtml(group.group_name)}</h3><p class="muted">${escapeHtml(group.teacher_name || "")}${group.teacher_phone ? ` · ${escapeHtml(group.teacher_phone)}` : ""}</p></div></div><div class="print-item-grid">${items.map(renderPrintItemCard).join("")}</div></section>`;
+  }).join("")}`;
 
   const select = document.querySelector("#r2PrintItem");
   if (select) {
-    select.innerHTML = printItems.map((item) => `<option value="${item.id}">${escapeHtml(item.title)}</option>`).join("");
+    select.innerHTML = printItems.map((item) => {
+      const group = schoolGroups.find((entry) => entry.id === item.group_id);
+      return `<option value="${item.id}">${escapeHtml(group ? `${group.group_name} · ${item.title}` : item.title)}</option>`;
+    }).join("");
   }
   hydrateCatalogThumbs();
+  hydrateR2Thumbnails();
+  setupItemDropzones();
+}
+
+function renderPrintItemCard(item) {
+    const files = r2Files.filter((file) => file.print_item_id === item.id);
+    const previewCount = files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
+    const printCount = files.filter((file) => file.file_type === "PRINT_HIGH_RES").length;
+    return `<article class="print-item-card ${printItemClass(item.status)}"><div><strong>${escapeHtml(item.title)}</strong><span>${getPrintItemTypeLabel(item.item_type)}</span></div><span class="badge">${getPrintItemStatusLabel(item.status)}</span>${renderSelectedVisual(item, files)}<p class="muted">Previews: ${previewCount} · Alta calidad: ${printCount}</p>${item.client_notes ? `<div class="review-note"><strong>Observaciones de la maestra:</strong><br>${escapeHtml(item.client_notes)}</div>` : ""}<div class="mini-dropzone" tabindex="0" data-item-dropzone="${item.id}" data-file-type="TEACHER_PREVIEW"><strong>Subir preview</strong><span>Arrastre aquí o haga clic</span><input type="file" multiple hidden data-item-file-input="${item.id}" data-file-type="TEACHER_PREVIEW"></div><div class="actions"><label class="btn">Alta calidad<input type="file" multiple hidden data-item-file-input="${item.id}" data-file-type="PRINT_HIGH_RES"></label><select class="select compact-select" data-print-item-status="${item.id}">${Object.entries(PRINT_ITEM_STATUSES).map(([value, label]) => `<option value="${value}" ${value === item.status ? "selected" : ""}>${label}</option>`).join("")}</select><button class="btn" data-send-print-item="${item.id}">WhatsApp</button><button class="btn" data-copy-print-item-approval="${item.id}">Copiar aprobación</button></div></article>`;
+}
+
+function renderSelectedVisual(item, files) {
+  const latestPreview = files.find((file) => file.file_type === "TEACHER_PREVIEW" && String(file.content_type || "").startsWith("image/"));
+  if (latestPreview) {
+    return `<div class="selected-visual"><span class="selection-label">Preview personalizado</span><button class="catalog-preview-large" data-preview-r2-file="${latestPreview.id}" type="button"><span data-r2-thumb="${latestPreview.id}">PREVIEW</span></button><p>${escapeHtml(latestPreview.file_name)}</p></div>`;
+  }
+  if (item.selected_file_id && item.item_type === "DIPLOMA") {
+    return `<div class="selected-visual"><span class="selection-label">Diploma seleccionado</span><button class="catalog-preview-large" data-open-catalog-file="diploma_templates:${item.selected_file_id}" type="button"><span data-catalog-thumb="diploma_templates:${item.selected_file_id}">DIPLOMA</span></button><p>${escapeHtml(item.notes || "")}</p></div>`;
+  }
+  if (item.selected_file_id && item.item_type === "PHOTO_PACKAGE") {
+    return `<div class="selected-visual"><span class="selection-label">Paquete seleccionado</span><button class="catalog-preview-large" data-open-catalog-file="package_images:${item.selected_file_id}" type="button"><span data-catalog-thumb="package_images:${item.selected_file_id}">PAQUETE</span></button><p>${escapeHtml(item.notes || "")}</p></div>`;
+  }
+  if (item.selected_file_id && item.item_type === "FOLDER_OPTION") {
+    return `<div class="selected-visual"><span class="selection-label">Carpeta seleccionada</span><p>${escapeHtml(item.notes || "")}</p></div>`;
+  }
+  return `<div class="empty-state compact-empty">Sin selección o preview</div>`;
 }
 
 function renderCatalogPicker(item) {
@@ -239,6 +292,42 @@ async function uploadSelectedR2Files(files) {
   } catch (error) {
     console.error(error);
     if (status) status.textContent = "";
+    showToast(error.message || "No se pudo subir el archivo.", "error");
+  }
+}
+
+function setupItemDropzones() {
+  document.querySelectorAll("[data-item-dropzone]").forEach((dropzone) => {
+    if (dropzone.dataset.ready) return;
+    dropzone.dataset.ready = "true";
+    const itemId = dropzone.dataset.itemDropzone;
+    const fileType = dropzone.dataset.fileType || "TEACHER_PREVIEW";
+    const input = document.querySelector(`[data-item-file-input="${itemId}"][data-file-type="${fileType}"]`);
+    dropzone.addEventListener("click", () => input?.click());
+    dropzone.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") input?.click();
+    });
+    dropzone.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      dropzone.classList.add("dragover");
+    });
+    dropzone.addEventListener("dragleave", () => dropzone.classList.remove("dragover"));
+    dropzone.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      dropzone.classList.remove("dragover");
+      await uploadPrintItemFiles(itemId, fileType, Array.from(event.dataTransfer.files || []));
+    });
+  });
+}
+
+async function uploadPrintItemFiles(itemId, fileType, files) {
+  if (!files.length) return;
+  try {
+    for (const file of files) await uploadR2File(jobId, fileType, file, itemId);
+    showToast(files.length === 1 ? "Archivo subido a la pieza." : "Archivos subidos a la pieza.");
+    await loadJob();
+  } catch (error) {
+    console.error(error);
     showToast(error.message || "No se pudo subir el archivo.", "error");
   }
 }
@@ -407,9 +496,11 @@ async function sendPrintItemWhatsapp(itemId) {
     showToast("Primero suba previews para esta pieza.", "error");
     return;
   }
-  const phone = document.querySelector("#whatsappPhone")?.value || job.clients.phone;
   const school = job.clients.school_profiles?.[0] || {};
-  const contactName = school.teacher_name || school.principal_name || job.clients.name;
+  const group = schoolGroups.find((entry) => entry.id === item.group_id);
+  const phone = group?.teacher_phone || document.querySelector("#whatsappPhone")?.value || job.clients.phone;
+  const contactName = group?.teacher_name || school.teacher_name || school.principal_name || job.clients.name;
+  const groupLine = group?.group_name ? `Grupo: ${group.group_name}\n` : "";
   let message = "";
   if (isCatalogSelection) {
     const followUpText = item.item_type === "PHOTO_PACKAGE"
@@ -420,7 +511,7 @@ async function sendPrintItemWhatsapp(itemId) {
 Ya está listo el catálogo de ${item.item_type === "DIPLOMA" ? "diplomas" : "paquetes de fotos"} para que pueda elegir la opción que más le guste.
 
 Escuela: ${school.school_name || job.clients.name}
-Trabajo: ${job.title}
+${groupLine}Trabajo: ${job.title}
 
 Puede revisar y seleccionar aquí:
 ${printItemApprovalUrl(item)}
@@ -492,6 +583,12 @@ function openDepositForm() {
   modal.classList.remove("hidden");
 }
 
+function openGroupForm(group = null) {
+  document.querySelector("#detailModalTitle").textContent = group ? "Editar grupo" : "Agregar grupo";
+  form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Grupo</label><input class="input" name="group_name" required value="${escapeHtml(group?.group_name || "")}" placeholder="6to A"></div><div class="form-group"><label>Maestra</label><input class="input" name="teacher_name" value="${escapeHtml(group?.teacher_name || "")}"></div><div class="form-group"><label>Teléfono maestra</label><input class="input" name="teacher_phone" value="${escapeHtml(group?.teacher_phone || "")}"></div><div class="form-group"><label>Alumnos</label><input class="input" type="number" min="0" name="student_count" value="${group?.student_count || ""}"></div></div><div class="form-group"><label>Notas</label><textarea class="textarea" name="notes">${escapeHtml(group?.notes || "")}</textarea></div><input type="hidden" name="group_id" value="${group?.id || ""}"><input type="hidden" name="form_type" value="school_group"><button class="btn btn-primary" type="submit">Guardar grupo</button>`;
+  modal.classList.remove("hidden");
+}
+
 function openR2FileForm() {
   document.querySelector("#detailModalTitle").textContent = "Registrar archivo R2";
   const itemOptions = printItems.length ? `<div class="form-group"><label>Pieza de impresión</label><select class="select" name="print_item_id"><option value="">Sin pieza</option>${printItems.map((item) => `<option value="${item.id}">${escapeHtml(item.title)}</option>`).join("")}</select></div>` : "";
@@ -553,6 +650,18 @@ form.addEventListener("submit", async (event) => {
   try {
     if (data.form_type === "gallery") await createGallery(jobId, { title: data.title, gallery_type: data.gallery_type, google_photos_url: data.google_photos_url, notes: data.notes || null, is_active: true });
     if (data.form_type === "deposit") await createDeposit(jobId, { amount: Number(data.amount), deposit_date: data.deposit_date, notes: data.notes || null });
+    if (data.form_type === "school_group") {
+      const payload = {
+        group_name: data.group_name.trim(),
+        teacher_name: data.teacher_name || null,
+        teacher_phone: data.teacher_phone || null,
+        student_count: data.student_count ? Number(data.student_count) : null,
+        notes: data.notes || null,
+        sort_order: schoolGroups.length + 1
+      };
+      const group = data.group_id ? await updateSchoolGroup(data.group_id, payload) : await createSchoolGroup(jobId, payload);
+      await ensureDefaultPrintItems(jobId, group.id);
+    }
     if (data.form_type === "r2_file") await createR2File(jobId, { print_item_id: data.print_item_id || null, file_type: data.file_type, r2_key: data.r2_key.trim(), file_name: data.file_name.trim(), content_type: data.content_type || null, size_bytes: data.size_bytes ? Number(data.size_bytes) : null, notes: data.notes || null });
     if (data.form_type === "r2_share_link") {
       const requiredFileType = data.link_type === "PRINT_DOWNLOAD" ? "PRINT_HIGH_RES" : "TEACHER_PREVIEW";
@@ -574,7 +683,7 @@ form.addEventListener("submit", async (event) => {
       showToast(copied ? "Link generado y copiado." : "Link generado.");
     }
     modal.classList.add("hidden");
-    if (data.form_type !== "r2_share_link") showToast(data.form_type === "deposit" ? "Abono registrado." : data.form_type === "r2_file" ? "Archivo R2 registrado." : "Galería guardada.");
+    if (data.form_type !== "r2_share_link") showToast(data.form_type === "deposit" ? "Abono registrado." : data.form_type === "r2_file" ? "Archivo R2 registrado." : data.form_type === "school_group" ? "Grupo guardado." : "Galería guardada.");
     loadJob();
   } catch (error) {
     console.error(error);
@@ -586,6 +695,14 @@ document.addEventListener("click", async (event) => {
   try {
     const catalogButton = event.target.closest("[data-open-catalog-file]");
     if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");
+    if (event.target.matches("#newSchoolGroupBtn")) openGroupForm();
+    if (event.target.dataset.editGroup) openGroupForm(schoolGroups.find((group) => group.id === event.target.dataset.editGroup));
+    if (event.target.dataset.deleteGroup && confirm("¿Eliminar este grupo y sus validaciones?")) {
+      await deleteSchoolGroup(event.target.dataset.deleteGroup);
+      showToast("Grupo eliminado.");
+      await loadJob();
+      return;
+    }
     if (event.target.matches("#newGalleryBtn")) openGalleryForm();
     if (event.target.matches("#sendTeacherPreviewWhatsappBtn")) await sendTeacherPreviewWhatsapp();
     if (event.target.dataset.sendPrintItem) await sendPrintItemWhatsapp(event.target.dataset.sendPrintItem);
@@ -687,6 +804,11 @@ document.addEventListener("click", async (event) => {
 
 document.addEventListener("change", async (event) => {
   try {
+    if (event.target.dataset.itemFileInput) {
+      await uploadPrintItemFiles(event.target.dataset.itemFileInput, event.target.dataset.fileType || "TEACHER_PREVIEW", Array.from(event.target.files || []));
+      event.target.value = "";
+      return;
+    }
     if (event.target.dataset.printItemStatus) {
       await updatePrintItem(event.target.dataset.printItemStatus, { status: event.target.value });
       showToast("Pieza actualizada.");
