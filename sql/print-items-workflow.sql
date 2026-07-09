@@ -120,9 +120,14 @@ begin
         'content_type', jf.content_type,
         'size_bytes', jf.size_bytes
       ) order by jf.created_at desc)
-      from job_files jf
-      where jf.print_item_id = pi.id
-        and jf.file_type = 'TEACHER_PREVIEW'
+      from (
+        select jf.id, jf.file_name, jf.content_type, jf.size_bytes, jf.created_at
+        from job_files jf
+        where jf.print_item_id = pi.id
+          and jf.file_type = 'TEACHER_PREVIEW'
+        order by jf.created_at desc
+        limit 1
+      ) jf
     ), '[]'::jsonb),
     'client', jsonb_build_object(
       'name', c.name,
