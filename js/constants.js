@@ -1,11 +1,11 @@
 export const CLIENT_TYPES = {
   SCHOOL_GRADUATION: "Escuela",
-  PHOTO_SESSION: "Particular"
+  PHOTO_SESSION: "Particulares"
 };
 
 export const JOB_TYPES = {
   SCHOOL_GRADUATION: "Escuela",
-  PHOTO_SESSION: "Particular"
+  PHOTO_SESSION: "Particulares"
 };
 
 export const SCHOOL_EVENT_TYPES = {

@@ -15,7 +15,7 @@
         <div class="card">
           <div class="filters">
             <input id="searchInput" class="input" placeholder="Buscar por nombre, teléfono o correo">
-            <select id="typeFilter" class="select"><option value="">Todos</option><option value="SCHOOL_GRADUATION">Escuela</option><option value="PHOTO_SESSION">Particular</option></select>
+            <select id="typeFilter" class="select"><option value="">Todos</option><option value="SCHOOL_GRADUATION">Escuela</option><option value="PHOTO_SESSION">Particulares</option></select>
             <select id="activeFilter" class="select"><option value="true">Activos</option><option value="">Todos</option><option value="false">Inactivos</option></select>
           </div>
           <div id="clientsTable" class="table-wrap"></div>
@@ -34,7 +34,7 @@
       form.innerHTML = [
         '<div class="alert alert-warning">El formulario abrió en modo básico. Para guardar en Supabase abra la app con un servidor local, no con doble clic al archivo HTML.</div>',
         '<div class="form-grid">',
-        '<div class="form-group"><label>Tipo de cliente</label><select class="select" name="client_type" required><option value="SCHOOL_GRADUATION">Escuela</option><option value="PHOTO_SESSION">Particular</option></select></div>',
+        '<div class="form-group"><label>Tipo de cliente</label><select class="select" name="client_type" required><option value="SCHOOL_GRADUATION">Escuela</option><option value="PHOTO_SESSION">Particulares</option></select></div>',
         '<div class="form-group"><label>Nombre / Escuela</label><input class="input" name="name" required></div>',
         '<div class="form-group"><label>WhatsApp contacto</label><input class="input" name="phone" required></div>',
         '<div class="form-group"><label>Correo contacto</label><input class="input" type="email" name="email"></div>',

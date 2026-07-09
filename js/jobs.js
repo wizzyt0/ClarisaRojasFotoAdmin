@@ -1,13 +1,12 @@
 import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
-import { JOB_STATUSES, JOB_TYPES, SCHOOL_EVENT_PACKAGE_TYPES, SCHOOL_EVENT_TYPES, getJobStatusLabel, getJobTypeLabel, getSchoolEventTypeLabel } from "./constants.js";
-import { calculateJobPrice, escapeHtml, formToObject, generateToken, getQueryParam, showToast, today, openInNewTab } from "./utils.js";
+import { JOB_STATUSES, SCHOOL_EVENT_TYPES, getJobStatusLabel, getJobTypeLabel, getSchoolEventTypeLabel } from "./constants.js";
+import { escapeHtml, formToObject, generateToken, getQueryParam, showToast, openInNewTab } from "./utils.js";
 import { generateAndLogWhatsAppMessage } from "./whatsapp.js";
 import { formatDate, formatMoney } from "./formatters.js";
 
 let jobs = [];
 let clients = [];
-let packages = [];
 let editingJob = null;
 const modal = document.querySelector("#jobModal");
 const form = document.querySelector("#jobForm");
@@ -15,79 +14,44 @@ const form = document.querySelector("#jobForm");
 document.querySelector("#statusFilter").insertAdjacentHTML("beforeend", Object.entries(JOB_STATUSES).map(([value, label]) => `<option value="${value}">${label}</option>`).join(""));
 
 function renderForm(job = {}) {
-  const depositRows = (job.deposits || []).length
-    ? `<table class="table"><thead><tr><th>Fecha y hora</th><th>Monto</th><th>Nota</th></tr></thead><tbody>${job.deposits.map((deposit) => `<tr><td>${formatDate(deposit.deposit_date)}${deposit.created_at ? `<br><span class="muted">${new Date(deposit.created_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })}</span>` : ""}</td><td>${formatMoney(deposit.amount)}</td><td>${escapeHtml(deposit.notes || "")}</td></tr>`).join("")}</tbody></table>`
-    : `<div class="empty-state">Todavía no hay abonos registrados para este trabajo.</div>`;
   form.innerHTML = `
     <div class="form-grid">
       <div class="form-group"><label>Cliente</label><select class="select" name="client_id" required><option value="">Seleccione</option>${clients.map((client) => `<option value="${client.id}" data-type="${client.client_type}" ${client.id === job.client_id ? "selected" : ""}>${escapeHtml(client.name)}</option>`).join("")}</select></div>
-      <div class="form-group"><label>Tipo de trabajo</label><select class="select" name="job_type" required>${Object.entries(JOB_TYPES).map(([value, label]) => `<option value="${value}" ${value === (job.job_type || "PHOTO_SESSION") ? "selected" : ""}>${label}</option>`).join("")}</select></div>
+      <div class="form-group" id="schoolWorkTypeField"><label>Tipo de trabajo</label><select class="select" name="school_work_type">${Object.entries(SCHOOL_EVENT_TYPES).map(([value, label]) => `<option value="${value}" ${value === (job.event_type || "GRADUATION") ? "selected" : ""}>${label}</option>`).join("")}</select></div>
+      <div class="form-group hidden" id="privateWorkTypeField"><label>Tipo de trabajo</label><input class="input" name="private_work_type" value="${escapeHtml(job.job_type === "PHOTO_SESSION" ? job.event_type : "")}" placeholder="Flujo particular pendiente"></div>
       <div class="form-group"><label>Título</label><input class="input" name="title" required value="${escapeHtml(job.title)}"></div>
-      <div class="form-group" id="schoolEventField"><label>Evento escolar</label><select class="select" name="event_type"><option value="">Seleccione</option>${Object.entries(SCHOOL_EVENT_TYPES).map(([value, label]) => `<option value="${value}" ${value === job.event_type ? "selected" : ""}>${label}</option>`).join("")}</select></div>
-      <div class="form-group" id="privateEventField"><label>Tipo de evento</label><input class="input" name="private_event_type" value="${escapeHtml(job.job_type === "PHOTO_SESSION" ? job.event_type : "")}"></div>
       <div class="form-group"><label>Fecha del evento</label><input class="input" type="date" name="event_date" value="${escapeHtml(job.event_date)}"></div>
       <div class="form-group"><label>Fecha de entrega</label><input class="input" type="date" name="delivery_date" value="${escapeHtml(job.delivery_date)}"></div>
-      <div class="form-group"><label>Paquete inicial</label><select class="select" name="package_id"></select><span class="muted">En escuelas puede quedar pendiente; cada maestra podrá elegir por grupo.</span></div>
-      <div class="form-group"><label>Cantidad de paquetes</label><input class="input" type="number" min="0" name="package_quantity" value="${job.package_quantity ?? 0}"></div>
-      <div class="form-group"><label>Precio total</label><input class="input" type="number" min="0" step="0.01" name="price" value="${job.price ?? 0}"></div>
       <div class="form-group"><label>Estado</label><select class="select" name="status">${Object.entries(JOB_STATUSES).map(([value, label]) => `<option value="${value}" ${value === (job.status || "CREATED") ? "selected" : ""}>${label}</option>`).join("")}</select></div>
     </div>
     <div class="form-group"><label>Notas</label><textarea class="textarea" name="notes">${escapeHtml(job.notes)}</textarea></div>
-    <div class="card">
-      <h3>Abono de maestra</h3>
-      <p class="muted">Opcional. Si la maestra abona dinero, registre el monto aquí para bajar el pendiente del trabajo.</p>
-      <div class="form-grid">
-        <div class="form-group"><label>Monto abonado</label><input class="input" type="number" min="0" step="0.01" name="teacher_deposit_amount" placeholder="0.00"></div>
-        <div class="form-group"><label>Nota del abono</label><input class="input" name="teacher_deposit_note" value="Abono entregado por la maestra"></div>
-      </div>
-      <h4>Historial de abonos</h4>
-      ${job.id ? depositRows : `<div class="empty-state">El historial aparecerá después de guardar el trabajo.</div>`}
-    </div>
     <button class="btn btn-primary" type="submit">Guardar trabajo</button>`;
 
-  const updatePrice = () => {
-    const packageOption = form.package_id.selectedOptions[0];
-    const packagePrice = Number(packageOption?.dataset.price || 0);
-    if (packagePrice && Number(form.package_quantity.value || 0) > 0) form.price.value = calculateJobPrice(packagePrice, form.package_quantity.value, form.job_type.value);
-  };
-  const filteredPackages = () => {
-    const schoolPackageType = SCHOOL_EVENT_PACKAGE_TYPES[form.event_type.value];
-    const allowed = form.job_type.value === "SCHOOL_GRADUATION"
-      ? packages.filter((pkg) => !schoolPackageType || pkg.package_type === schoolPackageType || pkg.package_type === "GENERAL")
-      : packages.filter((pkg) => pkg.package_type === "PHOTO_SESSION" || pkg.package_type === "GENERAL");
-    return allowed;
-  };
-  const refreshPackageOptions = () => {
-    const current = form.package_id.value || job.package_id || "";
-    form.package_id.innerHTML = `<option value="">Pendiente de selección</option>${filteredPackages().map((pkg) => `<option value="${pkg.id}" data-price="${pkg.price}" ${pkg.id === current ? "selected" : ""}>${escapeHtml(pkg.name)} - ${formatMoney(pkg.price)}</option>`).join("")}`;
-  };
   const refreshTitle = () => {
     if (editingJob || form.title.value.trim()) return;
     const clientName = form.client_id.selectedOptions[0]?.textContent?.trim() || "";
-    const eventLabel = form.job_type.value === "SCHOOL_GRADUATION" ? getSchoolEventTypeLabel(form.event_type.value) : form.private_event_type.value.trim();
-    const year = new Date().getFullYear();
-    if (clientName && eventLabel) form.title.value = `${clientName} - ${eventLabel} - ${year}`;
+    const isSchool = form.client_id.selectedOptions[0]?.dataset.type === "SCHOOL_GRADUATION";
+    const workType = isSchool ? getSchoolEventTypeLabel(form.school_work_type.value) : form.private_work_type.value.trim();
+    if (clientName && workType) form.title.value = `${clientName} - ${workType}`;
   };
-  const toggleEventFields = () => {
-    const isSchool = form.job_type.value === "SCHOOL_GRADUATION";
-    document.querySelector("#schoolEventField").classList.toggle("hidden", !isSchool);
-    document.querySelector("#privateEventField").classList.toggle("hidden", isSchool);
-    refreshPackageOptions();
+  const toggleWorkFields = () => {
+    const isSchool = form.client_id.selectedOptions[0]?.dataset.type === "SCHOOL_GRADUATION";
+    document.querySelector("#schoolWorkTypeField").classList.toggle("hidden", !isSchool);
+    document.querySelector("#privateWorkTypeField").classList.toggle("hidden", isSchool);
+    form.school_work_type.required = isSchool;
+    form.private_work_type.required = !isSchool;
     refreshTitle();
   };
   form.client_id.addEventListener("change", () => {
-    const type = form.client_id.selectedOptions[0]?.dataset.type;
-    if (type) form.job_type.value = type;
-    toggleEventFields();
-    updatePrice();
+    form.title.value = "";
+    toggleWorkFields();
   });
-  form.package_id.addEventListener("change", updatePrice);
-  form.package_quantity.addEventListener("input", updatePrice);
-  form.job_type.addEventListener("change", () => { toggleEventFields(); updatePrice(); });
-  form.event_type.addEventListener("change", () => { refreshPackageOptions(); refreshTitle(); updatePrice(); });
-  form.private_event_type.addEventListener("input", refreshTitle);
-  toggleEventFields();
-  updatePrice();
+  form.school_work_type.addEventListener("change", () => {
+    if (!editingJob) form.title.value = "";
+    refreshTitle();
+  });
+  form.private_work_type.addEventListener("input", refreshTitle);
+  toggleWorkFields();
 }
 
 function render() {
@@ -113,15 +77,13 @@ function renderJobGroups(job) {
 }
 
 async function load() {
-  const [{ data: jobsData, error }, { data: clientsData }, { data: packagesData }] = await Promise.all([
+  const [{ data: jobsData, error }, { data: clientsData }] = await Promise.all([
     supabase.from("jobs").select("*, clients(name, is_active), packages(name), school_groups(*, packages(name, price)), deposits(amount, deposit_date, notes, created_at), galleries(id, is_active, google_photos_url)").order("created_at", { ascending: false }),
-    supabase.from("clients").select("*").eq("is_active", true).order("name"),
-    supabase.from("packages").select("*").eq("is_active", true).order("name")
+    supabase.from("clients").select("*").eq("is_active", true).order("name")
   ]);
   if (error) throw error;
   jobs = (jobsData || []).filter((job) => job.clients?.is_active !== false);
   clients = clientsData || [];
-  packages = packagesData || [];
   const clientParam = getQueryParam("client");
   const actionParam = getQueryParam("action");
   if (clientParam && !document.querySelector("#searchInput").value) {
@@ -152,8 +114,10 @@ function openModal(job = null) {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = formToObject(form);
-  if (data.job_type === "SCHOOL_GRADUATION" && !data.event_type) return showToast("Seleccione el evento escolar.", "error");
-  if (Number(data.package_quantity || 0) < 0 || Number(data.price || 0) < 0) return showToast("Revise cantidad y precio.", "error");
+  const selectedClient = clients.find((client) => client.id === data.client_id);
+  const isSchool = selectedClient?.client_type === "SCHOOL_GRADUATION";
+  if (isSchool && !data.school_work_type) return showToast("Seleccione el tipo de trabajo escolar.", "error");
+  if (!isSchool && !data.private_work_type?.trim()) return showToast("El flujo para particulares queda pendiente; escriba un tipo de trabajo temporal.", "error");
   let galleryUrl = "";
   const hasActiveGallery = (editingJob?.galleries || []).some((gallery) => gallery.is_active && gallery.google_photos_url);
   if (data.status === "GALLERY_READY" && !hasActiveGallery) {
@@ -165,15 +129,15 @@ form.addEventListener("submit", async (event) => {
   }
   const payload = {
     client_id: data.client_id,
-    package_id: data.package_id || null,
-    job_type: data.job_type,
+    package_id: editingJob?.package_id || null,
+    job_type: isSchool ? "SCHOOL_GRADUATION" : "PHOTO_SESSION",
     title: data.title.trim(),
     event_date: data.event_date || null,
     delivery_date: data.delivery_date || null,
     status: data.status || "CREATED",
-    event_type: data.job_type === "SCHOOL_GRADUATION" ? data.event_type || null : data.private_event_type || null,
-    price: Number(data.price || 0),
-    package_quantity: Number(data.package_quantity || 0),
+    event_type: isSchool ? data.school_work_type || null : data.private_work_type || null,
+    price: Number(editingJob?.price || 0),
+    package_quantity: Number(editingJob?.package_quantity || 0),
     notes: data.notes || null
   };
   if (!editingJob) payload.approval_token = generateToken(48);
@@ -185,8 +149,8 @@ form.addEventListener("submit", async (event) => {
   if (galleryUrl) {
     const galleryResult = await supabase.from("galleries").insert({
       job_id: result.data.id,
-      title: data.job_type === "SCHOOL_GRADUATION" ? "Galería para revisión" : "Galería principal",
-      gallery_type: data.job_type === "SCHOOL_GRADUATION" ? "STUDENT_GALLERY" : "GENERAL",
+      title: isSchool ? "Galería para revisión" : "Galería principal",
+      gallery_type: isSchool ? "STUDENT_GALLERY" : "GENERAL",
       google_photos_url: galleryUrl.trim(),
       notes: "Link agregado al marcar galería lista.",
       is_active: true
@@ -199,20 +163,6 @@ form.addEventListener("submit", async (event) => {
     const whatsappResult = await generateAndLogWhatsAppMessage(result.data.id);
     openInNewTab(whatsappResult.waMeUrl);
     showToast("Link guardado y WhatsApp generado.");
-  }
-  const depositAmount = Number(data.teacher_deposit_amount || 0);
-  if (depositAmount > 0) {
-    const depositResult = await supabase.from("deposits").insert({
-      job_id: result.data.id,
-      amount: depositAmount,
-      deposit_date: today(),
-      notes: data.teacher_deposit_note || "Abono entregado por la maestra"
-    });
-    if (depositResult.error) {
-      console.error(depositResult.error);
-      showToast("El trabajo se guardó, pero no se pudo registrar el abono.", "error");
-      return;
-    }
   }
   showToast("Trabajo actualizado.");
   load().catch((error) => {
