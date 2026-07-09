@@ -38,8 +38,7 @@ function renderForm(client = {}, profile = {}) {
       <div class="form-grid">
         <div class="form-group"><label>Nombre de la escuela</label><input class="input" name="school_name" value="${escapeHtml(profile.school_name)}"></div>
         <div class="form-group"><label>Nivel escolar</label><select class="select" name="school_level"><option value="">Seleccione</option>${schoolLevelOptions(profile.school_level)}</select></div>
-        <div class="form-group"><label>Contacto principal</label><input class="input" name="contact_name" value="${escapeHtml(profile.contact_name || profile.teacher_name)}"></div>
-        <div class="form-group"><label>Teléfono / WhatsApp contacto</label><input class="input" name="contact_phone" value="${escapeHtml(profile.contact_phone || profile.teacher_phone)}"></div>
+        <div class="form-group"><label>WhatsApp contacto</label><input class="input" name="contact_phone" value="${escapeHtml(profile.contact_phone || profile.teacher_phone)}"></div>
         <div class="form-group"><label>Correo contacto</label><input class="input" type="email" name="contact_email" value="${escapeHtml(profile.contact_email || client.email)}"></div>
         <div class="form-group"><label>Directora</label><input class="input" name="principal_name" value="${escapeHtml(profile.principal_name)}"></div>
         <div class="form-group"><label>Teléfono directora</label><input class="input" name="principal_phone" value="${escapeHtml(profile.principal_phone)}"></div>
@@ -62,7 +61,6 @@ function renderForm(client = {}, profile = {}) {
     form.email.closest(".form-group").classList.toggle("hidden", isSchool);
     form.name.required = !isSchool;
     form.phone.required = !isSchool;
-    form.contact_name.required = isSchool;
     form.contact_phone.required = isSchool;
   };
   form.client_type.addEventListener("change", toggleSchool);
@@ -110,8 +108,8 @@ form.addEventListener("submit", async (event) => {
     showToast("Si es escuela, el nombre de la escuela es requerido.", "error");
     return;
   }
-  if (data.client_type === "SCHOOL_GRADUATION" && (!data.contact_name.trim() || !data.contact_phone.trim())) {
-    showToast("Capture el contacto principal y su WhatsApp.", "error");
+  if (data.client_type === "SCHOOL_GRADUATION" && !data.contact_phone.trim()) {
+    showToast("Capture el WhatsApp de contacto.", "error");
     return;
   }
   const isSchool = data.client_type === "SCHOOL_GRADUATION";
@@ -137,7 +135,7 @@ form.addEventListener("submit", async (event) => {
       client_id: saved.id,
       school_name: data.school_name.trim(),
       school_level: data.school_level || null,
-      contact_name: data.contact_name || null,
+      contact_name: null,
       contact_phone: data.contact_phone || null,
       contact_email: data.contact_email || null,
       teacher_name: null,

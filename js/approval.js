@@ -30,7 +30,7 @@ function render() {
     <div class="grid">
       <p><strong>Trabajo:</strong><br>${escapeHtml(job.title)}</p>
       <p><strong>Paquete:</strong><br>${escapeHtml(pkg?.name || "Sin paquete")}</p>
-      ${job.job_type === "SCHOOL_GRADUATION" ? `<p><strong>Nivel:</strong><br>${escapeHtml({ KINDER: "Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[school?.school_level] || "")}</p><p><strong>Curso:</strong><br>${escapeHtml(school?.grade_or_class)}</p><p><strong>Maestra:</strong><br>${escapeHtml(school?.teacher_name)}</p><p><strong>Directora:</strong><br>${escapeHtml(school?.principal_name)}</p><p><strong>Cantidad de paquetes:</strong><br>${Number(job.package_quantity || 0) > 0 ? job.package_quantity : "Pendiente de selección"}</p><p><strong>Estudiantes:</strong><br>${school?.student_count || ""}</p>` : `<p><strong>Tipo de sesión:</strong><br>${escapeHtml(job.event_type || "Sesión de fotos")}</p>`}
+      ${job.job_type === "SCHOOL_GRADUATION" ? `<p><strong>Nivel:</strong><br>${escapeHtml({ KINDER: "Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[school?.school_level] || "")}</p><p><strong>Directora:</strong><br>${escapeHtml(school?.principal_name)}</p><p><strong>Cantidad de paquetes:</strong><br>${Number(job.package_quantity || 0) > 0 ? job.package_quantity : "Pendiente de selección por grupo"}</p>` : `<p><strong>Tipo de sesión:</strong><br>${escapeHtml(job.event_type || "Sesión de fotos")}</p>`}
     </div>
     <h2>Links para revisar</h2>
     ${galleryHtml || `<div class="empty-state">No hay galerías activas registradas.</div>`}
@@ -69,7 +69,7 @@ function renderPrintItemApproval() {
     content.innerHTML = `<div class="alert alert-success"><h1>Selección recibida.</h1><p>Gracias. Clarisa preparará la versión personalizada y la enviará después para revisión y autorización final.</p></div>`;
     return;
   }
-  const needsCatalogSelection = ["DIPLOMA", "PHOTO_PACKAGE"].includes(item.item_type) && !item.selected_file_id;
+  const needsCatalogSelection = ["DIPLOMA", "PHOTO_PACKAGE", "FOLDER_OPTION"].includes(item.item_type) && !item.selected_file_id;
   if (needsCatalogSelection) {
     renderCatalogSelection();
     return;
@@ -99,7 +99,7 @@ function catalogFileUrl(option) {
 
 function renderCatalogSelection() {
   const { print_item: item, job, client, school_profile: school, school_group: group } = printItemData;
-  const title = item.item_type === "DIPLOMA" ? "Seleccione el diseño de diploma" : "Seleccione el paquete de fotos";
+  const title = item.item_type === "DIPLOMA" ? "Seleccione el diseño de diploma" : item.item_type === "FOLDER_OPTION" ? "Seleccione la carpeta" : "Seleccione el paquete de fotos";
   content.innerHTML = `
     <h1 class="approval-title">${title}</h1>
     <p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p>
@@ -117,7 +117,7 @@ async function load() {
       return;
     }
     printItemData = data;
-    if (["DIPLOMA", "PHOTO_PACKAGE"].includes(data.print_item?.item_type) && !data.print_item?.selected_file_id) {
+    if (["DIPLOMA", "PHOTO_PACKAGE", "FOLDER_OPTION"].includes(data.print_item?.item_type) && !data.print_item?.selected_file_id) {
       const catalogResult = await supabase.rpc("get_public_catalog_by_print_item_token", { token: itemToken });
       if (!catalogResult.error) catalogOptions = catalogResult.data || [];
     }
@@ -167,7 +167,7 @@ document.addEventListener("click", async (event) => {
     showToast(data?.message || "No se pudo guardar la selección.", "error");
     return;
   }
-  content.innerHTML = `<div class="alert alert-success"><h1>Selección guardada.</h1><p>Gracias. Clarisa recibirá su selección para preparar la versión personalizada y enviarla a revisión final.</p><p><strong>Selección:</strong> ${escapeHtml(data.selected_name || "")}</p>${data.package_quantity ? `<p><strong>Cantidad:</strong> ${data.package_quantity}<br><strong>Total:</strong> ${formatMoney(data.price || 0)}</p>` : ""}</div>`;
+  content.innerHTML = `<div class="alert alert-success"><h1>Selección guardada.</h1><p>Gracias. Clarisa recibirá su selección para continuar con el pedido.</p><p><strong>Selección:</strong> ${escapeHtml(data.selected_name || "")}</p>${data.package_quantity ? `<p><strong>Cantidad:</strong> ${data.package_quantity}<br><strong>Total:</strong> ${formatMoney(data.price || 0)}</p>` : ""}</div>`;
 });
 
 document.addEventListener("submit", async (event) => {

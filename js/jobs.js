@@ -181,6 +181,7 @@ form.addEventListener("submit", async (event) => {
     ? await supabase.from("jobs").update(payload).eq("id", editingJob.id).select().single()
     : await supabase.from("jobs").insert(payload).select().single();
   if (result.error) { console.error(result.error); return showToast("No se pudo guardar el trabajo.", "error"); }
+  modal.classList.add("hidden");
   if (galleryUrl) {
     const galleryResult = await supabase.from("galleries").insert({
       job_id: result.data.id,
@@ -213,9 +214,11 @@ form.addEventListener("submit", async (event) => {
       return;
     }
   }
-  modal.classList.add("hidden");
   showToast("Trabajo actualizado.");
-  load();
+  load().catch((error) => {
+    console.error(error);
+    showToast("El trabajo se guardó, pero no se pudo recargar la lista.", "error");
+  });
 });
 
 document.querySelector("#newJobBtn")?.addEventListener("click", () => {

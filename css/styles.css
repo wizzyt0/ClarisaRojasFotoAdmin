@@ -126,6 +126,20 @@ a { color: var(--primary); text-decoration: none; }
   border-radius: 6px;
   padding: 8px 10px;
 }
+.step-heading { display: flex; gap: 10px; align-items: start; }
+.step-heading > div { display: grid; gap: 2px; }
+.step-heading span:not(.step-number) { color: var(--muted); font-size: 0.9rem; }
+.step-number {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: white;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
 .group-list { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 .group-card {
   display: grid;
@@ -253,6 +267,8 @@ label { font-weight: 650; }
 .catalog-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .catalog-section { display: grid; gap: 12px; margin-bottom: 24px; }
 .catalog-section .page-header { margin-bottom: 0; }
+.catalog-subsection { display: grid; gap: 10px; margin-top: 10px; }
+.catalog-subsection h3 { margin: 0; }
 .catalog-card {
   display: grid;
   gap: 12px;

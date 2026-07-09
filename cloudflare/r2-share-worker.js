@@ -182,12 +182,13 @@ async function handleAdminDeleteFile(request, env, fileId) {
 
   await supabaseDelete(env, "job_files", file.id);
 
-  const [remainingJobFiles, packageImages, diplomaTemplates] = await Promise.all([
+  const [remainingJobFiles, packageImages, diplomaTemplates, folderTemplates] = await Promise.all([
     supabaseFetch(env, `job_files?select=id&r2_key=eq.${encodeURIComponent(file.r2_key)}&limit=1`),
     supabaseFetch(env, `package_images?select=id&r2_key=eq.${encodeURIComponent(file.r2_key)}&limit=1`),
-    supabaseFetch(env, `diploma_templates?select=id&r2_key=eq.${encodeURIComponent(file.r2_key)}&limit=1`)
+    supabaseFetch(env, `diploma_templates?select=id&r2_key=eq.${encodeURIComponent(file.r2_key)}&limit=1`),
+    supabaseFetch(env, `folder_templates?select=id&r2_key=eq.${encodeURIComponent(file.r2_key)}&limit=1`)
   ]);
-  if (!remainingJobFiles.length && !packageImages.length && !diplomaTemplates.length) {
+  if (!remainingJobFiles.length && !packageImages.length && !diplomaTemplates.length && !folderTemplates.length) {
     await env.PHOTO_BUCKET.delete(file.r2_key);
   }
 
@@ -205,17 +206,19 @@ async function handleCatalogUpload(request, env) {
   const schoolLevel = String(formData.get("school_level") || "");
   const file = formData.get("file");
 
-  if (!["PACKAGE", "DIPLOMA"].includes(catalogType)) return jsonError("Tipo de catálogo inválido.", 400);
+  if (!["PACKAGE", "DIPLOMA", "FOLDER"].includes(catalogType)) return jsonError("Tipo de catálogo inválido.", 400);
   if (catalogType === "PACKAGE" && !packageId) return jsonError("Falta package_id.", 400);
-  if (catalogType === "DIPLOMA" && !name) return jsonError("Falta el nombre del diploma.", 400);
-  if (catalogType === "DIPLOMA" && !["KINDER", "PRIMARY", "SECONDARY"].includes(schoolLevel)) return jsonError("Nivel escolar inválido.", 400);
+  if (["DIPLOMA", "FOLDER"].includes(catalogType) && !name) return jsonError("Falta el nombre del catálogo.", 400);
+  if (["DIPLOMA", "FOLDER"].includes(catalogType) && !["KINDER", "PRIMARY", "SECONDARY"].includes(schoolLevel)) return jsonError("Nivel escolar inválido.", 400);
   if (!file || typeof file.arrayBuffer !== "function") return jsonError("Falta archivo.", 400);
 
   const fileName = cleanFileName(file.name);
   const contentType = file.type || "application/octet-stream";
   const r2Key = catalogType === "PACKAGE"
     ? `catalog/packages/${packageId}/${Date.now()}-${crypto.randomUUID()}-${fileName}`
-    : `catalog/diplomas/${Date.now()}-${crypto.randomUUID()}-${fileName}`;
+    : catalogType === "DIPLOMA"
+      ? `catalog/diplomas/${Date.now()}-${crypto.randomUUID()}-${fileName}`
+      : `catalog/folders/${Date.now()}-${crypto.randomUUID()}-${fileName}`;
 
   await env.PHOTO_BUCKET.put(r2Key, file.stream(), {
     httpMetadata: { contentType }
@@ -229,7 +232,7 @@ async function handleCatalogUpload(request, env) {
       content_type: contentType,
       size_bytes: file.size || null
     })
-    : await supabaseInsert(env, "diploma_templates", {
+    : await supabaseInsert(env, catalogType === "DIPLOMA" ? "diploma_templates" : "folder_templates", {
       name,
       r2_key: r2Key,
       file_name: file.name || fileName,
@@ -245,7 +248,7 @@ async function handleCatalogUpload(request, env) {
 }
 
 async function handleAdminGetCatalogFile(request, env, table, fileId) {
-  const allowedTables = new Set(["package_images", "diploma_templates"]);
+  const allowedTables = new Set(["package_images", "diploma_templates", "folder_templates"]);
   if (!allowedTables.has(table)) return jsonError("Catálogo inválido.", 400);
 
   const url = new URL(request.url);
@@ -264,8 +267,9 @@ async function handleAdminGetCatalogFile(request, env, table, fileId) {
   return streamFile(env, file, url.searchParams.get("download") === "1");
 }
 
-async function handleToggleDiplomaTemplate(request, env, fileId) {
+async function handleToggleCatalogTemplate(request, env, table, fileId) {
   await requireAdmin(request, env);
+  if (!["diploma_templates", "folder_templates"].includes(table)) return jsonError("Catálogo inválido.", 400);
   const body = await request.json().catch(() => ({}));
   const payload = {};
   if (Object.hasOwn(body, "is_active")) payload.is_active = Boolean(body.is_active);
@@ -274,14 +278,14 @@ async function handleToggleDiplomaTemplate(request, env, fileId) {
     payload.school_level = body.school_level;
   }
   if (!Object.keys(payload).length) return jsonError("No hay cambios para guardar.", 400);
-  const row = await supabaseUpdate(env, "diploma_templates", fileId, payload);
+  const row = await supabaseUpdate(env, table, fileId, payload);
   return new Response(JSON.stringify({ ok: true, file: row }), {
     headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
   });
 }
 
 async function handlePublicCatalogFile(request, env, table, fileId) {
-  const allowedTables = new Set(["package_images", "diploma_templates"]);
+  const allowedTables = new Set(["package_images", "diploma_templates", "folder_templates"]);
   if (!allowedTables.has(table)) return jsonError("Catálogo inválido.", 400);
 
   const url = new URL(request.url);
@@ -389,7 +393,8 @@ export default {
       const url = new URL(request.url);
       if (url.pathname === "/admin/upload" && request.method === "POST") return handleAdminUpload(request, env);
       if (url.pathname === "/admin/catalog/upload" && request.method === "POST") return handleCatalogUpload(request, env);
-      if (url.pathname.startsWith("/admin/catalog/diploma_templates/") && request.method === "PATCH") return handleToggleDiplomaTemplate(request, env, url.pathname.split("/").pop());
+      if (url.pathname.startsWith("/admin/catalog/diploma_templates/") && request.method === "PATCH") return handleToggleCatalogTemplate(request, env, "diploma_templates", url.pathname.split("/").pop());
+      if (url.pathname.startsWith("/admin/catalog/folder_templates/") && request.method === "PATCH") return handleToggleCatalogTemplate(request, env, "folder_templates", url.pathname.split("/").pop());
       if (url.pathname.startsWith("/admin/catalog/") && request.method === "GET") {
         const [, , , table, fileId] = url.pathname.split("/");
         return handleAdminGetCatalogFile(request, env, table, fileId);

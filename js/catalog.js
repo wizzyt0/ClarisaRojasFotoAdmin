@@ -24,6 +24,14 @@ export async function getDiplomaTemplates(schoolLevel = null) {
   return data || [];
 }
 
+export async function getFolderTemplates(schoolLevel = null) {
+  let query = supabase.from("folder_templates").select("*").order("created_at", { ascending: false });
+  if (schoolLevel) query = query.eq("school_level", schoolLevel);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
 export async function uploadPackageImage(packageId, file) {
   const formData = new FormData();
   formData.append("catalog_type", "PACKAGE");
@@ -55,12 +63,28 @@ export async function uploadDiplomaTemplate(name, schoolLevel, file) {
   return result;
 }
 
+export async function uploadFolderTemplate(name, schoolLevel, file) {
+  const formData = new FormData();
+  formData.append("catalog_type", "FOLDER");
+  formData.append("name", name);
+  formData.append("school_level", schoolLevel);
+  formData.append("file", file);
+  const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/catalog/upload`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${await sessionToken()}` },
+    body: formData
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(result?.error || "No se pudo subir la carpeta.");
+  return result;
+}
+
 export async function getCatalogFileUrl(table, fileId) {
   return `${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/catalog/${table}/${fileId}?auth=${encodeURIComponent(await sessionToken())}`;
 }
 
-export async function updateDiplomaTemplate(templateId, payload) {
-  const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/catalog/diploma_templates/${templateId}`, {
+export async function updateDiplomaTemplate(templateId, payload, table = "diploma_templates") {
+  const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/catalog/${table}/${templateId}`, {
     method: "PATCH",
     headers: {
       authorization: `Bearer ${await sessionToken()}`,

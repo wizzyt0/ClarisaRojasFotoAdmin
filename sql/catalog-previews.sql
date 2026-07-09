@@ -23,24 +23,44 @@ create table if not exists diploma_templates (
   created_at timestamptz default now()
 );
 
+create table if not exists folder_templates (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  r2_key text not null,
+  file_name text not null,
+  content_type text,
+  size_bytes bigint,
+  school_level text check (school_level in ('KINDER','PRIMARY','SECONDARY')),
+  is_active boolean default true,
+  created_at timestamptz default now()
+);
+
 alter table diploma_templates add column if not exists school_level text check (school_level in ('KINDER','PRIMARY','SECONDARY'));
+alter table folder_templates add column if not exists school_level text check (school_level in ('KINDER','PRIMARY','SECONDARY'));
 
 create index if not exists package_images_package_id_idx on package_images(package_id);
 create index if not exists diploma_templates_is_active_idx on diploma_templates(is_active);
 create index if not exists diploma_templates_school_level_idx on diploma_templates(school_level);
+create index if not exists folder_templates_is_active_idx on folder_templates(is_active);
+create index if not exists folder_templates_school_level_idx on folder_templates(school_level);
 
 alter table package_images enable row level security;
 alter table diploma_templates enable row level security;
+alter table folder_templates enable row level security;
 
 drop policy if exists "admin read package_images" on package_images;
 drop policy if exists "admin write package_images" on package_images;
 drop policy if exists "admin read diploma_templates" on diploma_templates;
 drop policy if exists "admin write diploma_templates" on diploma_templates;
+drop policy if exists "admin read folder_templates" on folder_templates;
+drop policy if exists "admin write folder_templates" on folder_templates;
 
 create policy "admin read package_images" on package_images for select to authenticated using (true);
 create policy "admin write package_images" on package_images for all to authenticated using (true) with check (true);
 create policy "admin read diploma_templates" on diploma_templates for select to authenticated using (true);
 create policy "admin write diploma_templates" on diploma_templates for all to authenticated using (true) with check (true);
+create policy "admin read folder_templates" on folder_templates for select to authenticated using (true);
+create policy "admin write folder_templates" on folder_templates for all to authenticated using (true) with check (true);
 
 drop function if exists get_public_catalog_by_print_item_token(text);
 drop function if exists select_catalog_option_by_token(text, text, uuid, text);
@@ -111,6 +131,26 @@ begin
     return coalesce(result, '[]'::jsonb);
   end if;
 
+  if item.item_type = 'FOLDER_OPTION' then
+    select jsonb_agg(jsonb_build_object(
+      'id', ft.id,
+      'name', ft.name,
+      'file_name', ft.file_name,
+      'school_level', ft.school_level,
+      'table', 'folder_templates'
+    ) order by ft.created_at desc)
+    into result
+    from folder_templates ft
+    where ft.is_active = true
+      and (
+        ft.school_level = school_level_value
+        or school_level_value is null
+        or ft.school_level is null
+      );
+
+    return coalesce(result, '[]'::jsonb);
+  end if;
+
   if item.item_type = 'PHOTO_PACKAGE' then
     select jsonb_agg(jsonb_build_object(
       'id', pi.id,
@@ -170,6 +210,23 @@ begin
         client_notes = nullif(trim(select_catalog_option_by_token.client_notes), ''),
         changes_requested_at = now(),
         notes = 'Diploma de catálogo seleccionado: ' || selected_name
+    where id = item.id;
+
+    return jsonb_build_object('ok', true, 'selected_name', selected_name);
+  end if;
+
+  if option_table = 'folder_templates' and item.item_type = 'FOLDER_OPTION' then
+    select name into selected_name from folder_templates where id = option_id and is_active = true;
+    if selected_name is null then
+      return jsonb_build_object('ok', false, 'message', 'La carpeta seleccionada no está disponible.');
+    end if;
+
+    update print_items
+    set selected_file_id = option_id,
+        status = 'CATALOG_SELECTED',
+        client_notes = nullif(trim(select_catalog_option_by_token.client_notes), ''),
+        changes_requested_at = now(),
+        notes = 'Carpeta de catálogo seleccionada: ' || selected_name
     where id = item.id;
 
     return jsonb_build_object('ok', true, 'selected_name', selected_name);

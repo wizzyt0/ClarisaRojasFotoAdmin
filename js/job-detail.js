@@ -2,10 +2,10 @@ import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { APP_CONFIG } from "./config.js";
 import { GALLERY_TYPES, JOB_STATUSES, SCHOOL_EVENT_PACKAGE_TYPES, getGalleryTypeLabel, getJobStatusLabel, getJobTypeLabel } from "./constants.js";
-import { getCatalogFileUrl, getDiplomaTemplates, getPackageImages } from "./catalog.js";
+import { getCatalogFileUrl } from "./catalog.js";
 import { createDeposit, deleteDeposit, getDepositsByJob } from "./deposits.js";
 import { createGallery, deactivateGallery, getGalleriesByJob } from "./galleries.js";
-import { PRINT_ITEM_STATUSES, ensureDefaultPrintItems, getPrintItemStatusLabel, getPrintItemTypeLabel, updatePrintItem } from "./print-items.js";
+import { ensureDefaultPrintItems, getPrintItemStatusLabel, getPrintItemTypeLabel, updatePrintItem } from "./print-items.js";
 import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, getAdminFileUrl, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink, uploadR2File } from "./r2-files.js";
 import { createSchoolGroup, deleteSchoolGroup, getSchoolGroupsByJob, updateSchoolGroup } from "./school-groups.js";
 import { buildWhatsAppUrl, generateAndLogWhatsAppMessage } from "./whatsapp.js";
@@ -23,8 +23,6 @@ let r2ShareLinks = [];
 let printItems = [];
 let schoolGroups = [];
 let packages = [];
-let packageCatalogImages = [];
-let diplomaTemplates = [];
 let selectedWhatsappUrl = "";
 let currentMessage = "";
 const modal = document.querySelector("#detailModal");
@@ -85,8 +83,6 @@ async function loadJob() {
   const { data: packagesData, error: packagesError } = await supabase.from("packages").select("*").eq("is_active", true).order("name");
   if (packagesError) throw packagesError;
   packages = packagesData || [];
-  packageCatalogImages = await getPackageImages();
-  diplomaTemplates = await getDiplomaTemplates();
   render();
   await loadLogs();
 }
@@ -129,7 +125,7 @@ function render() {
     document.querySelector("#schoolCard").innerHTML = `<div class="page-header"><h2>Datos escolares</h2><button id="newSchoolGroupBtn" class="btn btn-primary">Agregar grupo</button></div><div class="grid">
       <p><strong>Escuela:</strong><br>${escapeHtml(school.school_name || job.clients.name)}</p>
       <p><strong>Nivel:</strong><br>${escapeHtml({ KINDER: "Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[school.school_level] || "")}</p>
-      <p><strong>Contacto principal:</strong><br>${escapeHtml(school.contact_name || school.teacher_name)}<br>${escapeHtml(school.contact_phone || school.teacher_phone)}<br>${escapeHtml(school.contact_email || "")}</p>
+      <p><strong>WhatsApp contacto:</strong><br>${escapeHtml(school.contact_phone || school.teacher_phone)}<br>${escapeHtml(school.contact_email || "")}</p>
       <p><strong>Directora:</strong><br>${escapeHtml(school.principal_name)}<br>${escapeHtml(school.principal_phone)}</p>
     </div><h3>Grupos</h3><div class="group-list">${schoolGroups.length ? schoolGroups.map((group) => `<article class="group-card"><div class="group-card-top"><div><strong>${escapeHtml(group.group_name)}</strong><span>${escapeHtml(group.teacher_name || "Sin maestra")}</span></div><span class="badge">${Number(group.package_quantity || 0) > 0 ? `${group.package_quantity} paquetes` : "Pendiente"}</span></div><div class="group-card-body"><p><strong>WhatsApp:</strong><br>${escapeHtml(group.teacher_phone || "Sin WhatsApp")}</p><p><strong>Paquete:</strong><br>${escapeHtml(group.packages?.name || "Pendiente")}</p><p><strong>Total:</strong><br>${formatMoney(group.price || 0)}</p></div><div class="actions"><button class="btn" data-edit-group="${group.id}">Editar grupo</button><button class="btn btn-danger" data-delete-group="${group.id}">Eliminar</button></div></article>`).join("") : `<div class="empty-state">Agregue los grupos manualmente, por ejemplo 6to A, 6to B o Kinder 3.</div>`}</div>`;
   }
@@ -157,14 +153,14 @@ function render() {
 function deliverableState(deliverable) {
   const hasGallery = galleries.some((gallery) => gallery.is_active && deliverable.galleryTypes.includes(gallery.gallery_type));
   const hasFile = r2Files.some((file) => deliverable.r2Types.includes(file.file_type));
-  if (!hasGallery && !hasFile) return { label: "Pendiente de subir", className: "missing" };
+  if (!hasGallery && !hasFile) return { label: "Pendiente", className: "missing" };
   if (job.approved_at) return { label: "Aprobado", className: "approved" };
   return { label: "Esperando aprobación", className: "waiting" };
 }
 
 function renderDeliverablesSummary() {
   if (printItems.length) {
-    return `<div class="deliverables"><h3>Piezas de impresión</h3><div class="deliverable-grid">${printItems.map((item) => `<div class="deliverable ${printItemClass(item.status)}"><strong>${escapeHtml(item.title)}</strong><span>${getPrintItemStatusLabel(item.status)}</span></div>`).join("")}</div></div>`;
+    return `<div class="deliverables"><h3>Piezas de impresión</h3><div class="deliverable-grid">${printItems.map((item) => `<div class="deliverable ${printItemClass(item.status)}"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(statusText(item))}</span></div>`).join("")}</div></div>`;
   }
   return `<div class="deliverables"><h3>Entregables</h3><div class="deliverable-grid">${DELIVERABLES.map((item) => {
     const state = deliverableState(item);
@@ -188,16 +184,19 @@ function renderPrintItems() {
   card.classList.remove("hidden");
   const groupsToRender = schoolGroups.length ? schoolGroups : [{ id: null, group_name: "Trabajo" }];
   card.innerHTML = `<div class="page-header"><h2>Piezas por grupo</h2></div>${groupsToRender.map((group) => {
-    const items = printItems.filter((item) => (group.id ? item.group_id === group.id : !item.group_id));
+    const items = printItems
+      .filter((item) => (group.id ? item.group_id === group.id : !item.group_id))
+      .sort((a, b) => printItemStep(a.item_type).number - printItemStep(b.item_type).number);
     return `<section class="group-workflow"><div class="group-workflow-header"><div><h3>${escapeHtml(group.group_name)}</h3><p class="muted">${escapeHtml(group.teacher_name || "Sin maestra")}${group.teacher_phone ? ` · WhatsApp ${escapeHtml(group.teacher_phone)}` : ""}</p></div><div class="group-total"><span>${escapeHtml(group.packages?.name || "Paquete pendiente")}</span><strong>${formatMoney(group.price || 0)}</strong></div></div><div class="print-item-grid">${items.map(renderPrintItemCard).join("")}</div></section>`;
   }).join("")}`;
 
   const select = document.querySelector("#r2PrintItem");
   if (select) {
-    select.innerHTML = printItems.map((item) => {
+    const uploadableItems = printItems.filter((item) => !["PHOTO_PACKAGE", "DIPLOMA", "FOLDER_OPTION"].includes(item.item_type));
+    select.innerHTML = uploadableItems.length ? uploadableItems.map((item) => {
       const group = schoolGroups.find((entry) => entry.id === item.group_id);
       return `<option value="${item.id}">${escapeHtml(group ? `${group.group_name} · ${item.title}` : item.title)}</option>`;
-    }).join("");
+    }).join("") : `<option value="">Sin piezas con preview</option>`;
   }
   hydrateCatalogThumbs();
   hydrateR2Thumbnails();
@@ -205,10 +204,37 @@ function renderPrintItems() {
 }
 
 function renderPrintItemCard(item) {
-    const files = r2Files.filter((file) => file.print_item_id === item.id);
-    const previewCount = files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
-    const printCount = files.filter((file) => file.file_type === "PRINT_HIGH_RES").length;
-    return `<article class="print-item-card ${printItemClass(item.status)}"><div><strong>${escapeHtml(item.title)}</strong><span>${getPrintItemTypeLabel(item.item_type)}</span></div><span class="badge">${getPrintItemStatusLabel(item.status)}</span>${renderSelectedVisual(item, files)}<p class="muted">Previews: ${previewCount} · Alta calidad: ${printCount}</p>${item.client_notes ? `<div class="review-note"><strong>Observaciones de la maestra:</strong><br>${escapeHtml(item.client_notes)}</div>` : ""}<div class="mini-dropzone" tabindex="0" data-item-dropzone="${item.id}" data-file-type="TEACHER_PREVIEW"><strong>Subir preview</strong><span>Arrastre aquí o haga clic</span><input type="file" multiple hidden data-item-file-input="${item.id}" data-file-type="TEACHER_PREVIEW"></div><div class="actions"><label class="btn">Alta calidad<input type="file" multiple hidden data-item-file-input="${item.id}" data-file-type="PRINT_HIGH_RES"></label><select class="select compact-select" data-print-item-status="${item.id}">${Object.entries(PRINT_ITEM_STATUSES).map(([value, label]) => `<option value="${value}" ${value === item.status ? "selected" : ""}>${label}</option>`).join("")}</select><button class="btn" data-send-print-item="${item.id}">WhatsApp</button><button class="btn" data-copy-print-item-approval="${item.id}">Copiar aprobación</button></div></article>`;
+  const files = r2Files.filter((file) => file.print_item_id === item.id);
+  const previewCount = files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
+  const step = printItemStep(item.item_type);
+  const isCatalogOnly = ["PHOTO_PACKAGE", "DIPLOMA", "FOLDER_OPTION"].includes(item.item_type);
+  const actionLabel = isCatalogOnly ? "Enviar catálogo por WhatsApp" : "Enviar revisión por WhatsApp";
+  return `<article class="print-item-card ${printItemClass(item.status)}">
+    <div class="step-heading"><span class="step-number">${step.number}</span><div><strong>${escapeHtml(step.title)}</strong><span>${escapeHtml(step.description)}</span></div></div>
+    <span class="badge">${statusText(item)}</span>
+    ${renderSelectedVisual(item, files)}
+    ${isCatalogOnly ? "" : `<p class="muted">Previews subidos: ${previewCount}</p><div class="mini-dropzone" tabindex="0" data-item-dropzone="${item.id}" data-file-type="TEACHER_PREVIEW"><strong>Subir preview</strong><span>Arrastre aquí o haga clic</span><input type="file" multiple hidden data-item-file-input="${item.id}" data-file-type="TEACHER_PREVIEW"></div>`}
+    ${item.client_notes ? `<div class="review-note"><strong>Observaciones de la maestra:</strong><br>${escapeHtml(item.client_notes)}</div>` : ""}
+    <div class="actions"><button class="btn btn-primary" data-send-print-item="${item.id}">${actionLabel}</button></div>
+  </article>`;
+}
+
+function printItemStep(itemType) {
+  const steps = {
+    PHOTO_PACKAGE: { number: 1, title: "Paquete de fotos", description: "Enviar catálogo para que la maestra elija paquete y cantidad." },
+    DIPLOMA: { number: 2, title: "Diploma", description: "Enviar catálogo filtrado por nivel escolar." },
+    FOLDER_OPTION: { number: 3, title: "Carpeta", description: "Enviar catálogo para que la maestra elija carpeta." },
+    GROUP_PHOTO: { number: 4, title: "Foto grupal", description: "Subir preview personalizado cuando esté listo." },
+    STUDENT_GALLERY: { number: 5, title: "Galería de niños", description: "Subir preview o galería para revisión." }
+  };
+  return steps[itemType] || { number: 9, title: getPrintItemTypeLabel(itemType), description: "Seguimiento de pieza." };
+}
+
+function statusText(item) {
+  if (item.item_type === "PHOTO_PACKAGE" && !item.selected_file_id) return "Maestra no ha seleccionado paquete ni cantidad";
+  if (item.item_type === "DIPLOMA" && !item.selected_file_id) return "Maestra no ha seleccionado diploma";
+  if (item.item_type === "FOLDER_OPTION" && !item.selected_file_id) return "Maestra no ha seleccionado carpeta";
+  return getPrintItemStatusLabel(item.status);
 }
 
 function renderSelectedVisual(item, files) {
@@ -223,24 +249,12 @@ function renderSelectedVisual(item, files) {
     return `<div class="selected-visual"><span class="selection-label">Paquete seleccionado</span><button class="catalog-preview-large" data-open-catalog-file="package_images:${item.selected_file_id}" type="button"><span data-catalog-thumb="package_images:${item.selected_file_id}">PAQUETE</span></button><p>${escapeHtml(item.notes || "")}</p></div>`;
   }
   if (item.selected_file_id && item.item_type === "FOLDER_OPTION") {
-    return `<div class="selected-visual"><span class="selection-label">Carpeta seleccionada</span><p>${escapeHtml(item.notes || "")}</p></div>`;
+    return `<div class="selected-visual"><span class="selection-label">Carpeta seleccionada</span><button class="catalog-preview-large" data-open-catalog-file="folder_templates:${item.selected_file_id}" type="button"><span data-catalog-thumb="folder_templates:${item.selected_file_id}">CARPETA</span></button><p>${escapeHtml(item.notes || "")}</p></div>`;
   }
+  if (item.item_type === "PHOTO_PACKAGE") return `<div class="empty-state compact-empty">Maestra no ha seleccionado paquete ni cantidad.</div>`;
+  if (item.item_type === "DIPLOMA") return `<div class="empty-state compact-empty">Maestra no ha seleccionado diploma.</div>`;
+  if (item.item_type === "FOLDER_OPTION") return `<div class="empty-state compact-empty">Maestra no ha seleccionado carpeta.</div>`;
   return `<div class="empty-state compact-empty">Sin selección o preview</div>`;
-}
-
-function renderCatalogPicker(item) {
-  if (item.item_type === "DIPLOMA") {
-    const school = job.clients.school_profiles?.[0] || {};
-    const activeDiplomas = diplomaTemplates.filter((template) => template.is_active !== false && (!school.school_level || template.school_level === school.school_level));
-    if (!activeDiplomas.length) return `<div class="inline-catalog"><h4>Catálogo de diplomas</h4><p class="muted">No hay diplomas activos para este nivel escolar.</p></div>`;
-    return `<div class="inline-catalog"><h4>Catálogo que verá la maestra</h4><div class="inline-catalog-grid">${activeDiplomas.map((template) => `<div class="inline-catalog-option"><button class="catalog-thumb" data-open-catalog-file="diploma_templates:${template.id}" type="button"><span data-catalog-thumb="diploma_templates:${template.id}">DIP</span></button><span class="muted">${escapeHtml(template.name)}</span></div>`).join("")}</div></div>`;
-  }
-  if (item.item_type === "PHOTO_PACKAGE") {
-    const schoolPackages = packageCatalogImages.filter((image) => !image.packages?.package_type || image.packages.package_type === "SCHOOL_GRADUATION" || image.packages.package_type === "GENERAL");
-    if (!schoolPackages.length) return `<div class="inline-catalog"><h4>Catálogo de paquetes</h4><p class="muted">No hay imágenes de paquetes.</p></div>`;
-    return `<div class="inline-catalog"><h4>Catálogo que verá la maestra</h4><div class="inline-catalog-grid">${schoolPackages.map((image) => `<div class="inline-catalog-option"><button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">PKG</span></button><span class="muted">${escapeHtml(image.packages?.name || image.file_name)}</span></div>`).join("")}</div></div>`;
-  }
-  return "";
 }
 
 function setupR2Dropzone() {
@@ -388,44 +402,6 @@ async function hydrateCatalogThumbs() {
   }));
 }
 
-async function useDiplomaTemplate(printItemId, templateId) {
-  const template = diplomaTemplates.find((item) => item.id === templateId);
-  if (!template) return;
-  await createR2File(jobId, {
-    print_item_id: printItemId,
-    file_type: "TEACHER_PREVIEW",
-    r2_key: template.r2_key,
-    file_name: template.file_name,
-    content_type: template.content_type || null,
-    size_bytes: template.size_bytes || null,
-    notes: `Importado del catálogo de diplomas: ${template.name}`
-  });
-  await updatePrintItem(printItemId, { status: "READY_FOR_REVIEW", notes: `Diploma seleccionado: ${template.name}` });
-  showToast("Diploma agregado a la pieza.");
-  await loadJob();
-}
-
-async function usePackageImage(printItemId, imageId) {
-  const image = packageCatalogImages.find((item) => item.id === imageId);
-  if (!image) return;
-  await createR2File(jobId, {
-    print_item_id: printItemId,
-    file_type: "TEACHER_PREVIEW",
-    r2_key: image.r2_key,
-    file_name: image.file_name,
-    content_type: image.content_type || null,
-    size_bytes: image.size_bytes || null,
-    notes: `Importado del catálogo de paquetes: ${image.packages?.name || image.file_name}`
-  });
-  await updatePrintItem(printItemId, {
-    status: "READY_FOR_REVIEW",
-    selected_package_id: image.package_id || null,
-    notes: `Paquete seleccionado: ${image.packages?.name || image.file_name}`
-  });
-  showToast("Paquete agregado a la pieza.");
-  await loadJob();
-}
-
 function renderR2ShareLinks() {
   document.querySelector("#r2ShareLinksList").innerHTML = r2ShareLinks.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Tipo</th><th>Link</th><th>Expira</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${r2ShareLinks.map((link) => {
     const url = r2ShareUrl(link);
@@ -490,7 +466,7 @@ Clarisa Rojas Fotografia`;
 async function sendPrintItemWhatsapp(itemId) {
   const item = printItems.find((entry) => entry.id === itemId);
   if (!item) return;
-  const isCatalogSelection = ["DIPLOMA", "PHOTO_PACKAGE"].includes(item.item_type) && !item.selected_file_id;
+  const isCatalogSelection = ["DIPLOMA", "PHOTO_PACKAGE", "FOLDER_OPTION"].includes(item.item_type) && !item.selected_file_id;
   const hasPreviewFiles = r2Files.some((file) => file.print_item_id === item.id && file.file_type === "TEACHER_PREVIEW");
   if (!hasPreviewFiles && !isCatalogSelection) {
     showToast("Primero suba previews para esta pieza.", "error");
@@ -503,12 +479,13 @@ async function sendPrintItemWhatsapp(itemId) {
   const groupLine = group?.group_name ? `Grupo: ${group.group_name}\n` : "";
   let message = "";
   if (isCatalogSelection) {
+    const catalogName = item.item_type === "DIPLOMA" ? "diplomas" : item.item_type === "FOLDER_OPTION" ? "carpetas" : "paquetes de fotos";
     const followUpText = item.item_type === "PHOTO_PACKAGE"
-      ? "Cuando elija el paquete y nos indique la cantidad, quedará registrada su selección para calcular el total de paquetes de la escuela."
-      : "Cuando elija una opción, prepararé la versión personalizada para su escuela y se la enviaré después para revisión.";
+      ? "Cuando elija el paquete y nos indique la cantidad, quedará registrada su selección para calcular el total de paquetes del grupo."
+      : "Cuando elija una opción, quedará registrada su selección para este grupo.";
     message = `Hola ${contactName} 👋
 
-Ya está listo el catálogo de ${item.item_type === "DIPLOMA" ? "diplomas" : "paquetes de fotos"} para que pueda elegir la opción que más le guste.
+Ya está listo el catálogo de ${catalogName} para que pueda elegir la opción que más le guste.
 
 Escuela: ${school.school_name || job.clients.name}
 ${groupLine}Trabajo: ${job.title}
@@ -723,15 +700,9 @@ document.addEventListener("click", async (event) => {
     if (event.target.matches("#newGalleryBtn")) openGalleryForm();
     if (event.target.matches("#sendTeacherPreviewWhatsappBtn")) await sendTeacherPreviewWhatsapp();
     if (event.target.dataset.sendPrintItem) await sendPrintItemWhatsapp(event.target.dataset.sendPrintItem);
-    if (event.target.dataset.useDiplomaTemplate) await useDiplomaTemplate(event.target.dataset.printItemId, event.target.dataset.useDiplomaTemplate);
-    if (event.target.dataset.usePackageImage) await usePackageImage(event.target.dataset.printItemId, event.target.dataset.usePackageImage);
     if (catalogButton) {
       const [table, fileId] = catalogButton.dataset.openCatalogFile.split(":");
       openInNewTab(await getCatalogFileUrl(table, fileId));
-    }
-    if (event.target.dataset.copyPrintItemApproval) {
-      const item = printItems.find((entry) => entry.id === event.target.dataset.copyPrintItemApproval);
-      if (item) await copyToClipboard(printItemApprovalUrl(item));
     }
     if (event.target.matches("#newDepositBtn")) openDepositForm();
     if (event.target.matches("#newR2FileBtn")) openR2FileForm();
