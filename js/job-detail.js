@@ -217,6 +217,7 @@ function renderGroupFinancialSummary(group) {
     <div><span>Total</span><strong>${formatMoney(groupPrice)}</strong></div>
     <div><span>Abonos maestra</span><strong>${formatMoney(groupDeposits)}</strong></div>
     <div><span>Pendiente</span><strong>${formatMoney(pending)}</strong></div>
+    <div class="group-finance-action"><button class="btn" data-edit-group="${group.id}" type="button">Editar paquete/cantidad</button></div>
   </div>`;
 }
 
