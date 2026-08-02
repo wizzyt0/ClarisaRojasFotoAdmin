@@ -47,11 +47,12 @@ export async function uploadPackageImage(packageId, file) {
   return result;
 }
 
-export async function uploadDiplomaTemplate(name, schoolLevel, file) {
+export async function uploadDiplomaTemplate(name, schoolLevel, file, canvaUrl = "") {
   const formData = new FormData();
   formData.append("catalog_type", "DIPLOMA");
   formData.append("name", name);
   formData.append("school_level", schoolLevel);
+  formData.append("canva_url", canvaUrl.trim());
   formData.append("file", file);
   const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/catalog/upload`, {
     method: "POST",

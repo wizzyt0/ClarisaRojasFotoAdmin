@@ -204,6 +204,7 @@ async function handleCatalogUpload(request, env) {
   const packageId = String(formData.get("package_id") || "") || null;
   const name = String(formData.get("name") || "").trim();
   const schoolLevel = String(formData.get("school_level") || "");
+  const canvaUrl = String(formData.get("canva_url") || "").trim();
   const file = formData.get("file");
 
   if (!["PACKAGE", "DIPLOMA", "FOLDER"].includes(catalogType)) return jsonError("Tipo de catálogo inválido.", 400);
@@ -239,6 +240,7 @@ async function handleCatalogUpload(request, env) {
       content_type: contentType,
       size_bytes: file.size || null,
       school_level: schoolLevel,
+      ...(catalogType === "DIPLOMA" ? { canva_url: canvaUrl || null } : {}),
       is_active: true
     });
 
@@ -277,6 +279,7 @@ async function handleToggleCatalogTemplate(request, env, table, fileId) {
     if (!["KINDER", "PRIMARY", "SECONDARY"].includes(body.school_level)) return jsonError("Nivel escolar inválido.", 400);
     payload.school_level = body.school_level;
   }
+  if (table === "diploma_templates" && Object.hasOwn(body, "canva_url")) payload.canva_url = String(body.canva_url || "").trim() || null;
   if (!Object.keys(payload).length) return jsonError("No hay cambios para guardar.", 400);
   const row = await supabaseUpdate(env, table, fileId, payload);
   return new Response(JSON.stringify({ ok: true, file: row }), {

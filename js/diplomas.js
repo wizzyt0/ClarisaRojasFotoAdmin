@@ -33,7 +33,8 @@ function renderSection(title, schoolLevel, sourceRows, table, label) {
 }
 
 function renderTemplateCard(template, table, label) {
-  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(template.name)}</h3><p class="muted">${schoolLevelLabel(template.school_level)} · ${escapeHtml(template.file_name)} · ${formatDateTime(template.created_at)}</p></div><span class="badge">${template.is_active ? "Activo" : "Inactivo"}</span></div><button class="catalog-preview-large" data-open-catalog-file="${table}:${template.id}" type="button"><span data-catalog-thumb="${table}:${template.id}">${label}</span></button><div class="actions"><button class="btn" data-open-catalog-file="${table}:${template.id}">Abrir</button><button class="btn" data-set-level="${template.id}" data-table="${table}" data-level="KINDER">Mover a preescolar</button><button class="btn" data-set-level="${template.id}" data-table="${table}" data-level="PRIMARY">Mover a primaria</button><button class="btn ${template.is_active ? "btn-danger" : ""}" data-toggle-template="${template.id}" data-table="${table}" data-active="${template.is_active ? "false" : "true"}">${template.is_active ? "Desactivar" : "Activar"}</button></div></article>`;
+  const canvaField = table === "diploma_templates" ? `<div class="form-group private-catalog-field"><label>Link privado de Canva</label><input class="input" type="url" data-canva-url="${template.id}" value="${escapeHtml(template.canva_url || "")}" placeholder="https://www.canva.com/design/..."><button class="btn" type="button" data-save-canva="${template.id}">Guardar link</button></div>` : "";
+  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(template.name)}</h3><p class="muted">${schoolLevelLabel(template.school_level)} · ${escapeHtml(template.file_name)} · ${formatDateTime(template.created_at)}</p></div><span class="badge">${template.is_active ? "Activo" : "Inactivo"}</span></div><button class="catalog-preview-large" data-open-catalog-file="${table}:${template.id}" type="button"><span data-catalog-thumb="${table}:${template.id}">${label}</span></button>${canvaField}<div class="actions"><button class="btn" data-open-catalog-file="${table}:${template.id}">Abrir</button><button class="btn" data-set-level="${template.id}" data-table="${table}" data-level="KINDER">Mover a preescolar</button><button class="btn" data-set-level="${template.id}" data-table="${table}" data-level="PRIMARY">Mover a primaria</button><button class="btn ${template.is_active ? "btn-danger" : ""}" data-toggle-template="${template.id}" data-table="${table}" data-active="${template.is_active ? "false" : "true"}">${template.is_active ? "Desactivar" : "Activar"}</button></div></article>`;
 }
 
 async function hydrateThumbs() {
@@ -72,6 +73,18 @@ document.addEventListener("click", async (event) => {
     showToast("Diseño movido de sección.");
     await load();
   }
+  if (event.target.dataset.saveCanva) {
+    const templateId = event.target.dataset.saveCanva;
+    const input = document.querySelector(`[data-canva-url="${templateId}"]`);
+    try {
+      await updateDiplomaTemplate(templateId, { canva_url: input?.value.trim() || "" });
+      showToast("Link de Canva guardado.");
+      await load();
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || "No se pudo guardar el link de Canva.", "error");
+    }
+  }
 });
 
 form.addEventListener("submit", async (event) => {
@@ -80,7 +93,7 @@ form.addEventListener("submit", async (event) => {
   if (!file) return showToast("Seleccione un archivo.", "error");
   try {
     if (form.catalog_kind.value === "FOLDER") await uploadFolderTemplate(form.name.value.trim(), form.school_level.value, file);
-    else await uploadDiplomaTemplate(form.name.value.trim(), form.school_level.value, file);
+    else await uploadDiplomaTemplate(form.name.value.trim(), form.school_level.value, file, form.canva_url.value);
     showToast("Diseño subido al catálogo.");
     form.reset();
     modal.classList.add("hidden");
