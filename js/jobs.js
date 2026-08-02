@@ -102,13 +102,13 @@ async function load() {
       status: "CREATED",
       package_quantity: 0,
       price: 0
-    });
+    }, { isNew: true });
   }
 }
 
-function openModal(job = null) {
-  editingJob = job;
-  document.querySelector("#jobModalTitle").textContent = job ? "Editar trabajo" : "Nuevo trabajo";
+function openModal(job = null, { isNew = false } = {}) {
+  editingJob = isNew ? null : job;
+  document.querySelector("#jobModalTitle").textContent = isNew || !job ? "Nuevo trabajo" : "Editar trabajo";
   renderForm(job || { status: "CREATED", package_quantity: 0, price: 0 });
   modal.classList.remove("hidden");
 }
