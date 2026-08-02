@@ -144,7 +144,10 @@ form.addEventListener("submit", async (event) => {
   const result = editingJob
     ? await supabase.from("jobs").update(payload).eq("id", editingJob.id).select().single()
     : await supabase.from("jobs").insert(payload).select().single();
-  if (result.error) { console.error(result.error); return showToast("No se pudo guardar el trabajo.", "error"); }
+  if (result.error) {
+    console.error(result.error);
+    return showToast(`No se pudo guardar el trabajo: ${result.error.message}`, "error");
+  }
   modal.classList.add("hidden");
   if (galleryUrl) {
     const galleryResult = await supabase.from("galleries").insert({
