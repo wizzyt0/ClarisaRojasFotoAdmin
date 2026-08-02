@@ -10,6 +10,8 @@ let clients = [];
 let editingJob = null;
 const modal = document.querySelector("#jobModal");
 const form = document.querySelector("#jobForm");
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const isUuid = (value) => UUID_PATTERN.test(String(value || ""));
 
 document.querySelector("#statusFilter").insertAdjacentHTML("beforeend", Object.entries(JOB_STATUSES).map(([value, label]) => `<option value="${value}">${label}</option>`).join(""));
 
@@ -115,6 +117,13 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = formToObject(form);
   const selectedClient = clients.find((client) => client.id === data.client_id);
+  if (!selectedClient || !isUuid(selectedClient.id)) {
+    return showToast("Seleccione un cliente válido antes de guardar.", "error");
+  }
+  const currentJobId = editingJob?.id;
+  if (editingJob && !isUuid(currentJobId)) {
+    return showToast("No se pudo identificar este trabajo. Cierre la ventana, recargue la página y vuelva a intentarlo.", "error");
+  }
   const isSchool = selectedClient?.client_type === "SCHOOL_GRADUATION";
   if (isSchool && !data.school_work_type) return showToast("Seleccione el tipo de trabajo escolar.", "error");
   if (!isSchool && !data.private_work_type?.trim()) return showToast("El flujo para particulares queda pendiente; escriba un tipo de trabajo temporal.", "error");
@@ -128,8 +137,8 @@ form.addEventListener("submit", async (event) => {
     }
   }
   const payload = {
-    client_id: data.client_id,
-    package_id: editingJob?.package_id || null,
+    client_id: selectedClient.id,
+    package_id: isUuid(editingJob?.package_id) ? editingJob.package_id : null,
     job_type: isSchool ? "SCHOOL_GRADUATION" : "PHOTO_SESSION",
     title: data.title.trim(),
     event_date: data.event_date || null,
@@ -142,7 +151,7 @@ form.addEventListener("submit", async (event) => {
   };
   if (!editingJob) payload.approval_token = generateToken(48);
   const result = editingJob
-    ? await supabase.from("jobs").update(payload).eq("id", editingJob.id).select().single()
+    ? await supabase.from("jobs").update(payload).eq("id", currentJobId).select().single()
     : await supabase.from("jobs").insert(payload).select().single();
   if (result.error) {
     console.error(result.error);
