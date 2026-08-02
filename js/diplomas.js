@@ -1,5 +1,6 @@
 import { requireAuth } from "./auth.js";
-import { getCatalogFileUrl, getDiplomaTemplates, getFolderTemplates, updateDiplomaTemplate, uploadDiplomaTemplate, uploadFolderTemplate } from "./catalog.js";
+import { supabase } from "./supabase.js";
+import { deleteDiplomaTemplate, getCatalogFileUrl, getDiplomaTemplates, getFolderTemplates, updateDiplomaTemplate, uploadDiplomaTemplate, uploadFolderTemplate } from "./catalog.js";
 import { escapeHtml, showToast } from "./utils.js";
 import { formatDateTime } from "./formatters.js";
 
@@ -33,8 +34,9 @@ function renderSection(title, schoolLevel, sourceRows, table, label) {
 }
 
 function renderTemplateCard(template, table, label) {
-  const canvaField = table === "diploma_templates" ? `<div class="form-group private-catalog-field"><label>Link privado de Canva</label><input class="input" type="url" data-canva-url="${template.id}" value="${escapeHtml(template.canva_url || "")}" placeholder="https://www.canva.com/design/..."><button class="btn" type="button" data-save-canva="${template.id}">Guardar link</button></div>` : "";
-  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(template.name)}</h3><p class="muted">${schoolLevelLabel(template.school_level)} · ${escapeHtml(template.file_name)} · ${formatDateTime(template.created_at)}</p></div><span class="badge">${template.is_active ? "Activo" : "Inactivo"}</span></div><button class="catalog-preview-large" data-open-catalog-file="${table}:${template.id}" type="button"><span data-catalog-thumb="${table}:${template.id}">${label}</span></button>${canvaField}<div class="actions"><button class="btn" data-open-catalog-file="${table}:${template.id}">Abrir</button><button class="btn" data-set-level="${template.id}" data-table="${table}" data-level="KINDER">Mover a preescolar</button><button class="btn" data-set-level="${template.id}" data-table="${table}" data-level="PRIMARY">Mover a primaria</button><button class="btn ${template.is_active ? "btn-danger" : ""}" data-toggle-template="${template.id}" data-table="${table}" data-active="${template.is_active ? "false" : "true"}">${template.is_active ? "Desactivar" : "Activar"}</button></div></article>`;
+  const canvaField = table === "diploma_templates" ? `<div class="form-group private-catalog-field"><label>Link privado de Canva</label><input class="input" type="url" data-canva-url="${template.id}" value="${escapeHtml(template.canva_url || "")}" placeholder="Pegue aquí el link de Canva"><button class="btn" type="button" data-save-canva="${template.id}">Guardar link</button></div>` : "";
+  const deleteButton = `<button class="btn btn-danger" data-delete-template="${template.id}" data-table="${table}">Eliminar</button>`;
+  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(template.name)}</h3><p class="muted">${schoolLevelLabel(template.school_level)} · ${escapeHtml(template.file_name)} · ${formatDateTime(template.created_at)}</p></div><span class="badge">${template.is_active ? "Activo" : "Inactivo"}</span></div>${canvaField}<button class="catalog-preview-large" data-open-catalog-file="${table}:${template.id}" type="button"><span data-catalog-thumb="${table}:${template.id}">${label}</span></button><div class="actions"><button class="btn" data-open-catalog-file="${table}:${template.id}">Abrir</button><button class="btn" data-set-level="${template.id}" data-table="${table}" data-level="KINDER">Mover a preescolar</button><button class="btn" data-set-level="${template.id}" data-table="${table}" data-level="PRIMARY">Mover a primaria</button><button class="btn ${template.is_active ? "btn-danger" : ""}" data-toggle-template="${template.id}" data-table="${table}" data-active="${template.is_active ? "false" : "true"}">${template.is_active ? "Desactivar" : "Activar"}</button>${deleteButton}</div></article>`;
 }
 
 async function hydrateThumbs() {
@@ -77,12 +79,25 @@ document.addEventListener("click", async (event) => {
     const templateId = event.target.dataset.saveCanva;
     const input = document.querySelector(`[data-canva-url="${templateId}"]`);
     try {
-      await updateDiplomaTemplate(templateId, { canva_url: input?.value.trim() || "" });
+      const { error } = await supabase.from("diploma_templates").update({ canva_url: input?.value.trim() || null }).eq("id", templateId);
+      if (error) throw error;
       showToast("Link de Canva guardado.");
       await load();
     } catch (error) {
       console.error(error);
       showToast(error.message || "No se pudo guardar el link de Canva.", "error");
+    }
+  }
+  if (event.target.dataset.deleteTemplate) {
+    const name = templates.concat(folderTemplates).find((item) => item.id === event.target.dataset.deleteTemplate)?.name || "este diseño";
+    if (!confirm(`¿Eliminar ${name}? También se borrará su archivo de Cloudflare R2. Esta acción no se puede deshacer.`)) return;
+    try {
+      await deleteDiplomaTemplate(event.target.dataset.deleteTemplate, event.target.dataset.table);
+      showToast("Diseño eliminado.");
+      await load();
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || "No se pudo eliminar el diseño.", "error");
     }
   }
 });

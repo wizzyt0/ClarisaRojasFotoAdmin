@@ -287,6 +287,21 @@ async function handleToggleCatalogTemplate(request, env, table, fileId) {
   });
 }
 
+async function handleDeleteCatalogTemplate(request, env, table, fileId) {
+  await requireAdmin(request, env);
+  if (!new Set(["diploma_templates", "folder_templates"]).has(table)) return jsonError("Catálogo inválido.", 400);
+  const templates = await supabaseFetch(env, `${table}?select=id,r2_key&id=eq.${encodeURIComponent(fileId)}&limit=1`);
+  const template = templates[0];
+  if (!template) return jsonError("Diseño no encontrado.", 404);
+  const usedByPrintItem = await supabaseFetch(env, `print_items?select=id&selected_file_id=eq.${encodeURIComponent(fileId)}&limit=1`);
+  if (usedByPrintItem.length) return jsonError("No puede eliminar este diseño porque ya fue seleccionado en un trabajo. Puede desactivarlo para ocultarlo del catálogo.", 409);
+  await supabaseDelete(env, table, template.id);
+  await env.PHOTO_BUCKET.delete(template.r2_key);
+  return new Response(JSON.stringify({ ok: true }), {
+    headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
+  });
+}
+
 async function handlePublicCatalogFile(request, env, table, fileId) {
   const allowedTables = new Set(["package_images", "diploma_templates", "folder_templates"]);
   if (!allowedTables.has(table)) return jsonError("Catálogo inválido.", 400);
@@ -419,6 +434,8 @@ export default {
       if (url.pathname === "/admin/catalog/upload" && request.method === "POST") return handleCatalogUpload(request, env);
       if (url.pathname.startsWith("/admin/catalog/diploma_templates/") && request.method === "PATCH") return handleToggleCatalogTemplate(request, env, "diploma_templates", url.pathname.split("/").pop());
       if (url.pathname.startsWith("/admin/catalog/folder_templates/") && request.method === "PATCH") return handleToggleCatalogTemplate(request, env, "folder_templates", url.pathname.split("/").pop());
+      if (url.pathname.startsWith("/admin/catalog/diploma_templates/") && request.method === "DELETE") return handleDeleteCatalogTemplate(request, env, "diploma_templates", url.pathname.split("/").pop());
+      if (url.pathname.startsWith("/admin/catalog/folder_templates/") && request.method === "DELETE") return handleDeleteCatalogTemplate(request, env, "folder_templates", url.pathname.split("/").pop());
       if (url.pathname.startsWith("/admin/catalog/") && request.method === "GET") {
         const [, , , table, fileId] = url.pathname.split("/");
         return handleAdminGetCatalogFile(request, env, table, fileId);

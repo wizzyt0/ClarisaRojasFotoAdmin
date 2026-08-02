@@ -98,6 +98,16 @@ export async function updateDiplomaTemplate(templateId, payload, table = "diplom
   return result;
 }
 
+export async function deleteDiplomaTemplate(templateId, table = "diploma_templates") {
+  const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/catalog/${table}/${templateId}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${await sessionToken()}` }
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(result?.error || "No se pudo eliminar el diploma.");
+  return result;
+}
+
 export async function toggleDiplomaTemplate(templateId, isActive) {
   return updateDiplomaTemplate(templateId, { is_active: isActive });
 }
