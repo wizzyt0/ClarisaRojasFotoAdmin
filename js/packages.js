@@ -1,7 +1,7 @@
 import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { getCatalogFileUrl, getPackageImages, uploadPackageImage } from "./catalog.js";
-import { PACKAGE_TYPES, getPackageTypeLabel } from "./constants.js";
+import { PACKAGE_TYPES } from "./constants.js";
 import { escapeHtml, formToObject, showToast } from "./utils.js";
 import { formatMoney } from "./formatters.js";
 
@@ -12,6 +12,13 @@ let editingPackage = null;
 const modal = document.querySelector("#packageModal");
 const form = document.querySelector("#packageForm");
 const options = (selected = "") => Object.entries(PACKAGE_TYPES).map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
+const packageSections = [
+  { type: "SCHOOL_GRADUATION", title: "Graduaciones escolares", description: "Solo se mostrarán a los grupos de trabajos de graduación." },
+  { type: "SCHOOL_MEMORY", title: "Fotografía de recuerdo", description: "Solo se mostrarán a los grupos de trabajos de fotografía de recuerdo." },
+  { type: "SCHOOL_CHRISTMAS", title: "Fotografía navideña", description: "Solo se mostrarán a los grupos de trabajos de fotografía navideña." },
+  { type: "PHOTO_SESSION", title: "Sesiones particulares", description: "Catálogo reservado para trabajos particulares." },
+  { type: "GENERAL", title: "Sin clasificar", description: "Estos paquetes no se muestran a escuelas. Edítelos y asígneles una categoría para utilizarlos." }
+];
 
 function renderForm(item = {}) {
   form.innerHTML = `
@@ -25,15 +32,20 @@ function renderForm(item = {}) {
     <button class="btn btn-primary" type="submit">Guardar paquete</button>`;
 }
 
+function renderPackageCard(item) {
+  const images = packageImages.filter((image) => image.package_id === item.id);
+  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(item.name)}</h3><p class="muted">${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div><p>${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="actions"><label class="btn">Subir imagen<input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></label><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
+}
+
 function render() {
   const search = document.querySelector("#searchInput").value.toLowerCase();
-  const type = document.querySelector("#typeFilter").value;
   const active = document.querySelector("#activeFilter").value;
-  const rows = packages.filter((item) => (!search || item.name.toLowerCase().includes(search)) && (!type || item.package_type === type) && (active === "" || String(item.is_active) === active));
-  document.querySelector("#packagesTable").innerHTML = rows.length ? `<div class="catalog-grid">${rows.map((item) => {
-    const images = packageImages.filter((image) => image.package_id === item.id);
-    return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(item.name)}</h3><p class="muted">${getPackageTypeLabel(item.package_type)} · ${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div><p>${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="actions"><label class="btn">Subir imagen<input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></label><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
-  }).join("")}</div>` : `<div class="empty-state">No hay paquetes para mostrar.</div>`;
+  const visiblePackages = packages.filter((item) => (!search || item.name.toLowerCase().includes(search)) && (active === "" || String(item.is_active) === active));
+  const sections = packageSections.map((section) => {
+    const items = visiblePackages.filter((item) => item.package_type === section.type);
+    return `<section class="package-category" data-package-category="${section.type}"><div class="package-category-header"><div><h2>${section.title}</h2><p class="muted">${section.description}</p></div><button class="btn" type="button" data-new-package-type="${section.type}">Agregar paquete</button></div>${items.length ? `<div class="catalog-grid">${items.map(renderPackageCard).join("")}</div>` : `<div class="empty-state compact-empty">No hay paquetes en esta categoría.</div>`}</section>`;
+  }).join("");
+  document.querySelector("#packagesTable").innerHTML = `<div class="package-categories">${sections}</div>`;
   hydrateCatalogThumbs();
 }
 
@@ -58,10 +70,10 @@ async function hydrateCatalogThumbs() {
   }));
 }
 
-function openModal(item = null) {
+function openModal(item = null, packageType = "SCHOOL_GRADUATION") {
   editingPackage = item;
   document.querySelector("#packageModalTitle").textContent = item ? "Editar paquete" : "Nuevo paquete";
-  renderForm(item || { is_active: true, price: 0 });
+  renderForm(item || { is_active: true, price: 0, package_type: packageType });
   modal.classList.remove("hidden");
 }
 
@@ -80,6 +92,7 @@ form.addEventListener("submit", async (event) => {
 document.addEventListener("click", async (event) => {
   const catalogButton = event.target.closest("[data-open-catalog-file]");
   if (event.target.matches("#newPackageBtn")) openModal();
+  if (event.target.dataset.newPackageType) openModal(null, event.target.dataset.newPackageType);
   if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");
   if (event.target.dataset.edit) openModal(packages.find((item) => item.id === event.target.dataset.edit));
   if (catalogButton) {
@@ -107,5 +120,5 @@ document.addEventListener("change", async (event) => {
     event.target.value = "";
   }
 });
-["searchInput", "typeFilter", "activeFilter"].forEach((id) => document.querySelector(`#${id}`).addEventListener("input", render));
+["searchInput", "activeFilter"].forEach((id) => document.querySelector(`#${id}`).addEventListener("input", render));
 load().catch((error) => { console.error(error); showToast("No se pudo cargar la información.", "error"); });

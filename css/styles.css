@@ -332,6 +332,12 @@ label { font-weight: 650; }
 .catalog-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .catalog-section { display: grid; gap: 12px; margin-bottom: 24px; }
 .catalog-section .page-header { margin-bottom: 0; }
+.package-categories { display: grid; gap: 24px; }
+.package-category { display: grid; gap: 14px; border-top: 1px solid var(--border); padding-top: 22px; }
+.package-category:first-child { border-top: 0; padding-top: 0; }
+.package-category-header { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.package-category-header h2 { margin: 0; font-size: 1.25rem; }
+.package-category-header p { margin: 4px 0 0; }
 .catalog-subsection { display: grid; gap: 10px; margin-top: 10px; }
 .catalog-subsection h3 { margin: 0; }
 .catalog-card {
@@ -390,6 +396,7 @@ label { font-weight: 650; }
   .main { padding: 18px; }
   .page-header { align-items: stretch; flex-direction: column; }
   .filters { grid-template-columns: 1fr; }
+  .package-category-header { align-items: stretch; flex-direction: column; }
   .group-workflow-header { flex-direction: column; }
   .group-finance-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .group-finance-action { grid-column: 1 / -1; }

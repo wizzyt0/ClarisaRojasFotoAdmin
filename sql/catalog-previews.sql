@@ -165,7 +165,7 @@ begin
     from package_images pi
     join packages p on p.id = pi.package_id
     where p.is_active = true
-      and p.package_type in (package_type_value, 'GENERAL');
+      and p.package_type = package_type_value;
 
     return coalesce(result, '[]'::jsonb);
   end if;
