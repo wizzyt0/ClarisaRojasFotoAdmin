@@ -80,7 +80,7 @@ function renderJobGroups(job) {
 
 async function load() {
   const [{ data: jobsData, error }, { data: clientsData }] = await Promise.all([
-    supabase.from("jobs").select("*, clients(name, is_active), packages(name), school_groups(*, packages(name, price)), deposits(amount, deposit_date, notes, created_at), galleries(id, is_active, google_photos_url)").order("created_at", { ascending: false }),
+    supabase.from("jobs").select("id, client_id, package_id, job_type, title, event_type, event_date, delivery_date, status, price, package_quantity, notes, approval_token, created_at, clients(name, is_active), packages(name), school_groups(*, packages(name, price)), deposits(amount, deposit_date, notes, created_at), galleries(id, is_active, google_photos_url)").order("created_at", { ascending: false }),
     supabase.from("clients").select("*").eq("is_active", true).order("name")
   ]);
   if (error) throw error;
