@@ -13,7 +13,9 @@ const form = document.querySelector("#diplomaForm");
 const schoolLevelLabel = (value) => ({ KINDER: "Preescolar / Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[value] || "Sin nivel");
 const safeCanvaUrl = (value) => {
   try {
-    const url = new URL(value);
+    const rawUrl = String(value || "").trim();
+    if (!rawUrl) return "";
+    const url = new URL(/^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`);
     return ["http:", "https:"].includes(url.protocol) ? url.href : "";
   } catch {
     return "";
@@ -89,8 +91,10 @@ document.addEventListener("click", async (event) => {
   if (event.target.dataset.saveCanva) {
     const templateId = event.target.dataset.saveCanva;
     const input = document.querySelector(`[data-canva-url="${templateId}"]`);
+    const canvaUrl = safeCanvaUrl(input?.value);
+    if (input?.value.trim() && !canvaUrl) return showToast("Pegue un link válido de Canva.", "error");
     try {
-      const { error } = await supabase.from("diploma_templates").update({ canva_url: input?.value.trim() || null }).eq("id", templateId);
+      const { error } = await supabase.from("diploma_templates").update({ canva_url: canvaUrl || null }).eq("id", templateId);
       if (error) throw error;
       showToast("Link de Canva guardado.");
       await load();
