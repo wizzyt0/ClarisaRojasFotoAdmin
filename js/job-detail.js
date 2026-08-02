@@ -131,7 +131,7 @@ function render() {
       <p><strong>Nivel:</strong><br>${escapeHtml({ KINDER: "Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[school.school_level] || "")}</p>
       <p><strong>WhatsApp contacto:</strong><br>${escapeHtml(school.contact_phone || school.teacher_phone)}<br>${escapeHtml(school.contact_email || "")}</p>
       <p><strong>Directora:</strong><br>${escapeHtml(school.principal_name)}<br>${escapeHtml(school.principal_phone)}</p>
-    </div><div class="deposit-summary school-financial-summary"><div><span>Total</span><strong>${formatMoney(job.price)}</strong></div><div><span>Total abonado</span><strong>${formatMoney(totals.totalDeposited)}</strong></div><div><span>Total restante</span><strong>${formatMoney(totals.remainingBalance)}</strong></div></div><h3>Grupos</h3><div class="group-list">${schoolGroups.length ? schoolGroups.map((group) => `<article class="group-card"><div class="group-card-top"><div><strong>${escapeHtml(group.group_name)}</strong><span>${escapeHtml(group.teacher_name || "Sin maestra")}</span></div><span class="badge">${Number(group.package_quantity || 0) > 0 ? `${group.package_quantity} paquetes` : "Pendiente"}</span></div><div class="group-card-body"><p><strong>WhatsApp:</strong><br>${escapeHtml(group.teacher_phone || "Sin WhatsApp")}</p><p><strong>Paquete:</strong><br>${escapeHtml(group.packages?.name || "Pendiente")}</p><p><strong>Total:</strong><br>${formatMoney(group.price || 0)}</p></div><div class="actions"><button class="btn" data-edit-group="${group.id}">Editar grupo</button><button class="btn btn-danger" data-delete-group="${group.id}">Eliminar</button></div></article>`).join("") : `<div class="empty-state">Agregue los grupos manualmente, por ejemplo 6to A, 6to B o Kinder 3.</div>`}</div>`;
+    </div><h3>Grupos</h3><div class="group-list">${schoolGroups.length ? schoolGroups.map(renderSchoolGroupCard).join("") : `<div class="empty-state">Agregue los grupos manualmente, por ejemplo 6to A, 6to B o Kinder 3.</div>`}</div>`;
   }
   renderPrintItems();
   renderGalleries();
@@ -155,6 +155,15 @@ function render() {
     }
   });
   setupR2Dropzone();
+}
+
+function renderSchoolGroupCard(group) {
+  const total = Number(group.price || 0);
+  const deposited = deposits
+    .filter((deposit) => deposit.group_id === group.id)
+    .reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
+  const pending = Math.max(total - deposited, 0);
+  return `<article class="group-card"><div class="group-card-top"><div><strong>${escapeHtml(group.group_name)}</strong><span>${escapeHtml(group.teacher_name || "Sin maestra")}</span></div><span class="badge">${Number(group.package_quantity || 0) > 0 ? `${group.package_quantity} paquetes` : "Pendiente"}</span></div><div class="group-card-body"><p><strong>WhatsApp:</strong><br>${escapeHtml(group.teacher_phone || "Sin WhatsApp")}</p><p><strong>Paquete:</strong><br>${escapeHtml(group.packages?.name || "Pendiente")}</p><p><strong>Total:</strong><br>${formatMoney(total)}</p><p><strong>Abonado:</strong><br>${formatMoney(deposited)}</p><p><strong>Pendiente:</strong><br>${formatMoney(pending)}</p></div><div class="actions"><button class="btn" data-edit-group="${group.id}">Editar grupo</button><button class="btn btn-danger" data-delete-group="${group.id}">Eliminar</button></div></article>`;
 }
 
 function deliverableState(deliverable) {

@@ -229,7 +229,6 @@ a { color: var(--primary); text-decoration: none; }
 }
 .deposit-summary span { color: var(--muted); font-size: 0.82rem; }
 .deposit-summary strong { font-size: 1.15rem; }
-.school-financial-summary { margin: 18px 0 22px; }
 .job-group-summary { display: grid; gap: 8px; margin-top: 8px; min-width: 220px; }
 .job-group-summary > div { border-top: 1px solid var(--border); padding-top: 8px; }
 .selected-visual { display: grid; gap: 8px; min-width: 0; }
