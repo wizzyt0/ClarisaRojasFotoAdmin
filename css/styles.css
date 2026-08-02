@@ -349,6 +349,8 @@ label { font-weight: 650; }
   background: white;
 }
 .catalog-card h3 { margin: 0; font-size: 1.05rem; }
+.compact-catalog-card { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.compact-catalog-card .actions { justify-content: flex-end; }
 .catalog-card-header { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
 .catalog-thumbs { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); }
 .catalog-thumb, .catalog-preview-large {
