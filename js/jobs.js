@@ -158,6 +158,11 @@ form.addEventListener("submit", async (event) => {
     return showToast(`No se pudo guardar el trabajo: ${result.error.message}`, "error");
   }
   modal.classList.add("hidden");
+  if (!editingJob && getQueryParam("action") === "new") {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("action");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+  }
   if (galleryUrl) {
     const galleryResult = await supabase.from("galleries").insert({
       job_id: result.data.id,

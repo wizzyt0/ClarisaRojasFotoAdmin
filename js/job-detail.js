@@ -28,6 +28,8 @@ let currentMessage = "";
 const modal = document.querySelector("#detailModal");
 const form = document.querySelector("#detailForm");
 
+const isChristmasJob = () => job?.job_type === "SCHOOL_GRADUATION" && job?.event_type === "CHRISTMAS";
+
 function approvalUrl() {
   return `${APP_CONFIG.appUrl.replace(/\/$/, "")}/approval.html?token=${job.approval_token}`;
 }
@@ -79,7 +81,7 @@ async function loadJob() {
   r2Files = await getR2FilesByJob(jobId);
   r2ShareLinks = await getR2ShareLinksByJob(jobId);
   schoolGroups = job.job_type === "SCHOOL_GRADUATION" ? await ensureSchoolGroups() : [];
-  printItems = job.job_type === "SCHOOL_GRADUATION" ? await ensureGroupPrintItems() : [];
+  printItems = job.job_type === "SCHOOL_GRADUATION" && !isChristmasJob() ? await ensureGroupPrintItems() : [];
   const { data: packagesData, error: packagesError } = await supabase.from("packages").select("*").eq("is_active", true).order("name");
   if (packagesError) throw packagesError;
   packages = packagesData || [];
@@ -138,6 +140,9 @@ function render() {
   renderDeposits();
   renderApproval();
   renderPhones();
+  document.querySelector("#r2Dropzone")?.closest(".card")?.classList.toggle("hidden", isChristmasJob());
+  document.querySelector("#whatsappMessage")?.closest(".card")?.classList.toggle("hidden", isChristmasJob());
+  document.querySelector("#approvalCard")?.classList.toggle("hidden", isChristmasJob());
   document.querySelector("#statusSelect")?.addEventListener("change", async (event) => {
     if (event.target.value !== "GALLERY_READY") return;
     try {
@@ -161,6 +166,12 @@ function deliverableState(deliverable) {
 }
 
 function renderDeliverablesSummary() {
+  if (isChristmasJob()) {
+    return `<div class="deliverables"><h3>Galerías navideñas por grupo</h3><div class="deliverable-grid">${schoolGroups.map((group) => {
+      const gallery = galleries.find((item) => item.group_id === group.id && item.is_active);
+      return `<div class="deliverable ${gallery ? "waiting" : "missing"}"><strong>${escapeHtml(group.group_name)}</strong><span>${gallery ? "Galería registrada" : "Galería pendiente"}</span></div>`;
+    }).join("") || `<div class="deliverable missing"><strong>Grupos</strong><span>Agregue el primer grupo.</span></div>`}</div></div>`;
+  }
   if (printItems.length) {
     const groupsToRender = schoolGroups.length ? schoolGroups : [{ id: null, group_name: "Trabajo", teacher_name: "" }];
     return `<div class="deliverables"><h3>Piezas de impresión</h3><div class="deliverable-groups">${groupsToRender.map((group) => {
@@ -386,13 +397,17 @@ function renderPhones() {
 }
 
 function renderGalleries() {
+  const groupName = (groupId) => schoolGroups.find((group) => group.id === groupId)?.group_name || "Trabajo general";
   const teacherPreviewFiles = r2Files.filter((file) => file.file_type === "TEACHER_PREVIEW");
-  const googlePhotosHtml = galleries.length ? `<h3>Google Photos</h3><div class="table-wrap"><table class="table"><thead><tr><th>Título</th><th>Tipo</th><th>Link</th><th>Enviada</th><th>Acciones</th></tr></thead><tbody>${galleries.map((gallery) => `<tr><td>${escapeHtml(gallery.title)}<br><span class="muted">${gallery.is_active ? "Activa" : "Inactiva"}</span></td><td>${getGalleryTypeLabel(gallery.gallery_type)}</td><td><a href="${escapeHtml(gallery.google_photos_url)}" target="_blank" rel="noopener">Abrir galería</a></td><td>${formatDateTime(gallery.sent_at)}</td><td class="actions"><button class="btn btn-danger" data-deactivate-gallery="${gallery.id}">Desactivar</button></td></tr>`).join("")}</tbody></table></div>` : "";
+  const googlePhotosHtml = galleries.length ? `<h3>Google Photos</h3><div class="table-wrap"><table class="table"><thead><tr><th>Título</th>${isChristmasJob() ? "<th>Grupo</th>" : ""}<th>Tipo</th><th>Link</th><th>Enviada</th><th>Acciones</th></tr></thead><tbody>${galleries.map((gallery) => `<tr><td>${escapeHtml(gallery.title)}<br><span class="muted">${gallery.is_active ? "Activa" : "Inactiva"}</span></td>${isChristmasJob() ? `<td>${escapeHtml(groupName(gallery.group_id))}</td>` : ""}<td>${getGalleryTypeLabel(gallery.gallery_type)}</td><td><a href="${escapeHtml(gallery.google_photos_url)}" target="_blank" rel="noopener">Abrir galería</a></td><td>${formatDateTime(gallery.sent_at)}</td><td class="actions">${isChristmasJob() ? `<button class="btn btn-secondary" data-send-gallery-whatsapp="${gallery.id}">WhatsApp</button>` : ""}<button class="btn btn-danger" data-deactivate-gallery="${gallery.id}">Desactivar</button></td></tr>`).join("")}</tbody></table></div>` : "";
   const r2GalleryHtml = teacherPreviewFiles.length ? `<h3>Preview maestra en R2</h3><div class="file-gallery">${teacherPreviewFiles.map((file) => {
     const isImage = String(file.content_type || "").startsWith("image/");
     return `<article class="file-tile"><button class="file-preview" data-preview-r2-file="${file.id}" type="button">${isImage ? `<span class="file-thumb" data-r2-thumb="${file.id}"></span>` : `<span class="file-icon">${escapeHtml((file.file_name || "").split(".").pop() || "FILE")}</span>`}</button><div class="file-meta"><strong>${escapeHtml(file.file_name)}</strong><span>${formatFileSize(file.size_bytes)}</span><span>${formatDateTime(file.created_at)}</span></div><div class="actions"><button class="btn" data-open-r2-file="${file.id}">Abrir</button></div></article>`;
   }).join("")}</div>` : "";
-  document.querySelector("#galleriesList").innerHTML = googlePhotosHtml || r2GalleryHtml ? `${r2GalleryHtml}${googlePhotosHtml}` : `<div class="empty-state">No hay galerías registradas. Puede subir previews en Archivos R2 o agregar un link de Google Photos.</div>`;
+  const emptyMessage = isChristmasJob()
+    ? "No hay galerías navideñas registradas. Agregue una galería y asígnela al grupo correspondiente."
+    : "No hay galerías registradas. Puede subir previews en Archivos R2 o agregar un link de Google Photos.";
+  document.querySelector("#galleriesList").innerHTML = googlePhotosHtml || r2GalleryHtml ? `${r2GalleryHtml}${googlePhotosHtml}` : `<div class="empty-state">${emptyMessage}</div>`;
   hydrateR2Thumbnails();
 }
 
@@ -492,6 +507,38 @@ Clarisa Rojas Fotografia`;
   openInNewTab(waMeUrl);
 }
 
+async function sendChristmasGalleryWhatsapp(galleryId) {
+  const gallery = galleries.find((item) => item.id === galleryId);
+  const group = schoolGroups.find((item) => item.id === gallery?.group_id);
+  if (!gallery || !group) throw new Error("La galería debe estar asignada a un grupo.");
+  if (!group.teacher_phone) throw new Error("Registre el WhatsApp de la maestra de este grupo antes de enviar la galería.");
+  const school = job.clients.school_profiles?.[0] || {};
+  const message = `Hola ${group.teacher_name || "maestra"} 👋
+
+Ya está lista la galería navideña para revisión.
+
+Escuela: ${school.school_name || job.clients.name}
+Grupo: ${group.group_name}
+
+Puede verla aquí:
+${gallery.google_photos_url}
+
+Muchas gracias.
+Clarisa Rojas Fotografia`;
+  const waMeUrl = buildWhatsAppUrl(group.teacher_phone, message);
+  await supabase.from("galleries").update({ sent_at: new Date().toISOString() }).eq("id", gallery.id);
+  await supabase.from("message_logs").insert({
+    job_id: job.id,
+    client_id: job.client_id,
+    message_type: "GALLERY_LINK",
+    message_text: message,
+    wa_me_url: waMeUrl
+  });
+  showToast("WhatsApp de galería generado.");
+  await loadJob();
+  openInNewTab(waMeUrl);
+}
+
 async function sendPrintItemWhatsapp(itemId) {
   const item = printItems.find((entry) => entry.id === itemId);
   if (!item) return;
@@ -585,7 +632,9 @@ function renderApproval() {
 
 function openGalleryForm() {
   document.querySelector("#detailModalTitle").textContent = "Agregar galería";
-  form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Título</label><input class="input" name="title" required></div><div class="form-group"><label>Tipo</label><select class="select" name="gallery_type">${Object.entries(GALLERY_TYPES).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></div></div><div class="form-group"><label>Link de Google Photos</label><input class="input" name="google_photos_url" required></div><div class="form-group"><label>Notas</label><textarea class="textarea" name="notes"></textarea></div><input type="hidden" name="form_type" value="gallery"><button class="btn btn-primary" type="submit">Guardar galería</button>`;
+  const groupField = isChristmasJob() ? `<div class="form-group"><label>Grupo</label><select class="select" name="group_id" required><option value="">Seleccione</option>${schoolGroups.map((group) => `<option value="${group.id}">${escapeHtml(group.group_name)}${group.teacher_name ? ` · ${escapeHtml(group.teacher_name)}` : ""}</option>`).join("")}</select></div>` : "";
+  const typeField = isChristmasJob() ? `<input type="hidden" name="gallery_type" value="STUDENT_GALLERY">` : `<div class="form-group"><label>Tipo</label><select class="select" name="gallery_type">${Object.entries(GALLERY_TYPES).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></div>`;
+  form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Título</label><input class="input" name="title" required></div>${groupField}${typeField}</div><div class="form-group"><label>Link de Google Photos</label><input class="input" name="google_photos_url" required></div><div class="form-group"><label>Notas</label><textarea class="textarea" name="notes"></textarea></div><input type="hidden" name="form_type" value="gallery"><button class="btn btn-primary" type="submit">Guardar galería</button>`;
   modal.classList.remove("hidden");
 }
 
@@ -599,19 +648,25 @@ function openDepositForm() {
 function openGroupForm(group = null) {
   document.querySelector("#detailModalTitle").textContent = group ? "Editar grupo" : "Agregar grupo";
   const eventPackageType = SCHOOL_EVENT_PACKAGE_TYPES[job.event_type] || "SCHOOL_GRADUATION";
-  const packageOptions = packages
-    .filter((pkg) => pkg.package_type === eventPackageType)
-    .map((pkg) => `<option value="${pkg.id}" data-price="${pkg.price}" ${pkg.id === group?.selected_package_id ? "selected" : ""}>${escapeHtml(pkg.name)} - ${formatMoney(pkg.price)}</option>`)
+  const matchingPackages = packages.filter((pkg) => pkg.package_type === eventPackageType);
+  const christmasPackage = isChristmasJob() ? matchingPackages[0] : null;
+  const selectedPackageId = isChristmasJob() ? christmasPackage?.id || "" : group?.selected_package_id || "";
+  const packageOptions = matchingPackages
+    .map((pkg) => `<option value="${pkg.id}" data-price="${pkg.price}" ${pkg.id === selectedPackageId ? "selected" : ""}>${escapeHtml(pkg.name)} - ${formatMoney(pkg.price)}</option>`)
     .join("");
-  form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Grupo</label><input class="input" name="group_name" required value="${escapeHtml(group?.group_name || "")}" placeholder="6to A"></div><div class="form-group"><label>Maestra</label><input class="input" name="teacher_name" value="${escapeHtml(group?.teacher_name || "")}"></div><div class="form-group"><label>WhatsApp maestra</label><input class="input" name="teacher_phone" value="${escapeHtml(group?.teacher_phone || "")}"></div><div class="form-group"><label>Paquete</label><select class="select" name="selected_package_id"><option value="">Pendiente</option>${packageOptions}</select></div><div class="form-group"><label>Cantidad de paquetes</label><input class="input" type="number" min="0" name="package_quantity" value="${group?.package_quantity || 0}"></div><div class="form-group"><label>Total grupo</label><input class="input" type="number" min="0" step="0.01" name="price" value="${group?.price || 0}"></div></div><div class="form-group"><label>Notas</label><textarea class="textarea" name="notes">${escapeHtml(group?.notes || "")}</textarea></div><input type="hidden" name="group_id" value="${group?.id || ""}"><input type="hidden" name="form_type" value="school_group"><button class="btn btn-primary" type="submit">Guardar grupo</button>`;
+  const packageField = isChristmasJob()
+    ? `<div class="form-group"><label>Paquete navideño</label><input class="input" value="${escapeHtml(christmasPackage ? `${christmasPackage.name} - ${formatMoney(christmasPackage.price)}` : "Configure un paquete navideño activo")}" readonly><input type="hidden" name="selected_package_id" value="${selectedPackageId}"></div>`
+    : `<div class="form-group"><label>Paquete</label><select class="select" name="selected_package_id"><option value="">Pendiente</option>${packageOptions}</select></div>`;
+  form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Grupo</label><input class="input" name="group_name" required value="${escapeHtml(group?.group_name || "")}" placeholder="6to A"></div><div class="form-group"><label>Maestra</label><input class="input" name="teacher_name" value="${escapeHtml(group?.teacher_name || "")}"></div><div class="form-group"><label>WhatsApp maestra</label><input class="input" name="teacher_phone" value="${escapeHtml(group?.teacher_phone || "")}"></div>${packageField}<div class="form-group"><label>Cantidad de paquetes</label><input class="input" type="number" min="0" name="package_quantity" value="${group?.package_quantity || 0}"></div><div class="form-group"><label>Total grupo</label><input class="input" type="number" min="0" step="0.01" name="price" value="${group?.price || 0}" ${isChristmasJob() ? "readonly" : ""}></div></div><div class="form-group"><label>Notas</label><textarea class="textarea" name="notes">${escapeHtml(group?.notes || "")}</textarea></div><input type="hidden" name="group_id" value="${group?.id || ""}"><input type="hidden" name="form_type" value="school_group"><button class="btn btn-primary" type="submit">Guardar grupo</button>`;
   const updateGroupPrice = () => {
-    const selected = form.selected_package_id.selectedOptions[0];
-    const packagePrice = Number(selected?.dataset.price || 0);
+    const selected = form.selected_package_id.selectedOptions?.[0];
+    const packagePrice = Number(isChristmasJob() ? christmasPackage?.price || 0 : selected?.dataset.price || 0);
     const quantity = Number(form.package_quantity.value || 0);
     if (packagePrice && quantity >= 0) form.price.value = packagePrice * quantity;
   };
-  form.selected_package_id.addEventListener("change", updateGroupPrice);
+  form.selected_package_id.addEventListener?.("change", updateGroupPrice);
   form.package_quantity.addEventListener("input", updateGroupPrice);
+  updateGroupPrice();
   modal.classList.remove("hidden");
 }
 
@@ -637,6 +692,7 @@ async function loadLogs() {
 
 async function requestGalleryLinkIfNeeded(nextStatus) {
   if (nextStatus !== "GALLERY_READY") return true;
+  if (isChristmasJob()) return true;
   const hasActiveGallery = galleries.some((gallery) => gallery.is_active && gallery.google_photos_url);
   if (hasActiveGallery) return true;
 
@@ -674,21 +730,24 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = formToObject(form);
   try {
-    if (data.form_type === "gallery") await createGallery(jobId, { title: data.title, gallery_type: data.gallery_type, google_photos_url: data.google_photos_url, notes: data.notes || null, is_active: true });
+    if (data.form_type === "gallery") await createGallery(jobId, { title: data.title, group_id: data.group_id || null, gallery_type: data.gallery_type, google_photos_url: data.google_photos_url, notes: data.notes || null, is_active: true });
     if (data.form_type === "deposit") await createDeposit(jobId, { group_id: data.group_id || null, amount: Number(data.amount), deposit_date: data.deposit_date, notes: data.notes || null });
     if (data.form_type === "school_group") {
+      const christmasPackage = isChristmasJob() ? packages.filter((pkg) => pkg.package_type === "SCHOOL_CHRISTMAS") : [];
+      if (isChristmasJob() && christmasPackage.length !== 1) throw new Error("Configure exactamente un paquete navideño activo en Paquetes.");
+      const packagePrice = Number(christmasPackage[0]?.price || 0);
       const payload = {
         group_name: data.group_name.trim(),
         teacher_name: data.teacher_name || null,
         teacher_phone: data.teacher_phone || null,
-        selected_package_id: data.selected_package_id || null,
+        selected_package_id: isChristmasJob() ? christmasPackage[0].id : data.selected_package_id || null,
         package_quantity: Number(data.package_quantity || 0),
-        price: Number(data.price || 0),
+        price: isChristmasJob() ? packagePrice * Number(data.package_quantity || 0) : Number(data.price || 0),
         notes: data.notes || null,
         sort_order: schoolGroups.length + 1
       };
       const group = data.group_id ? await updateSchoolGroup(data.group_id, payload) : await createSchoolGroup(jobId, payload);
-      await ensureDefaultPrintItems(jobId, group.id);
+      if (!isChristmasJob()) await ensureDefaultPrintItems(jobId, group.id);
       await recalculateJobFromGroups();
     }
     if (data.form_type === "r2_file") await createR2File(jobId, { print_item_id: data.print_item_id || null, file_type: data.file_type, r2_key: data.r2_key.trim(), file_name: data.file_name.trim(), content_type: data.content_type || null, size_bytes: data.size_bytes ? Number(data.size_bytes) : null, notes: data.notes || null });
@@ -735,6 +794,7 @@ document.addEventListener("click", async (event) => {
     }
     if (event.target.matches("#newGalleryBtn")) openGalleryForm();
     if (event.target.matches("#sendTeacherPreviewWhatsappBtn")) await sendTeacherPreviewWhatsapp();
+    if (event.target.dataset.sendGalleryWhatsapp) await sendChristmasGalleryWhatsapp(event.target.dataset.sendGalleryWhatsapp);
     if (event.target.dataset.sendPrintItem) await sendPrintItemWhatsapp(event.target.dataset.sendPrintItem);
     if (catalogButton) {
       const [table, fileId] = catalogButton.dataset.openCatalogFile.split(":");

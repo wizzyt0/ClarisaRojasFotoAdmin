@@ -15,7 +15,7 @@ const options = (selected = "") => Object.entries(PACKAGE_TYPES).map(([value, la
 const packageSections = [
   { type: "SCHOOL_GRADUATION", title: "Graduaciones escolares", description: "Solo se mostrarán a los grupos de trabajos de graduación." },
   { type: "SCHOOL_MEMORY", title: "Fotografía de recuerdo", description: "Solo se mostrarán a los grupos de trabajos de fotografía de recuerdo." },
-  { type: "SCHOOL_CHRISTMAS", title: "Fotografía navideña", description: "Solo se mostrarán a los grupos de trabajos de fotografía navideña." },
+  { type: "SCHOOL_CHRISTMAS", title: "Fotografía navideña", description: "Paquete único que se asigna automáticamente a cada grupo navideño." },
   { type: "PHOTO_SESSION", title: "Sesiones particulares", description: "Catálogo reservado para trabajos particulares." },
   { type: "GENERAL", title: "Sin clasificar", description: "Estos paquetes no se muestran a escuelas. Edítelos y asígneles una categoría para utilizarlos." }
 ];
@@ -81,6 +81,13 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = formToObject(form);
   if (Number(data.price) < 0) return showToast("El precio debe ser mayor o igual a 0.", "error");
+  if (data.package_type === "SCHOOL_CHRISTMAS" && data.is_active === "true") {
+    const { data: activeChristmasPackages, error } = await supabase.from("packages").select("id").eq("package_type", "SCHOOL_CHRISTMAS").eq("is_active", true);
+    if (error) return showToast("No se pudo validar el paquete navideño.", "error");
+    if (activeChristmasPackages.some((item) => item.id !== editingPackage?.id)) {
+      return showToast("Solo puede existir un paquete navideño activo. Desactive o edite el paquete actual.", "error");
+    }
+  }
   const payload = { name: data.name.trim(), package_type: data.package_type, description: data.description || null, price: Number(data.price), is_active: data.is_active === "true" };
   const { error } = editingPackage ? await supabase.from("packages").update(payload).eq("id", editingPackage.id) : await supabase.from("packages").insert(payload);
   if (error) { console.error(error); return showToast("No se pudo guardar el paquete.", "error"); }
