@@ -25,16 +25,16 @@ export async function getCurrentUser() {
   return data.user;
 }
 
-async function getStaffRole(userId) {
+async function getStaffProfile(userId) {
   if (!rolePromise) {
     rolePromise = supabase
       .from("staff_roles")
-      .select("role")
+      .select("role, display_name")
       .eq("user_id", userId)
       .maybeSingle()
       .then(({ data, error }) => {
         if (error) throw error;
-        return data?.role || null;
+        return data || null;
       });
   }
   return rolePromise;
@@ -57,39 +57,39 @@ export async function requireAuth(allowedRoles = STAFF_ROLES) {
     window.location.replace("index.html");
     return null;
   }
-  let staffRole;
+  let staffProfile;
   try {
-    staffRole = await getStaffRole(data.session.user.id);
+    staffProfile = await getStaffProfile(data.session.user.id);
   } catch (error) {
     console.error(error);
     await supabase.auth.signOut();
     window.location.replace("index.html");
     return null;
   }
-  if (!STAFF_ROLES.has(staffRole)) {
+  if (!STAFF_ROLES.has(staffProfile?.role)) {
     await supabase.auth.signOut();
     window.location.replace("index.html");
     return null;
   }
-  if (!allowedRoles.includes(staffRole)) {
+  if (!allowedRoles.includes(staffProfile.role)) {
     window.location.replace("dashboard.html");
     return null;
   }
-  if (staffRole === "editor" && !window.location.pathname.endsWith("/editor-tasks.html")) {
+  if (staffProfile.role === "editor" && !window.location.pathname.endsWith("/editor-tasks.html")) {
     window.location.replace("editor-tasks.html");
     return null;
   }
-  applyRoleVisibility(staffRole);
+  applyRoleVisibility(staffProfile.role);
   wireLogout();
-  return { ...data.session.user, staffRole };
+  return { ...data.session.user, staffRole: staffProfile.role, staffName: staffProfile.display_name };
 }
 
 export async function redirectIfAuthenticated() {
   const { data } = await supabase.auth.getSession();
   if (!data.session) return;
   try {
-    const role = await getStaffRole(data.session.user.id);
-    window.location.href = role === "editor" ? "editor-tasks.html" : "dashboard.html";
+    const profile = await getStaffProfile(data.session.user.id);
+    window.location.href = profile?.role === "editor" ? "editor-tasks.html" : "dashboard.html";
   } catch {
     window.location.href = "index.html";
   }

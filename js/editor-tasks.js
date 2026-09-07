@@ -3,9 +3,12 @@ import { APP_CONFIG } from "./config.js";
 import { getMyAssignments, ASSIGNMENT_STATUSES, updateMyAssignment } from "./work-assignments.js";
 import { escapeHtml, showToast } from "./utils.js";
 
-await requireAuth(["editor"]);
+const currentUser = await requireAuth(["editor"]);
 
 const list = document.querySelector("#taskList");
+const welcomeName = currentUser?.staffName?.trim() || currentUser?.email || "Editor";
+document.querySelector("#editorWelcome").textContent = `Bienvenido, ${welcomeName}`;
+document.querySelector("#editorEmail").textContent = currentUser?.email || "";
 
 async function authHeader() {
   const { supabase } = await import("./supabase.js");
