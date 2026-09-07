@@ -4,7 +4,7 @@ import { deleteDiplomaTemplate, getCatalogFileUrl, getDiplomaTemplates, getFolde
 import { escapeHtml, showToast } from "./utils.js";
 import { formatDateTime } from "./formatters.js";
 
-await requireAuth();
+await requireAuth(["owner"]);
 
 let templates = [];
 let folderTemplates = [];

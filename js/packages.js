@@ -5,7 +5,7 @@ import { PACKAGE_TYPES } from "./constants.js";
 import { escapeHtml, formToObject, showToast } from "./utils.js";
 import { formatMoney } from "./formatters.js";
 
-await requireAuth();
+await requireAuth(["owner"]);
 let packages = [];
 let packageImages = [];
 let editingPackage = null;

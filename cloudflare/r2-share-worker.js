@@ -109,10 +109,10 @@ async function supabaseUpdate(env, table, id, payload) {
   return rows[0];
 }
 
-async function requireAdmin(request, env) {
+async function getAuthenticatedUser(request, env) {
   const authorization = request.headers.get("authorization") || "";
   const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-  if (!token) throw new Error("No hay sesión de administrador.");
+  if (!token) throw new Error("No hay sesión activa.");
 
   const response = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
     headers: {
@@ -120,8 +120,27 @@ async function requireAdmin(request, env) {
       authorization: `Bearer ${token}`
     }
   });
-  if (!response.ok) throw new Error("Sesión de administrador inválida.");
+  if (!response.ok) throw new Error("Sesión inválida.");
   return response.json();
+}
+
+async function getStaffRole(env, userId) {
+  const rows = await supabaseFetch(env, `staff_roles?select=role&user_id=eq.${encodeURIComponent(userId)}&limit=1`);
+  return rows[0]?.role || null;
+}
+
+async function requireAdmin(request, env) {
+  const user = await getAuthenticatedUser(request, env);
+  if (await getStaffRole(env, user.id) !== "owner") throw new Error("Esta acción requiere un propietario.");
+  return user;
+}
+
+async function requireEditorAssignment(request, env, assignmentId) {
+  const user = await getAuthenticatedUser(request, env);
+  if (await getStaffRole(env, user.id) !== "editor") throw new Error("Esta acción requiere una tarea de editor.");
+  const rows = await supabaseFetch(env, `work_assignments?select=id,print_item_id,status&assigned_to=eq.${encodeURIComponent(user.id)}&id=eq.${encodeURIComponent(assignmentId)}&limit=1`);
+  if (!rows[0]) throw new Error("La tarea no está asignada a este editor.");
+  return rows[0];
 }
 
 // A small daily read keeps the Free Plan project active without changing data.
@@ -179,6 +198,52 @@ async function handleAdminUpload(request, env) {
 
   return new Response(JSON.stringify({ ok: true, file: row }), {
     headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
+  });
+}
+
+async function handleEditorTaskUpload(request, env, assignmentId) {
+  const assignment = await requireEditorAssignment(request, env, assignmentId);
+  const formData = await request.formData();
+  const file = formData.get("file");
+  if (!file || typeof file.arrayBuffer !== "function") return jsonError("Falta archivo.", 400);
+  if (["COMPLETED", "CANCELLED", "SENT_TO_CLIENT"].includes(assignment.status)) return jsonError("Esta tarea no admite una nueva entrega ahora.", 409);
+
+  const items = await supabaseFetch(env, `print_items?select=job_id&id=eq.${encodeURIComponent(assignment.print_item_id)}&limit=1`);
+  const item = items[0];
+  if (!item) return jsonError("La pieza ya no existe.", 404);
+
+  const fileName = cleanFileName(file.name);
+  const r2Key = `trabajos/${item.job_id}/${assignment.print_item_id}/preview/${Date.now()}-${crypto.randomUUID()}-${fileName}`;
+  await env.PHOTO_BUCKET.put(r2Key, file.stream(), { httpMetadata: { contentType: file.type || "application/octet-stream" } });
+  const row = await supabaseInsert(env, "job_files", {
+    job_id: item.job_id,
+    print_item_id: assignment.print_item_id,
+    file_type: "TEACHER_PREVIEW",
+    r2_key: r2Key,
+    file_name: file.name || fileName,
+    content_type: file.type || "application/octet-stream",
+    size_bytes: file.size || null,
+    notes: "Entrega de editor"
+  });
+  await supabaseUpdate(env, "work_assignments", assignment.id, { status: "READY_FOR_OWNER_REVIEW" });
+  await supabaseUpdate(env, "print_items", assignment.print_item_id, { status: "READY_FOR_REVIEW" });
+  return new Response(JSON.stringify({ ok: true, file: row }), {
+    headers: corsHeaders({ "content-type": "application/json; charset=utf-8" })
+  });
+}
+
+async function handleEditorTaskPreview(request, env, assignmentId) {
+  const assignment = await requireEditorAssignment(request, env, assignmentId);
+  const files = await supabaseFetch(env, `job_files?select=r2_key,content_type,file_name&print_item_id=eq.${encodeURIComponent(assignment.print_item_id)}&file_type=eq.TEACHER_PREVIEW&order=created_at.desc&limit=1`);
+  const file = files[0];
+  if (!file) return jsonError("Aún no hay preview para esta tarea.", 404);
+  const object = await env.PHOTO_BUCKET.get(file.r2_key);
+  if (!object) return jsonError("Archivo no encontrado.", 404);
+  return new Response(object.body, {
+    headers: corsHeaders({
+      "content-type": object.httpMetadata?.contentType || file.content_type || "application/octet-stream",
+      "content-disposition": `inline; filename="${cleanFileName(file.file_name)}"`
+    })
   });
 }
 
@@ -444,6 +509,9 @@ export default {
     try {
       if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
       const url = new URL(request.url);
+      const editorTaskMatch = url.pathname.match(/^\/editor\/tasks\/([^/]+)\/(upload|preview)$/);
+      if (editorTaskMatch && request.method === "POST" && editorTaskMatch[2] === "upload") return handleEditorTaskUpload(request, env, editorTaskMatch[1]);
+      if (editorTaskMatch && request.method === "GET" && editorTaskMatch[2] === "preview") return handleEditorTaskPreview(request, env, editorTaskMatch[1]);
       if (url.pathname === "/admin/upload" && request.method === "POST") return handleAdminUpload(request, env);
       if (url.pathname === "/admin/catalog/upload" && request.method === "POST") return handleCatalogUpload(request, env);
       if (url.pathname.startsWith("/admin/catalog/diploma_templates/") && request.method === "PATCH") return handleToggleCatalogTemplate(request, env, "diploma_templates", url.pathname.split("/").pop());

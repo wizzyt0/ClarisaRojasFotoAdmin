@@ -1,4 +1,4 @@
-import { requireAuth } from "./auth.js";
+import { isOwner, requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { APP_CONFIG } from "./config.js";
 import { GALLERY_TYPES, JOB_STATUSES, SCHOOL_EVENT_PACKAGE_TYPES, getGalleryTypeLabel, getJobStatusLabel, getJobTypeLabel } from "./constants.js";
@@ -11,8 +11,10 @@ import { createSchoolGroup, deleteSchoolGroup, getSchoolGroupsByJob, updateSchoo
 import { buildWhatsAppUrl, generateAndLogWhatsAppMessage } from "./whatsapp.js";
 import { calculateTotals, copyToClipboard, escapeHtml, formToObject, generateToken, getQueryParam, openInNewTab, showToast, today } from "./utils.js";
 import { formatDate, formatDateTime, formatMoney } from "./formatters.js";
+import { ASSIGNMENT_STATUSES, getAssignmentsByPrintItems, getEditors, saveAssignment } from "./work-assignments.js";
 
-await requireAuth();
+const currentUser = await requireAuth();
+const canManageAssignments = isOwner(currentUser);
 
 const jobId = getQueryParam("id");
 let job;
@@ -23,6 +25,8 @@ let r2ShareLinks = [];
 let printItems = [];
 let schoolGroups = [];
 let packages = [];
+let assignments = [];
+let editors = [];
 let selectedWhatsappUrl = "";
 let currentMessage = "";
 const modal = document.querySelector("#detailModal");
@@ -82,6 +86,12 @@ async function loadJob() {
   r2ShareLinks = await getR2ShareLinksByJob(jobId);
   schoolGroups = job.job_type === "SCHOOL_GRADUATION" ? await ensureSchoolGroups() : [];
   printItems = job.job_type === "SCHOOL_GRADUATION" && !isChristmasJob() ? await ensureGroupPrintItems() : [];
+  if (canManageAssignments) {
+    [assignments, editors] = await Promise.all([
+      getAssignmentsByPrintItems(printItems.map((item) => item.id)),
+      getEditors()
+    ]);
+  }
   const { data: packagesData, error: packagesError } = await supabase.from("packages").select("*").eq("is_active", true).order("name");
   if (packagesError) throw packagesError;
   packages = packagesData || [];
@@ -260,8 +270,17 @@ function renderPrintItemCard(item) {
     ${renderSelectedVisual(item, files)}
     ${canUploadPreview ? `<p class="muted">Previews subidos: ${previewCount}</p><div class="mini-dropzone" tabindex="0" data-item-dropzone="${item.id}" data-file-type="TEACHER_PREVIEW"><strong>Subir preview</strong><span>Arrastre aquí o haga clic</span><input type="file" multiple hidden data-item-file-input="${item.id}" data-file-type="TEACHER_PREVIEW"></div>` : ""}
     ${item.client_notes ? `<div class="review-note"><strong>Observaciones de la maestra:</strong><br>${escapeHtml(item.client_notes)}</div>` : ""}
+    ${renderAssignmentSummary(item)}
     <div class="actions"><button class="btn btn-primary" data-send-print-item="${item.id}">${actionLabel}</button></div>
   </article>`;
+}
+
+function renderAssignmentSummary(item) {
+  if (!canManageAssignments) return "";
+  const assignment = assignments.find((entry) => entry.print_item_id === item.id);
+  const editor = editors.find((entry) => entry.user_id === assignment?.assigned_to);
+  if (!assignment) return `<div class="assignment-summary"><span>Editor:</span><strong>Sin asignar</strong><button class="btn" data-assign-editor="${item.id}">Asignar editor</button></div>`;
+  return `<div class="assignment-summary"><span>Editor:</span><strong>${escapeHtml(editor?.display_name || "Editor asignado")}</strong><span>${escapeHtml(ASSIGNMENT_STATUSES[assignment.status] || assignment.status)}</span><button class="btn" data-assign-editor="${item.id}">Editar asignación</button></div>`;
 }
 
 function printItemStep(itemType) {
@@ -679,6 +698,15 @@ function openGroupForm(group = null) {
   modal.classList.remove("hidden");
 }
 
+function openAssignmentForm(item) {
+  const assignment = assignments.find((entry) => entry.print_item_id === item.id);
+  const group = schoolGroups.find((entry) => entry.id === item.group_id);
+  const label = `${getPrintItemTypeLabel(item.item_type)}${group ? ` - ${group.group_name}` : ""}`;
+  document.querySelector("#detailModalTitle").textContent = "Asignar editor";
+  form.innerHTML = `<div class="form-group"><label>Pieza</label><input class="input" value="${escapeHtml(label)}" readonly></div><div class="form-group"><label>Editor</label><select class="select" name="assigned_to" required><option value="">Seleccione</option>${editors.map((editor) => `<option value="${editor.user_id}" ${editor.user_id === assignment?.assigned_to ? "selected" : ""}>${escapeHtml(editor.display_name)}</option>`).join("")}</select></div><div class="form-group"><label>Indicaciones internas</label><textarea class="textarea" name="internal_brief" placeholder="Describe únicamente el trabajo que debe realizar.">${escapeHtml(assignment?.internal_brief || "")}</textarea></div><input type="hidden" name="print_item_id" value="${item.id}"><input type="hidden" name="display_label" value="${escapeHtml(label)}"><input type="hidden" name="form_type" value="assignment"><button class="btn btn-primary" type="submit">Guardar asignación</button>`;
+  modal.classList.remove("hidden");
+}
+
 function openR2FileForm() {
   document.querySelector("#detailModalTitle").textContent = "Registrar archivo R2";
   const itemOptions = printItems.length ? `<div class="form-group"><label>Pieza de impresión</label><select class="select" name="print_item_id"><option value="">Sin pieza</option>${printItems.map((item) => `<option value="${item.id}">${escapeHtml(item.title)}</option>`).join("")}</select></div>` : "";
@@ -741,6 +769,15 @@ form.addEventListener("submit", async (event) => {
   try {
     if (data.form_type === "gallery") await createGallery(jobId, { title: data.title, group_id: data.group_id || null, gallery_type: data.gallery_type, google_photos_url: data.google_photos_url, notes: data.notes || null, is_active: true });
     if (data.form_type === "deposit") await createDeposit(jobId, { group_id: data.group_id || null, amount: Number(data.amount), deposit_date: data.deposit_date, notes: data.notes || null });
+    if (data.form_type === "assignment") {
+      if (!canManageAssignments) throw new Error("Solo una propietaria puede asignar tareas.");
+      await saveAssignment({
+        print_item_id: data.print_item_id,
+        assigned_to: data.assigned_to,
+        display_label: data.display_label,
+        internal_brief: data.internal_brief || null
+      });
+    }
     if (data.form_type === "school_group") {
       const christmasPackage = isChristmasJob() ? packages.filter((pkg) => pkg.package_type === "SCHOOL_CHRISTMAS") : [];
       if (isChristmasJob() && christmasPackage.length !== 1) throw new Error("Configure exactamente un paquete navideño activo en Paquetes.");
@@ -780,7 +817,7 @@ form.addEventListener("submit", async (event) => {
       showToast(copied ? "Link generado y copiado." : "Link generado.");
     }
     modal.classList.add("hidden");
-    if (data.form_type !== "r2_share_link") showToast(data.form_type === "deposit" ? "Abono registrado." : data.form_type === "r2_file" ? "Archivo R2 registrado." : data.form_type === "school_group" ? "Grupo guardado." : "Galería guardada.");
+    if (data.form_type !== "r2_share_link") showToast(data.form_type === "deposit" ? "Abono registrado." : data.form_type === "assignment" ? "Editor asignado." : data.form_type === "r2_file" ? "Archivo R2 registrado." : data.form_type === "school_group" ? "Grupo guardado." : "Galería guardada.");
     loadJob();
   } catch (error) {
     console.error(error);
@@ -793,6 +830,10 @@ document.addEventListener("click", async (event) => {
     const catalogButton = event.target.closest("[data-open-catalog-file]");
     if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");
     if (event.target.matches("#newSchoolGroupBtn")) openGroupForm();
+    if (event.target.dataset.assignEditor) {
+      const item = printItems.find((entry) => entry.id === event.target.dataset.assignEditor);
+      if (item) openAssignmentForm(item);
+    }
     if (event.target.dataset.editGroup) openGroupForm(schoolGroups.find((group) => group.id === event.target.dataset.editGroup));
     if (event.target.dataset.deleteGroup && confirm("¿Eliminar este grupo y sus validaciones?")) {
       await deleteSchoolGroup(event.target.dataset.deleteGroup);
