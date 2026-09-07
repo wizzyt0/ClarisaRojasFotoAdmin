@@ -49,6 +49,10 @@ Importante: `sql/policies.sql` también incluye políticas `local anon` para pod
 
 No use la service role key en el frontend. Solo use la URL del proyecto y la anon key.
 
+## Mantener Supabase Free activo
+
+Supabase puede pausar proyectos Free con poca actividad después de una semana. El Worker de Cloudflare incluye un cron que se ejecuta cada 8 horas y hace una lectura mínima a la tabla `clients`, sin crear ni modificar datos. Configure el Cron Trigger del Worker como `0 */8 * * *`. El Worker usa su secreto `SUPABASE_SERVICE_ROLE_KEY`, que debe permanecer solo en Cloudflare y nunca en archivos del frontend.
+
 ## Configurar la app
 
 Edite `js/config.js`:

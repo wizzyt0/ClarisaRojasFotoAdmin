@@ -124,6 +124,17 @@ async function requireAdmin(request, env) {
   return response.json();
 }
 
+// A small daily read keeps the Free Plan project active without changing data.
+async function keepSupabaseActive(env) {
+  const response = await fetch(`${env.SUPABASE_URL}/rest/v1/clients?select=id&limit=1`, {
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`
+    }
+  });
+  if (!response.ok) throw new Error(`Supabase keep-alive error ${response.status}`);
+}
+
 function cleanFileName(fileName) {
   return String(fileName || "archivo")
     .normalize("NFD")
@@ -426,6 +437,9 @@ async function handleFile(request, env, token, fileId) {
 }
 
 export default {
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(keepSupabaseActive(env));
+  },
   async fetch(request, env) {
     try {
       if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders() });
