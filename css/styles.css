@@ -390,6 +390,7 @@ label { font-weight: 650; }
 .filters { display: grid; gap: 10px; grid-template-columns: 1fr repeat(2, minmax(160px, 220px)); margin-bottom: 14px; }
 .approval-page { max-width: 780px; margin: 0 auto; padding: 24px; }
 .approval-title { font-size: 2rem; margin-bottom: 4px; }
+html[data-staff-role="editor"] [data-owner-only] { display: none !important; }
 .assignment-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
 .assignment-summary span { color: var(--muted); }
 .task-preview-frame { min-height: 0; }

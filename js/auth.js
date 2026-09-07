@@ -10,8 +10,14 @@ export async function login(email, password) {
 }
 
 export async function logout() {
-  await supabase.auth.signOut();
-  window.location.href = "index.html";
+  try {
+    await supabase.auth.signOut({ scope: "local" });
+  } finally {
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith("sb-") && key.includes("auth-token"))
+      .forEach((key) => localStorage.removeItem(key));
+    window.location.replace("index.html");
+  }
 }
 
 export async function getCurrentUser() {
@@ -48,7 +54,7 @@ function applyRoleVisibility(role) {
 export async function requireAuth(allowedRoles = STAFF_ROLES) {
   const { data } = await supabase.auth.getSession();
   if (!data.session) {
-    window.location.href = "index.html";
+    window.location.replace("index.html");
     return null;
   }
   let staffRole;
@@ -57,20 +63,20 @@ export async function requireAuth(allowedRoles = STAFF_ROLES) {
   } catch (error) {
     console.error(error);
     await supabase.auth.signOut();
-    window.location.href = "index.html";
+    window.location.replace("index.html");
     return null;
   }
   if (!STAFF_ROLES.has(staffRole)) {
     await supabase.auth.signOut();
-    window.location.href = "index.html";
+    window.location.replace("index.html");
     return null;
   }
   if (!allowedRoles.includes(staffRole)) {
-    window.location.href = "dashboard.html";
+    window.location.replace("dashboard.html");
     return null;
   }
   if (staffRole === "editor" && !window.location.pathname.endsWith("/editor-tasks.html")) {
-    window.location.href = "editor-tasks.html";
+    window.location.replace("editor-tasks.html");
     return null;
   }
   applyRoleVisibility(staffRole);

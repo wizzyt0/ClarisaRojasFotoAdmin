@@ -67,10 +67,10 @@ export const supabase = {
       if (!client) return missingConfigResult();
       return client.auth.signInWithPassword(credentials);
     },
-    async signOut() {
+    async signOut(options) {
       const client = await getClient();
       if (!client) return missingConfigResult();
-      return client.auth.signOut();
+      return client.auth.signOut(options);
     },
     async getUser() {
       const client = await getClient();

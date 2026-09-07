@@ -205,7 +205,10 @@ document.addEventListener("click", async (event) => {
 ["searchInput", "typeFilter", "activeFilter"].forEach((id) => document.querySelector(`#${id}`)?.addEventListener("input", render));
 
 requireAuth()
-  .then(load)
+  .then((user) => {
+    if (user) return load();
+    return null;
+  })
   .catch((error) => {
     console.error(error);
     showToast("No se pudo cargar la información.", "error");
