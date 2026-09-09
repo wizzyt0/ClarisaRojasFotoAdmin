@@ -85,12 +85,23 @@ async function loadJob() {
   r2Files = await getR2FilesByJob(jobId);
   r2ShareLinks = await getR2ShareLinksByJob(jobId);
   schoolGroups = job.job_type === "SCHOOL_GRADUATION" ? await ensureSchoolGroups() : [];
-  printItems = job.job_type === "SCHOOL_GRADUATION" && !isChristmasJob() ? await ensureGroupPrintItems() : [];
+  try {
+    printItems = job.job_type === "SCHOOL_GRADUATION" && !isChristmasJob() ? await ensureGroupPrintItems() : [];
+  } catch (error) {
+    throw new Error(`No se pudieron cargar las piezas por grupo: ${error.message || "error desconocido"}`);
+  }
   if (canManageAssignments) {
-    [assignments, editors] = await Promise.all([
-      getAssignmentsByPrintItems(printItems.map((item) => item.id)),
-      getEditors()
-    ]);
+    try {
+      [assignments, editors] = await Promise.all([
+        getAssignmentsByPrintItems(printItems.map((item) => item.id)),
+        getEditors()
+      ]);
+    } catch (error) {
+      console.warn("No se pudieron cargar las asignaciones de editor.", error);
+      assignments = [];
+      editors = [];
+      showToast(`Las piezas cargaron, pero no las asignaciones de editor: ${error.message || "error desconocido"}`, "error");
+    }
   }
   const { data: packagesData, error: packagesError } = await supabase.from("packages").select("*").eq("is_active", true).order("name");
   if (packagesError) throw packagesError;
@@ -957,5 +968,5 @@ document.addEventListener("change", async (event) => {
 if (!jobId) {
   document.querySelector(".container").innerHTML = `<div class="alert alert-error">No se encontró el trabajo.</div>`;
 } else {
-  loadJob().catch((error) => { console.error(error); showToast("No se pudo cargar la información.", "error"); });
+  loadJob().catch((error) => { console.error(error); showToast(`No se pudo cargar el trabajo: ${error.message || "error desconocido"}`, "error"); });
 }
