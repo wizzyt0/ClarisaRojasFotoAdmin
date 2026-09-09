@@ -38,6 +38,7 @@ function createQuery(tableName) {
     update(...args) { calls.push(["update", args]); return query; },
     delete(...args) { calls.push(["delete", args]); return query; },
     eq(...args) { calls.push(["eq", args]); return query; },
+    in(...args) { calls.push(["in", args]); return query; },
     order(...args) { calls.push(["order", args]); return query; },
     limit(...args) { calls.push(["limit", args]); return query; },
     single(...args) { calls.push(["single", args]); return query; },
