@@ -51,7 +51,7 @@ function render(tasks) {
     <div class="form-group"><label>Nota para revisión interna</label><textarea class="textarea" data-editor-note="${task.id}" placeholder="Describe lo que preparaste o responde a las observaciones."></textarea></div>
     <div class="actions">
       ${["ASSIGNED", "CHANGES_REQUESTED"].includes(task.status) ? `<button class="btn" data-start-task="${task.id}">Marcar en proceso</button>` : ""}
-      ${!["COMPLETED", "CANCELLED", "SENT_TO_CLIENT"].includes(task.status) ? `<label class="btn btn-primary">Subir preview<input hidden type="file" data-task-upload="${task.id}"></label><button class="btn btn-secondary" data-ready-task="${task.id}">Listo para revisión interna</button>` : ""}
+      ${!["COMPLETED", "CANCELLED", "SENT_TO_CLIENT"].includes(task.status) ? `<div class="editor-dropzone" tabindex="0" data-editor-dropzone="${task.id}"><strong>Subir preview</strong><span>Arrastre aquí o haga clic para seleccionar un archivo.</span><input hidden type="file" accept="image/*,.pdf" data-task-upload="${task.id}"></div><button class="btn btn-secondary" data-ready-task="${task.id}">Listo para revisión interna</button>` : ""}
     </div>
   </article>`).join("") : `<div class="empty-state">No tienes tareas asignadas. Cuando una propietaria te asigne una pieza, aparecerá aquí.</div>`;
 }
@@ -62,6 +62,11 @@ async function load() {
 }
 
 document.addEventListener("click", async (event) => {
+  const dropzone = event.target.closest("[data-editor-dropzone]");
+  if (dropzone) {
+    dropzone.querySelector("[data-task-upload]")?.click();
+    return;
+  }
   const assignmentId = event.target.dataset.startTask || event.target.dataset.readyTask;
   if (!assignmentId) return;
   try {
@@ -72,6 +77,39 @@ document.addEventListener("click", async (event) => {
   } catch (error) {
     console.error(error);
     showToast(error.message || "No se pudo actualizar la tarea.", "error");
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  const dropzone = event.target.closest?.("[data-editor-dropzone]");
+  if (dropzone && (event.key === "Enter" || event.key === " ")) {
+    event.preventDefault();
+    dropzone.querySelector("[data-task-upload]")?.click();
+  }
+});
+
+document.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  event.target.closest?.("[data-editor-dropzone]")?.classList.add("dragover");
+});
+
+document.addEventListener("dragleave", (event) => {
+  event.target.closest?.("[data-editor-dropzone]")?.classList.remove("dragover");
+});
+
+document.addEventListener("drop", async (event) => {
+  event.preventDefault();
+  const dropzone = event.target.closest?.("[data-editor-dropzone]");
+  document.querySelectorAll("[data-editor-dropzone].dragover").forEach((element) => element.classList.remove("dragover"));
+  const file = event.dataTransfer?.files?.[0];
+  if (!dropzone || !file) return;
+  try {
+    await uploadPreview(dropzone.dataset.editorDropzone, file);
+    showToast("Preview enviado para revisión interna.");
+    await load();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "No se pudo subir el preview.", "error");
   }
 });
 
