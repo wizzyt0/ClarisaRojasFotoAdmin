@@ -51,7 +51,7 @@ function applyRoleVisibility(role) {
   });
 }
 
-export async function requireAuth(allowedRoles = STAFF_ROLES) {
+export async function requireAuth(allowedRoles = [...STAFF_ROLES]) {
   const { data } = await supabase.auth.getSession();
   if (!data.session) {
     window.location.replace("index.html");
