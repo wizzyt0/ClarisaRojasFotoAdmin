@@ -218,5 +218,5 @@ requireAuth()
   })
   .catch((error) => {
     console.error(error);
-    showToast("No se pudo cargar la información.", "error");
+    showToast(`No se pudieron cargar los trabajos: ${error.message || "error desconocido"}`, "error");
   });

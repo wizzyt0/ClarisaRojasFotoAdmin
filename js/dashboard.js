@@ -57,5 +57,5 @@ async function loadDashboard() {
 
 loadDashboard().catch((error) => {
   console.error(error);
-  document.querySelector("#metrics").innerHTML = `<div class="alert alert-error">No se pudo cargar la información.</div>`;
+  document.querySelector("#metrics").innerHTML = `<div class="alert alert-error">No se pudo cargar la información: ${escapeHtml(error.message || "error desconocido")}</div>`;
 });

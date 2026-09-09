@@ -100,4 +100,4 @@ document.addEventListener("click", async (event) => {
 });
 
 ["searchInput", "statusFilter", "monthFilter"].forEach((id) => document.querySelector(`#${id}`).addEventListener("input", render));
-load().catch((error) => { console.error(error); showToast("No se pudo cargar la información.", "error"); });
+load().catch((error) => { console.error(error); showToast(`No se pudo cargar el seguimiento: ${error.message || "error desconocido"}`, "error"); });
