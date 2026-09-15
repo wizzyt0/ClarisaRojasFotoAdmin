@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "verify": "node scripts/verify-project.mjs",
-    "test": "node scripts/test-package-flow.mjs"
+    "test": "node scripts/test-package-flow.mjs",
+    "test:ui": "node scripts/test-job-workflow.cjs"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "0.3.14"
+    "@electric-sql/pglite": "0.3.14",
+    "playwright-core": "1.55.0"
   }
 }

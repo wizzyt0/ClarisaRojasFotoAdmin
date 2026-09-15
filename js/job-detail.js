@@ -5,7 +5,7 @@ import { GALLERY_TYPES, JOB_STATUSES, SCHOOL_EVENT_PACKAGE_TYPES, getGalleryType
 import { getCatalogFileUrl } from "./catalog.js";
 import { createDeposit, deleteDeposit, getDepositsByJob } from "./deposits.js";
 import { createGallery, deactivateGallery, getGalleriesByJob } from "./galleries.js";
-import { ensureDefaultPrintItems, getPrintItemStatusLabel, getPrintItemTypeLabel, updatePrintItem } from "./print-items.js";
+import { ensureDefaultPrintItems, getPrintItemsByJob, getPrintItemStatusLabel, getPrintItemTypeLabel, updatePrintItem } from "./print-items.js";
 import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, getAdminFileUrl, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink, uploadR2File } from "./r2-files.js";
 import { createSchoolGroup, deleteSchoolGroup, getSchoolGroupsByJob, updateSchoolGroup } from "./school-groups.js";
 import { buildWhatsAppUrl, generateAndLogWhatsAppMessage } from "./whatsapp.js";
@@ -118,8 +118,7 @@ async function ensureSchoolGroups() {
 }
 
 async function ensureGroupPrintItems() {
-  if (!schoolGroups.length) return [];
-  let items = printItems.length ? printItems : [];
+  let items = await getPrintItemsByJob(jobId);
   for (const group of schoolGroups) {
     items = await ensureDefaultPrintItems(jobId, group.id);
   }
@@ -127,36 +126,23 @@ async function ensureGroupPrintItems() {
 }
 
 function render() {
+  const previous = new Map(Array.from(document.querySelectorAll("[data-disclosure]")).map((node) => [node.dataset.disclosure, node.open]));
   const totals = calculateTotals(job.price, deposits);
   const school = job.clients.school_profiles?.[0] || {};
-  const groupPackageTotal = schoolGroups.reduce((sum, group) => sum + Number(group.package_quantity || 0), 0);
-  const packageTotal = groupPackageTotal || Number(job.package_quantity || 0);
+  const schoolJob = job.job_type === "SCHOOL_GRADUATION";
+  const packageTotal = schoolGroups.length ? schoolGroups.reduce((sum, group) => sum + Number(group.package_quantity || 0), 0) : Number(job.package_quantity || 0);
   document.querySelector("#jobTitle").textContent = job.title;
   document.querySelector("#summaryCard").innerHTML = `
-    <div class="page-header"><h2>Resumen</h2><div class="actions"><select id="statusSelect" class="select">${Object.entries(JOB_STATUSES).map(([value, label]) => `<option value="${value}" ${value === job.status ? "selected" : ""}>${label}</option>`).join("")}</select><button id="saveStatusBtn" class="btn">Cambiar estado</button><button id="regenerateTokenBtn" class="btn">Regenerar token</button><button id="revokeTokenBtn" class="btn btn-danger">Revocar token</button></div></div>
-    <div class="grid">
-      <p><strong>Cliente:</strong><br>${escapeHtml(job.clients.name)}</p>
-      <p><strong>Tipo:</strong><br>${getJobTypeLabel(job.job_type)}</p>
-      <p><strong>Estado:</strong><br><span class="badge badge-status ${job.status}">${getJobStatusLabel(job.status)}</span></p>
-      <p><strong>Fecha evento:</strong><br>${formatDate(job.event_date)}</p>
-      <p><strong>Fecha entrega:</strong><br>${formatDate(job.delivery_date)}</p>
-      <p><strong>Paquetes:</strong><br>${schoolGroups.length ? "Por grupo" : escapeHtml(job.packages?.name || "Pendiente de selección")}</p>
-      <p><strong>Cantidad total:</strong><br>${packageTotal > 0 ? `${packageTotal} paquetes` : "Pendiente"}</p>
-      <p><strong>Precio:</strong><br>${formatMoney(job.price)}</p>
-      <p><strong>Total abonado:</strong><br>${formatMoney(totals.totalDeposited)}</p>
-      <p><strong>Pendiente:</strong><br>${formatMoney(totals.remainingBalance)}</p>
-    </div>
-    <p><strong>Notas:</strong><br>${escapeHtml(job.notes || "")}</p>
-    ${renderDeliverablesSummary()}`;
-  if (job.job_type === "SCHOOL_GRADUATION") {
-    document.querySelector("#schoolCard").classList.remove("hidden");
-    document.querySelector("#schoolCard").innerHTML = `<div class="page-header"><h2>Datos escolares</h2><button id="newSchoolGroupBtn" class="btn btn-primary">Agregar grupo</button></div><div class="grid">
-      <p><strong>Escuela:</strong><br>${escapeHtml(school.school_name || job.clients.name)}</p>
-      <p><strong>Nivel:</strong><br>${escapeHtml({ KINDER: "Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[school.school_level] || "")}</p>
-      <p><strong>WhatsApp contacto:</strong><br>${escapeHtml(school.contact_phone || school.teacher_phone)}<br>${escapeHtml(school.contact_email || "")}</p>
-      <p><strong>Directora:</strong><br>${escapeHtml(school.principal_name)}<br>${escapeHtml(school.principal_phone)}</p>
-    </div><h3>Grupos</h3><div class="group-list">${schoolGroups.length ? schoolGroups.map(renderSchoolGroupCard).join("") : `<div class="empty-state">Agregue los grupos manualmente, por ejemplo 6to A, 6to B o Kinder 3.</div>`}</div>`;
-  }
+    <div class="page-header"><span class="muted">${escapeHtml(job.clients.name)} · ${formatDate(job.event_date)} · Entrega: ${formatDate(job.delivery_date)}</span><div class="actions"><select id="statusSelect" aria-label="Estado del trabajo" class="select">${Object.entries(JOB_STATUSES).map(([value, label]) => `<option value="${value}" ${value === job.status ? "selected" : ""}>${label}</option>`).join("")}</select><button id="saveStatusBtn" class="btn">Cambiar estado</button></div></div>
+    <div class="work-finance"><div><span>Paquetes${schoolJob ? ` · ${schoolGroups.length} grupos` : ""}</span><strong>${packageTotal}</strong></div><div><span>Total · MXN</span><strong>${formatMoney(job.price)}</strong></div><div><span>Abonado</span><strong>${formatMoney(totals.totalDeposited)}</strong></div><div><span>Pendiente</span><strong>${formatMoney(totals.remainingBalance)}</strong></div></div>
+    ${job.notes ? `<p class="work-notes">${escapeHtml(job.notes)}</p>` : ""}
+    ${schoolJob ? "" : renderDeliverablesSummary()}`;
+  document.querySelector("#schoolDetails").classList.toggle("hidden", !schoolJob);
+  document.querySelector("#schoolCard").innerHTML = schoolJob ? `<div class="grid">
+    <p><strong>Escuela:</strong><br>${escapeHtml(school.school_name || job.clients.name)}</p>
+    <p><strong>Nivel:</strong><br>${escapeHtml({ KINDER: "Preescolar", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[school.school_level] || "")}</p>
+    <p><strong>WhatsApp contacto:</strong><br>${escapeHtml(school.contact_phone || school.teacher_phone)}<br>${escapeHtml(school.contact_email || "")}</p>
+    <p><strong>Directora:</strong><br>${escapeHtml(school.principal_name)}<br>${escapeHtml(school.principal_phone)}</p></div>` : "";
   renderPrintItems();
   renderGalleries();
   renderR2Files();
@@ -167,27 +153,41 @@ function render() {
   document.querySelector("#r2Dropzone")?.closest(".card")?.classList.toggle("hidden", isChristmasJob());
   document.querySelector("#whatsappMessage")?.closest(".card")?.classList.toggle("hidden", isChristmasJob());
   document.querySelector("#approvalCard")?.classList.toggle("hidden", isChristmasJob());
+  document.querySelectorAll("[data-disclosure]").forEach((node) => {
+    if (previous.has(node.dataset.disclosure)) node.open = previous.get(node.dataset.disclosure);
+  });
   document.querySelector("#statusSelect")?.addEventListener("change", async (event) => {
     if (event.target.value !== "GALLERY_READY") return;
     try {
-      const canContinue = await requestGalleryLinkIfNeeded("GALLERY_READY");
-      if (!canContinue) event.target.value = job.status;
+      if (!await requestGalleryLinkIfNeeded("GALLERY_READY")) event.target.value = job.status;
     } catch (error) {
-      console.error(error);
-      showToast(error.message || "No se pudo guardar el link de Google Photos.", "error");
+      showToast(error.message || "No se pudo guardar la galería.", "error");
       event.target.value = job.status;
     }
   });
   setupR2Dropzone();
 }
 
-function renderSchoolGroupCard(group) {
-  const total = Number(group.price || 0);
-  const deposited = deposits
-    .filter((deposit) => deposit.group_id === group.id)
-    .reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
-  const pending = Math.max(total - deposited, 0);
-  return `<article class="group-card"><div class="group-card-top"><div><strong>${escapeHtml(group.group_name)}</strong><span>${escapeHtml(group.teacher_name || "Sin maestra")}</span></div><span class="badge">${Number(group.package_quantity || 0) > 0 ? `${group.package_quantity} paquetes` : "Pendiente"}</span></div><div class="group-card-body"><p><strong>WhatsApp:</strong><br>${escapeHtml(group.teacher_phone || "Sin WhatsApp")}</p><p><strong>Paquete:</strong><br>${escapeHtml(group.packages?.name || "Pendiente")}</p><p><strong>Total:</strong><br>${formatMoney(total)}</p><p><strong>Abonado:</strong><br>${formatMoney(deposited)}</p><p><strong>Pendiente:</strong><br>${formatMoney(pending)}</p></div><div class="actions"><button class="btn" data-edit-group="${group.id}">Editar grupo</button><button class="btn btn-danger" data-delete-group="${group.id}">Eliminar</button></div></article>`;
+function renderSchoolGroupCard(group, index) {
+  const items = printItems.filter((item) => item.group_id === group.id)
+    .sort((a, b) => printItemStep(a.item_type).number - printItemStep(b.item_type).number);
+  const approvalItems = items.filter((item) => item.item_type !== "PHOTO_PACKAGE");
+  const approved = approvalItems.filter((item) => printItemClass(item.status) === "approved").length;
+  const changes = items.filter((item) => item.status === "CHANGES_REQUESTED").length;
+  const groupGalleries = galleries.filter((gallery) => gallery.group_id === group.id);
+  const progress = isChristmasJob()
+    ? (groupGalleries.some((gallery) => gallery.is_active) ? "Galería registrada" : "Galería pendiente")
+    : `${approved} de ${approvalItems.length} piezas aprobadas`;
+  return `<details class="workflow-group" data-disclosure="group-${group.id}" ${index === 0 ? "open" : ""}>
+    <summary class="workflow-group-heading"><div><strong>${escapeHtml(group.group_name)}</strong><span class="muted"> · ${escapeHtml(group.teacher_name || "Sin maestra")}</span><p>${Number(group.package_quantity || 0)} paquetes · ${escapeHtml(group.packages?.name || "Sin selección")}</p><span class="workflow-progress">${changes ? `<b>${changes} cambio(s) pendiente(s)</b> · ` : ""}${progress}</span></div>${renderGroupFinancialSummary(group)}</summary>
+    <div class="workflow-group-content"><div class="workflow-group-actions"><span class="muted">WhatsApp: ${escapeHtml(group.teacher_phone || "Sin registrar")}</span><div class="actions"><button class="btn" data-edit-group="${group.id}">Editar grupo / paquete</button><button class="btn" data-group-deposit="${group.id}">Registrar abono</button><button class="btn btn-danger" data-delete-group="${group.id}">Eliminar grupo</button></div></div>
+    ${isChristmasJob() ? `<div class="workflow-christmas-package"><strong>Paquete navideño</strong><span>${escapeHtml(group.packages?.name || "Pendiente")} · ${Number(group.package_quantity || 0)} paquetes</span></div><details class="workflow-piece" data-disclosure="gallery-${group.id}"><summary><span class="workflow-step">2</span><strong>Galería del grupo</strong><span class="badge">${groupGalleries.some((gallery) => gallery.is_active) ? "Registrada" : "Pendiente"}</span></summary><div class="workflow-piece-content">${renderGroupGalleries(group.id)}</div></details>` : items.map(renderPrintItemCard).join("")}
+    </div></details>`;
+}
+
+function renderGroupGalleries(groupId) {
+  const entries = galleries.filter((gallery) => gallery.group_id === groupId);
+  return `<div class="actions"><button class="btn" data-group-gallery="${groupId}">Agregar galería de Google Photos</button></div>${entries.map((gallery) => `<div class="workflow-file"><div><strong>${escapeHtml(gallery.title)}</strong><p class="muted">${gallery.is_active ? "Activa" : "Inactiva"} · ${gallery.sent_at ? `Enviada: ${formatDateTime(gallery.sent_at)}` : "Sin enviar"}</p></div><div class="actions"><a class="btn" href="${escapeHtml(gallery.google_photos_url)}" target="_blank" rel="noopener">Abrir galería</a>${gallery.is_active ? `<button class="btn" data-send-gallery-whatsapp="${gallery.id}">WhatsApp</button><button class="btn btn-danger" data-deactivate-gallery="${gallery.id}">Desactivar</button>` : ""}</div></div>`).join("")}`;
 }
 
 function deliverableState(deliverable) {
@@ -229,64 +229,49 @@ function printItemClass(status) {
 
 function renderPrintItems() {
   const card = document.querySelector("#printItemsCard");
-  if (!printItems.length) {
-    card.classList.add("hidden");
-    return;
-  }
-  card.classList.remove("hidden");
-  const groupsToRender = schoolGroups.length ? schoolGroups : [{ id: null, group_name: "Trabajo" }];
-  card.innerHTML = `<div class="page-header"><h2>Piezas por grupo</h2></div>${groupsToRender.map((group) => {
-    const items = printItems
-      .filter((item) => (group.id ? item.group_id === group.id : !item.group_id))
-      .sort((a, b) => printItemStep(a.item_type).number - printItemStep(b.item_type).number);
-    return `<section class="group-workflow"><div class="group-workflow-header"><div><h3>${escapeHtml(group.group_name)}</h3><p class="muted">${escapeHtml(group.teacher_name || "Sin maestra")}${group.teacher_phone ? ` · WhatsApp ${escapeHtml(group.teacher_phone)}` : ""}</p></div>${renderGroupFinancialSummary(group)}</div><div class="print-item-grid">${items.map(renderPrintItemCard).join("")}</div></section>`;
-  }).join("")}`;
-
+  const schoolJob = job.job_type === "SCHOOL_GRADUATION";
+  card.classList.toggle("hidden", !schoolJob);
+  card.innerHTML = schoolJob ? `<div class="page-header"><h2>Grupos y maestras</h2><button id="newSchoolGroupBtn" class="btn btn-primary">Agregar grupo</button></div>${schoolGroups.length ? schoolGroups.map(renderSchoolGroupCard).join("") : '<div class="empty-state">Todavía no hay grupos registrados.</div>'}
+    ${printItems.some((item) => !item.group_id) ? `<details class="workflow-disclosure" data-disclosure="ungrouped"><summary>Piezas sin grupo</summary>${printItems.filter((item) => !item.group_id).map(renderPrintItemCard).join("")}</details>` : ""}` : "";
   const select = document.querySelector("#r2PrintItem");
-  if (select) {
-    const uploadableItems = printItems.filter((item) => !["PHOTO_PACKAGE", "DIPLOMA", "FOLDER_OPTION"].includes(item.item_type));
-    select.innerHTML = uploadableItems.length ? uploadableItems.map((item) => {
-      const group = schoolGroups.find((entry) => entry.id === item.group_id);
-      return `<option value="${item.id}">${escapeHtml(group ? `${group.group_name} · ${item.title}` : item.title)}</option>`;
-    }).join("") : `<option value="">Sin piezas con preview</option>`;
-  }
+  if (select) select.innerHTML = '<option value="">Sin pieza / trabajo general</option>' + printItems.filter((item) => item.item_type !== "PHOTO_PACKAGE").map((item) => {
+    const group = schoolGroups.find((entry) => entry.id === item.group_id);
+    return `<option value="${item.id}">${escapeHtml(group ? `${group.group_name} · ${item.title}` : item.title)}</option>`;
+  }).join("");
   hydrateCatalogThumbs();
   hydrateR2Thumbnails();
   setupItemDropzones();
 }
 
 function renderGroupFinancialSummary(group) {
-  const groupPrice = Number(group.price || 0);
-  const groupDeposits = deposits
-    .filter((deposit) => deposit.group_id === group.id)
-    .reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
-  const pending = Math.max(groupPrice - groupDeposits, 0);
-  return `<div class="group-finance-strip">
-    <div><span>Paquete</span><strong>${escapeHtml(group.packages?.name || "Pendiente")}</strong></div>
-    <div><span>Cantidad</span><strong>${Number(group.package_quantity || 0) > 0 ? `${group.package_quantity}` : "Pendiente"}</strong></div>
-    <div><span>Total</span><strong>${formatMoney(groupPrice)}</strong></div>
-    <div><span>Abonos maestra</span><strong>${formatMoney(groupDeposits)}</strong></div>
-    <div><span>Pendiente</span><strong>${formatMoney(pending)}</strong></div>
-    <div class="group-finance-action"><button class="btn" data-edit-group="${group.id}" type="button">Editar paquete/cantidad</button></div>
-  </div>`;
+  const price = Number(group.price || 0);
+  const paid = deposits.filter((deposit) => deposit.group_id === group.id).reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
+  return `<div class="workflow-group-finance"><div><span>Total</span><strong>${formatMoney(price)}</strong></div><div><span>Abonado</span><strong>${formatMoney(paid)}</strong></div><div><span>Pendiente</span><strong class="${paid >= price && price > 0 ? "balance-paid" : ""}">${formatMoney(Math.max(price - paid, 0))}</strong>${paid > price ? `<small>A favor: ${formatMoney(paid - price)}</small>` : ""}</div></div>`;
+}
+
+function itemUpload(item, type, label) {
+  return `<div class="mini-dropzone" tabindex="0" role="button" aria-label="${label}" data-item-dropzone="${item.id}" data-file-type="${type}"><strong>${label}</strong><span>Arrastrar o seleccionar archivo</span><input type="file" multiple hidden data-item-file-input="${item.id}" data-file-type="${type}"></div>`;
+}
+
+function renderPieceFiles(item, files) {
+  if (item.item_type === "PHOTO_PACKAGE") return "";
+  return `<details class="workflow-files" data-disclosure="files-${item.id}"><summary>Archivos · ${files.length}</summary>${files.map((file) => `<div class="workflow-file"><div><strong>${escapeHtml(file.file_name)}</strong><p class="muted">${R2_FILE_TYPES[file.file_type] || escapeHtml(file.file_type)} · ${formatFileSize(file.size_bytes)} · ${formatDateTime(file.created_at)}</p></div><div class="actions"><button class="btn" data-preview-r2-file="${file.id}">Ver</button><button class="btn" data-open-r2-file="${file.id}">Descargar</button><button class="btn btn-danger" data-delete-r2-file="${file.id}">Eliminar</button></div></div>`).join("")}${itemUpload(item, "PRINT_HIGH_RES", "Subir original para imprenta")}</details>`;
 }
 
 function renderPrintItemCard(item) {
   const files = r2Files.filter((file) => file.print_item_id === item.id);
-  const previewCount = files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
   const step = printItemStep(item.item_type);
-  const isCatalogOnly = ["PHOTO_PACKAGE", "DIPLOMA", "FOLDER_OPTION"].includes(item.item_type) && !item.selected_file_id;
-  const canUploadPreview = !isCatalogOnly && item.item_type !== "PHOTO_PACKAGE";
-  const actionLabel = isCatalogOnly ? "Enviar catálogo por WhatsApp" : "Enviar revisión por WhatsApp";
-  return `<article class="print-item-card ${printItemClass(item.status)}">
-    <div class="step-heading"><span class="step-number">${step.number}</span><div><strong>${escapeHtml(step.title)}</strong><span>${escapeHtml(step.description)}</span></div></div>
-    <span class="badge">${statusText(item)}</span>
-    ${renderSelectedVisual(item, files)}
-    ${canUploadPreview ? `<p class="muted">Previews subidos: ${previewCount}</p><div class="mini-dropzone" tabindex="0" data-item-dropzone="${item.id}" data-file-type="TEACHER_PREVIEW"><strong>Subir preview</strong><span>Arrastre aquí o haga clic</span><input type="file" multiple hidden data-item-file-input="${item.id}" data-file-type="TEACHER_PREVIEW"></div>` : ""}
-    ${item.client_notes ? `<div class="review-note"><strong>Observaciones de la maestra:</strong><br>${escapeHtml(item.client_notes)}</div>` : ""}
+  const packagePiece = item.item_type === "PHOTO_PACKAGE";
+  const catalogPending = ["PHOTO_PACKAGE", "DIPLOMA", "FOLDER_OPTION"].includes(item.item_type) && !item.selected_file_id;
+  const canUpload = !catalogPending && !packagePiece;
+  return `<details class="workflow-piece ${printItemClass(item.status)}" data-disclosure="piece-${item.id}">
+    <summary><span class="workflow-step">${step.number}</span><strong>${escapeHtml(step.title)}</strong><span class="badge">${escapeHtml(statusText(item))}</span></summary>
+    <div class="workflow-piece-content"><div class="workflow-piece-main">${renderSelectedVisual(item, files)}<div>
+    ${item.client_notes ? `<div class="review-note"><strong>${item.status === "CHANGES_REQUESTED" ? "Cambio solicitado" : "Observaciones de la maestra"}</strong><p>${escapeHtml(item.client_notes)}</p></div>` : ""}
+    ${canUpload ? itemUpload(item, "TEACHER_PREVIEW", item.status === "CHANGES_REQUESTED" ? "Subir corrección" : "Subir preview") : ""}
     ${renderAssignmentSummary(item)}
-    <div class="actions"><button class="btn btn-primary" data-send-print-item="${item.id}">${actionLabel}</button></div>
-  </article>`;
+    <div class="actions">${packagePiece && item.selected_package_id ? `<button class="btn" data-edit-group="${item.group_id}">Editar paquete / cantidad</button>` : `<button class="btn btn-primary" data-send-print-item="${item.id}">${catalogPending ? "Enviar catálogo por WhatsApp" : "Enviar revisión por WhatsApp"}</button>`}</div>
+    </div></div>${renderPieceFiles(item, files)}${item.item_type === "STUDENT_GALLERY" && item.group_id ? renderGroupGalleries(item.group_id) : ""}</div></details>`;
 }
 
 function renderAssignmentSummary(item) {
@@ -316,7 +301,7 @@ function statusText(item) {
 }
 
 function renderSelectedVisual(item, files) {
-  const latestPreview = files.find((file) => file.file_type === "TEACHER_PREVIEW" && String(file.content_type || "").startsWith("image/"));
+  const latestPreview = [...files].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).find((file) => file.file_type === "TEACHER_PREVIEW" && String(file.content_type || "").startsWith("image/"));
   if (latestPreview) {
     return `<div class="selected-visual"><span class="selection-label">Preview personalizado</span><button class="catalog-preview-large" data-preview-r2-file="${latestPreview.id}" type="button"><span data-r2-thumb="${latestPreview.id}">PREVIEW</span></button><p>${escapeHtml(latestPreview.file_name)}</p></div>`;
   }
@@ -340,9 +325,9 @@ function setupR2Dropzone() {
   const input = document.querySelector("#r2FileInput");
   if (!dropzone || !input || dropzone.dataset.ready) return;
   dropzone.dataset.ready = "true";
-  dropzone.addEventListener("click", () => input.click());
+  dropzone.addEventListener("click", (event) => { if (event.target !== input) input.click(); });
   dropzone.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") input.click();
+    if (event.key === "Enter" || event.key === " ") { event.preventDefault(); input.click(); }
   });
   dropzone.addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -388,9 +373,9 @@ function setupItemDropzones() {
     const itemId = dropzone.dataset.itemDropzone;
     const fileType = dropzone.dataset.fileType || "TEACHER_PREVIEW";
     const input = document.querySelector(`[data-item-file-input="${itemId}"][data-file-type="${fileType}"]`);
-    dropzone.addEventListener("click", () => input?.click());
+    dropzone.addEventListener("click", (event) => { if (event.target !== input) input?.click(); });
     dropzone.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") input?.click();
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); input?.click(); }
     });
     dropzone.addEventListener("dragover", (event) => {
       event.preventDefault();
@@ -410,7 +395,7 @@ async function uploadPrintItemFiles(itemId, fileType, files) {
   try {
     for (const file of files) await uploadR2File(jobId, fileType, file, itemId);
     const item = printItems.find((entry) => entry.id === itemId);
-    if (item && ["PENDING", "CATALOG_SELECTED", "CHANGES_REQUESTED"].includes(item.status)) {
+    if (fileType === "TEACHER_PREVIEW" && item && ["PENDING", "CATALOG_SELECTED", "CHANGES_REQUESTED"].includes(item.status)) {
       await updatePrintItem(itemId, { status: "READY_FOR_REVIEW" });
     }
     showToast(files.length === 1 ? "Archivo subido a la pieza." : "Archivos subidos a la pieza.");
@@ -432,9 +417,10 @@ function renderPhones() {
 }
 
 function renderGalleries() {
+  const visibleGalleries = galleries.filter((gallery) => !schoolGroups.some((group) => group.id === gallery.group_id));
   const groupName = (groupId) => schoolGroups.find((group) => group.id === groupId)?.group_name || "Trabajo general";
-  const teacherPreviewFiles = r2Files.filter((file) => file.file_type === "TEACHER_PREVIEW");
-  const googlePhotosHtml = galleries.length ? `<h3>Google Photos</h3><div class="table-wrap"><table class="table"><thead><tr><th>Título</th>${isChristmasJob() ? "<th>Grupo</th>" : ""}<th>Tipo</th><th>Link</th><th>Enviada</th><th>Acciones</th></tr></thead><tbody>${galleries.map((gallery) => `<tr><td>${escapeHtml(gallery.title)}<br><span class="muted">${gallery.is_active ? "Activa" : "Inactiva"}</span></td>${isChristmasJob() ? `<td>${escapeHtml(groupName(gallery.group_id))}</td>` : ""}<td>${getGalleryTypeLabel(gallery.gallery_type)}</td><td><a href="${escapeHtml(gallery.google_photos_url)}" target="_blank" rel="noopener">Abrir galería</a></td><td>${formatDateTime(gallery.sent_at)}</td><td class="actions">${isChristmasJob() ? `<button class="btn btn-secondary" data-send-gallery-whatsapp="${gallery.id}">WhatsApp</button>` : ""}<button class="btn btn-danger" data-deactivate-gallery="${gallery.id}">Desactivar</button></td></tr>`).join("")}</tbody></table></div>` : "";
+  const teacherPreviewFiles = r2Files.filter((file) => !printItems.some((item) => item.id === file.print_item_id) && file.file_type === "TEACHER_PREVIEW");
+  const googlePhotosHtml = visibleGalleries.length ? `<h3>Google Photos</h3><div class="table-wrap"><table class="table"><thead><tr><th>Título</th>${isChristmasJob() ? "<th>Grupo</th>" : ""}<th>Tipo</th><th>Link</th><th>Enviada</th><th>Acciones</th></tr></thead><tbody>${visibleGalleries.map((gallery) => `<tr><td>${escapeHtml(gallery.title)}<br><span class="muted">${gallery.is_active ? "Activa" : "Inactiva"}</span></td>${isChristmasJob() ? `<td>${escapeHtml(groupName(gallery.group_id))}</td>` : ""}<td>${getGalleryTypeLabel(gallery.gallery_type)}</td><td><a href="${escapeHtml(gallery.google_photos_url)}" target="_blank" rel="noopener">Abrir galería</a></td><td>${formatDateTime(gallery.sent_at)}</td><td class="actions">${isChristmasJob() ? `<button class="btn btn-secondary" data-send-gallery-whatsapp="${gallery.id}">WhatsApp</button>` : ""}<button class="btn btn-danger" data-deactivate-gallery="${gallery.id}">Desactivar</button></td></tr>`).join("")}</tbody></table></div>` : "";
   const r2GalleryHtml = teacherPreviewFiles.length ? `<h3>Preview maestra en R2</h3><div class="file-gallery">${teacherPreviewFiles.map((file) => {
     const isImage = String(file.content_type || "").startsWith("image/");
     return `<article class="file-tile"><button class="file-preview" data-preview-r2-file="${file.id}" type="button">${isImage ? `<span class="file-thumb" data-r2-thumb="${file.id}"></span>` : `<span class="file-icon">${escapeHtml((file.file_name || "").split(".").pop() || "FILE")}</span>`}</button><div class="file-meta"><strong>${escapeHtml(file.file_name)}</strong><span>${formatFileSize(file.size_bytes)}</span><span>${formatDateTime(file.created_at)}</span></div><div class="actions"><button class="btn" data-open-r2-file="${file.id}">Abrir</button></div></article>`;
@@ -447,9 +433,10 @@ function renderGalleries() {
 }
 
 function renderR2Files() {
-  const previewCount = r2Files.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
-  const printCount = r2Files.filter((file) => file.file_type === "PRINT_HIGH_RES").length;
-  document.querySelector("#r2FilesList").innerHTML = r2Files.length ? `<div class="r2-counts"><span class="badge">Preview maestra: ${previewCount}</span><span class="badge">Alta calidad imprenta: ${printCount}</span></div><div class="file-gallery">${r2Files.map((file) => {
+  const unassigned = r2Files.filter((file) => !printItems.some((item) => item.id === file.print_item_id));
+  const previewCount = unassigned.filter((file) => file.file_type === "TEACHER_PREVIEW").length;
+  const printCount = unassigned.filter((file) => file.file_type === "PRINT_HIGH_RES").length;
+  document.querySelector("#r2FilesList").innerHTML = unassigned.length ? `<div class="r2-counts"><span class="badge">Preview maestra: ${previewCount}</span><span class="badge">Alta calidad imprenta: ${printCount}</span></div><div class="file-gallery">${unassigned.map((file) => {
     const isImage = String(file.content_type || "").startsWith("image/");
     return `<article class="file-tile"><button class="file-preview" data-preview-r2-file="${file.id}" type="button">${isImage ? `<span class="file-thumb" data-r2-thumb="${file.id}"></span>` : `<span class="file-icon">${escapeHtml((file.file_name || "").split(".").pop() || "FILE")}</span>`}</button><div class="file-meta"><strong>${escapeHtml(file.file_name)}</strong><span>${R2_FILE_TYPES[file.file_type] || file.file_type}</span><span>${formatFileSize(file.size_bytes)}</span><span>${formatDateTime(file.created_at)}</span></div><div class="actions"><button class="btn" data-open-r2-file="${file.id}">Abrir</button><button class="btn btn-danger" data-delete-r2-file="${file.id}">Eliminar</button></div></article>`;
   }).join("")}</div>` : `<div class="empty-state">No hay archivos de R2 registrados.</div>`;
@@ -550,7 +537,7 @@ async function sendChristmasGalleryWhatsapp(galleryId) {
   const school = job.clients.school_profiles?.[0] || {};
   const message = `Hola ${group.teacher_name || "maestra"} 👋
 
-Ya está lista la galería navideña para revisión.
+Ya está lista la galería ${isChristmasJob() ? "navideña" : "del grupo"} para revisión.
 
 Escuela: ${school.school_name || job.clients.name}
 Grupo: ${group.group_name}
@@ -665,18 +652,20 @@ function renderApproval() {
   </div>`;
 }
 
-function openGalleryForm() {
+function openGalleryForm(groupId = "") {
   document.querySelector("#detailModalTitle").textContent = "Agregar galería";
-  const groupField = isChristmasJob() ? `<div class="form-group"><label>Grupo</label><select class="select" name="group_id" required><option value="">Seleccione</option>${schoolGroups.map((group) => `<option value="${group.id}">${escapeHtml(group.group_name)}${group.teacher_name ? ` · ${escapeHtml(group.teacher_name)}` : ""}</option>`).join("")}</select></div>` : "";
+  const groupField = job.job_type === "SCHOOL_GRADUATION" ? `<div class="form-group"><label>Grupo</label><select class="select" name="group_id" required><option value="">Seleccione</option>${schoolGroups.map((group) => `<option value="${group.id}">${escapeHtml(group.group_name)}${group.teacher_name ? ` · ${escapeHtml(group.teacher_name)}` : ""}</option>`).join("")}</select></div>` : "";
   const typeField = isChristmasJob() ? `<input type="hidden" name="gallery_type" value="STUDENT_GALLERY">` : `<div class="form-group"><label>Tipo</label><select class="select" name="gallery_type">${Object.entries(GALLERY_TYPES).map(([value, label]) => `<option value="${value}">${label}</option>`).join("")}</select></div>`;
   form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Título</label><input class="input" name="title" required></div>${groupField}${typeField}</div><div class="form-group"><label>Link de Google Photos</label><input class="input" name="google_photos_url" required></div><div class="form-group"><label>Notas</label><textarea class="textarea" name="notes"></textarea></div><input type="hidden" name="form_type" value="gallery"><button class="btn btn-primary" type="submit">Guardar galería</button>`;
+  if (form.elements.group_id) form.elements.group_id.value = groupId;
   modal.classList.remove("hidden");
 }
 
-function openDepositForm() {
+function openDepositForm(groupId = "") {
   document.querySelector("#detailModalTitle").textContent = "Agregar abono";
   const groupOptions = schoolGroups.map((group) => `<option value="${group.id}">${escapeHtml(group.group_name)}${group.teacher_name ? ` · ${escapeHtml(group.teacher_name)}` : ""}</option>`).join("");
   form.innerHTML = `<div class="form-grid"><div class="form-group"><label>Asignar abono a</label><select class="select" name="group_id"><option value="">General del trabajo</option>${groupOptions}</select></div><div class="form-group"><label>Monto abonado</label><input class="input" type="number" min="0.01" step="0.01" name="amount" required></div><div class="form-group"><label>Fecha del abono</label><input class="input" type="date" name="deposit_date" value="${today()}" required></div></div><div class="form-group"><label>Nota</label><textarea class="textarea" name="notes"></textarea></div><input type="hidden" name="form_type" value="deposit"><button class="btn btn-primary" type="submit">Guardar abono</button>`;
+  form.elements.group_id.value = groupId;
   modal.classList.remove("hidden");
 }
 
@@ -851,6 +840,8 @@ document.addEventListener("click", async (event) => {
       await loadJob();
       return;
     }
+    if (event.target.dataset.groupDeposit) openDepositForm(event.target.dataset.groupDeposit);
+    if (event.target.dataset.groupGallery) openGalleryForm(event.target.dataset.groupGallery);
     if (event.target.matches("#newGalleryBtn")) openGalleryForm();
     if (event.target.matches("#sendTeacherPreviewWhatsappBtn")) await sendTeacherPreviewWhatsapp();
     if (event.target.dataset.sendGalleryWhatsapp) await sendChristmasGalleryWhatsapp(event.target.dataset.sendGalleryWhatsapp);

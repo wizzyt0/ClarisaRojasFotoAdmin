@@ -235,6 +235,24 @@ Use las copias autom√°ticas del panel de Supabase si su plan las incluye. Tambi√
 
 ## Problemas comunes
 
+### Vista de trabajo por grupos
+
+El detalle del trabajo muestra un resumen financiero unico y un desplegable por maestra.
+Dentro de cada grupo estan sus piezas, observaciones, archivos, asignaciones de editor y
+acciones de WhatsApp. Navidad conserva solo su paquete y galerias por grupo.
+Los abonos se pueden registrar desde el grupo (preseleccionado) o desde el historial de abonos
+para movimientos generales. Las herramientas generales, enlaces antiguos y archivos sin
+grupo siguen disponibles al final, cerrados por defecto. No se elimina ningun dato.
+
+Este cambio de presentacion no requiere SQL nuevo ni cambios al Worker. Publique
+`job-detail.html`, `js/job-detail.js` y `css/job-workflow.css` juntos mediante el despliegue
+habitual de cPanel. La migracion previa de paquetes/historial sigue siendo necesaria si
+aun no la aplico.
+
+Prueba de interfaz con datos ficticios: `npm ci`, `npx playwright-core install chromium`,
+`npm run test:ui`. Tambien puede usar Chrome instalado indicando `CHROME_PATH`.
+No utiliza credenciales ni modifica Supabase. Las capturas de prueba se generan en `/tmp`.
+
 ### Paquetes por nivel e historial de actividad
 
 Para activar la separacion de paquetes de graduacion por nivel escolar y el historial privado,

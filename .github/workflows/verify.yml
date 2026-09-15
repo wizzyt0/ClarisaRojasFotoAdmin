@@ -16,3 +16,5 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run verify
       - run: npm test
+      - run: npx playwright-core install --with-deps chromium
+      - run: npm run test:ui
