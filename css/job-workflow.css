@@ -33,7 +33,12 @@
 .workflow-piece.changes>summary .badge { color: #935514; background: #fff2df; }
 .workflow-step { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; background: #e4f1f1; color: #184c50; font-size: 12px; font-weight: 700; }
 .workflow-piece-content { padding: 0 0 16px 34px; min-width: 0; }
-.workflow-piece-main { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 18px; align-items: start; }
+.workflow-piece-main { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 18px; align-items: start; min-height: 130px; }
+.workflow-piece-main>.empty-state { width: 100%; min-height: 130px; margin: 0; padding: 14px; display: grid; place-items: center; font-size: 13px; }
+.workflow-piece-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.workflow-piece-toolbar>.actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; margin-left: auto; }
+.workflow-piece .workflow-piece-toolbar .assignment-summary { border: 0; padding: 0; margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.job-workspace .workflow-piece-toolbar .btn { min-height: 38px; margin: 0; }
 .workflow-piece-main>*, .workflow-group-heading>*, .workflow-file>* { min-width: 0; overflow-wrap: anywhere; }
 .workflow-piece .selected-visual { margin: 0; width: 100%; }
 .workflow-piece .catalog-preview-large { width: 100%; height: 130px; min-height: 0; aspect-ratio: auto; }
@@ -73,6 +78,10 @@
   .workflow-piece>summary .badge { grid-column: 2; grid-row: 2; justify-self: start; }
   .workflow-piece>summary::after { grid-column: 3; grid-row: 1; }
   .workflow-piece-main { grid-template-columns: 1fr; }
+  .workflow-piece-main>div:empty { display: none; }
+  .workflow-piece-toolbar { align-items: stretch; }
+  .workflow-piece-toolbar>.actions { margin-left: 0; width: 100%; justify-content: flex-start; }
+  .workflow-piece-toolbar>.actions>.btn { flex: 1 1 180px; }
   .workflow-piece .selected-visual { max-width: 220px; }
   .workflow-piece-content { padding-left: 0; }
   .job-workspace .workflow-group .btn { min-height: 42px; }

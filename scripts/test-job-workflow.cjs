@@ -38,6 +38,7 @@ const server=createServer(async(req,res)=>{try { const file=path.join(root,new U
    await page.route('**/js/r2-files.js',r=>r.fulfill({contentType:'text/javascript',body:modified}));
    await page.addInitScript(()=>{const c=document.createElement('canvas');c.width=600;c.height=400;const x=c.getContext('2d');x.fillStyle='#eee9dc';x.fillRect(0,0,600,400);x.fillStyle='#295b60';x.font='38px serif';x.fillText('Diploma',200,180);window.__image=c.toDataURL();});
    await page.goto(`http://127.0.0.1:${server.address().port}/job-detail.html?id=job`);
+   await page.evaluate(()=>{window.open=(url)=>{window.__opened=url;return null}});
    await page.locator('.workflow-group').first().waitFor();
    assert.equal(await page.locator('.workflow-group').count(),2);
    assert.equal(await page.locator('#generalTools').evaluate(x=>x.open),false);
@@ -62,6 +63,28 @@ const server=createServer(async(req,res)=>{try { const file=path.join(root,new U
     await page.locator('[data-close-modal]').click();
    }else{
     assert.equal(await page.locator('.workflow-piece').count(),10);
+    assert.equal(await page.locator('.workflow-piece-toolbar [data-send-print-item]').count(),10);
+    // Admin assignments remain selected without a catalogue image or synced piece.
+    await page.evaluate(()=>{window.__db.print_items.find(x=>x.id==='a0').selected_file_id=null;window.__db.print_items.find(x=>x.id==='a0').selected_package_id=null});
+    await page.locator('#saveStatusBtn').click();
+    await page.waitForFunction(()=>document.querySelector('[data-disclosure="piece-a0"] .badge')?.textContent==='Paquete y cantidad seleccionados');
+    assert(await page.locator('[data-disclosure="piece-a0"]').evaluate(x=>x.classList.contains('approved')));
+    await page.locator('[data-disclosure="piece-a0"]>summary').click();
+    assert.match(await page.locator('[data-disclosure="piece-a0"]').innerText(),/Paquete escolar · 10 paquetes/);
+    assert.equal(await page.locator('[data-disclosure="piece-a0"] [data-edit-group="a"]').count(),1);
+    await page.locator('[data-send-print-item="a0"]').click();
+    await page.waitForFunction(()=>window.__opened?.startsWith('https://wa.me/'));
+    const message = new URL(await page.evaluate(()=>window.__opened)).searchParams.get('text');
+    assert.match(message,/catálogo de paquetes de fotos/);
+    assert.match(message,/item_token=token-a0/);
+    assert.equal(await page.evaluate(()=>window.__db.print_items.find(x=>x.id==='a0').status),'CATALOG_SELECTED');
+    await page.evaluate(()=>window.__db.school_groups.find(x=>x.id==='a').package_quantity=0);
+    await page.locator('#saveStatusBtn').click();
+    await page.waitForFunction(()=>document.querySelector('[data-disclosure="piece-a0"] .badge')?.textContent==='Cantidad pendiente');
+    assert(!await page.locator('[data-disclosure="piece-a0"]').evaluate(x=>x.classList.contains('approved')));
+    await page.evaluate(()=>window.__db.school_groups.find(x=>x.id==='a').package_quantity=10);
+    await page.locator('#saveStatusBtn').click();
+    await page.waitForFunction(()=>document.querySelector('[data-disclosure="piece-a0"] .badge')?.textContent==='Paquete y cantidad seleccionados');
     await page.locator('[data-disclosure="piece-a1"]>summary').click();
     assert.match(await page.locator('[data-disclosure="piece-a1"]').innerText(),/Corregir apellido/);
     const choosing = page.waitForEvent('filechooser');
@@ -78,6 +101,11 @@ const server=createServer(async(req,res)=>{try { const file=path.join(root,new U
    for(const width of [1440,390]){
     await page.setViewportSize({width,height:1000});
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Page overflow');
+    if(!christmas && width===1440){
+      const buttons=await page.locator('[data-disclosure="piece-a0"] .workflow-piece-toolbar button').evaluateAll(nodes=>nodes.map(n=>({top:n.getBoundingClientRect().top,height:n.getBoundingClientRect().height})));
+      assert(buttons.every(b=>Math.abs(b.top-buttons[0].top)<2),'Toolbar buttons must align');
+      assert(buttons.every(b=>b.height===buttons[0].height),'Toolbar buttons must have matching heights');
+    }
     await page.screenshot({path:`/tmp/clarisa-workflow-${christmas?'christmas':'graduation'}-${width}.png`,fullPage:true});
    }
    assert.deepEqual(errors,[]);await page.close();
