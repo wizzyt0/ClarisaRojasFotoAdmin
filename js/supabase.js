@@ -47,13 +47,14 @@ function createQuery(tableName) {
     async execute() {
       const client = await getClient();
       if (!client) return missingConfigResult();
+      const readOnly = !calls.some(([method]) => ["insert", "update", "upsert", "delete"].includes(method));
       for (let attempt = 0; attempt < 3; attempt += 1) {
         let request = client.from(tableName);
         for (const [method, args] of calls) {
           request = request[method](...args);
         }
         const result = await request;
-        if (!result.error || !isTransientRequestError(result.error) || attempt === 2) return result;
+        if (!readOnly || !result.error || !isTransientRequestError(result.error) || attempt === 2) return result;
         await sleep((attempt + 1) * 1500);
       }
       return missingConfigResult();

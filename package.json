@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "verify": "node scripts/verify-project.mjs"
+    "verify": "node scripts/verify-project.mjs",
+    "test": "node scripts/test-package-flow.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.14"
   }
 }

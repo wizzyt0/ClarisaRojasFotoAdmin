@@ -20,6 +20,11 @@
         <section class="card" data-owner-only><div class="page-header"><h2>Abonos</h2><button id="newDepositBtn" class="btn btn-primary">Agregar abono</button></div><div id="depositsList"></div></section>
         <section class="card"><div class="page-header"><h2>WhatsApp</h2><button id="generateWhatsappBtn" class="btn btn-primary">Generar mensaje WhatsApp</button></div><div id="phoneChoice"></div><textarea id="whatsappMessage" class="textarea" readonly></textarea><div class="actions"><button id="copyWhatsappBtn" class="btn">Copiar mensaje</button><button id="openWhatsappBtn" class="btn btn-secondary">Abrir WhatsApp</button></div><h3>Historial</h3><div id="messageLogs"></div></section>
         <section id="approvalCard" class="card"></section>
+        <details id="jobActivity" class="collapsible" data-owner-only>
+          <summary>Historial de actividad</summary>
+          <div id="jobActivityList"></div>
+          <button id="moreJobActivity" class="btn" type="button" hidden>Ver más movimientos</button>
+        </details>
       </section>
     </main>
   </div>

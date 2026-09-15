@@ -12,6 +12,8 @@ import { buildWhatsAppUrl, generateAndLogWhatsAppMessage } from "./whatsapp.js";
 import { calculateTotals, copyToClipboard, escapeHtml, formToObject, generateToken, getQueryParam, openInNewTab, showToast, today } from "./utils.js";
 import { formatDate, formatDateTime, formatMoney } from "./formatters.js";
 import { ASSIGNMENT_STATUSES, getAssignmentsByPrintItems, getEditors, saveAssignment } from "./work-assignments.js";
+import { packageMatchesSchool } from "./package-levels.js";
+import { mountJobActivity } from "./job-activity.js";
 
 const currentUser = await requireAuth();
 const canManageAssignments = isOwner(currentUser);
@@ -107,6 +109,7 @@ async function loadJob() {
   if (packagesError) throw packagesError;
   packages = packagesData || [];
   render();
+  mountJobActivity(jobId);
   await loadLogs();
 }
 
@@ -418,13 +421,6 @@ async function uploadPrintItemFiles(itemId, fileType, files) {
   }
 }
 
-async function recalculateJobFromGroups() {
-  const groups = await getSchoolGroupsByJob(jobId);
-  const totalPrice = groups.reduce((sum, group) => sum + Number(group.price || 0), 0);
-  const totalQuantity = groups.reduce((sum, group) => sum + Number(group.package_quantity || 0), 0);
-  await supabase.from("jobs").update({ price: totalPrice, package_quantity: totalQuantity }).eq("id", jobId);
-}
-
 function renderPhones() {
     const school = job.clients.school_profiles?.[0] || {};
   const phones = [
@@ -687,10 +683,14 @@ function openDepositForm() {
 function openGroupForm(group = null) {
   document.querySelector("#detailModalTitle").textContent = group ? "Editar grupo" : "Agregar grupo";
   const eventPackageType = SCHOOL_EVENT_PACKAGE_TYPES[job.event_type] || "SCHOOL_GRADUATION";
-  const matchingPackages = packages.filter((pkg) => pkg.package_type === eventPackageType);
+  const schoolLevel = job.clients.school_profiles?.[0]?.school_level;
+  const matchingPackages = packages.filter((pkg) => packageMatchesSchool(pkg, eventPackageType, schoolLevel));
+  const legacyPackage = group?.selected_package_id && !matchingPackages.some((pkg) => pkg.id === group.selected_package_id)
+    ? { id: group.selected_package_id, name: group.packages?.name || "Paquete actual", price: Number(group.package_quantity) ? Number(group.price) / Number(group.package_quantity) : 0 }
+    : null;
   const christmasPackage = isChristmasJob() ? matchingPackages[0] : null;
   const selectedPackageId = isChristmasJob() ? christmasPackage?.id || "" : group?.selected_package_id || "";
-  const packageOptions = matchingPackages
+  const packageOptions = [...matchingPackages, ...(legacyPackage ? [legacyPackage] : [])]
     .map((pkg) => `<option value="${pkg.id}" data-price="${pkg.price}" ${pkg.id === selectedPackageId ? "selected" : ""}>${escapeHtml(pkg.name)} - ${formatMoney(pkg.price)}</option>`)
     .join("");
   const packageField = isChristmasJob()
@@ -701,11 +701,11 @@ function openGroupForm(group = null) {
     const selected = form.selected_package_id.selectedOptions?.[0];
     const packagePrice = Number(isChristmasJob() ? christmasPackage?.price || 0 : selected?.dataset.price || 0);
     const quantity = Number(form.package_quantity.value || 0);
-    if (packagePrice && quantity >= 0) form.price.value = packagePrice * quantity;
+    if (quantity >= 0) form.price.value = packagePrice * quantity;
   };
   form.selected_package_id.addEventListener?.("change", updateGroupPrice);
   form.package_quantity.addEventListener("input", updateGroupPrice);
-  updateGroupPrice();
+  form.price.readOnly = true;
   modal.classList.remove("hidden");
 }
 
@@ -801,11 +801,10 @@ form.addEventListener("submit", async (event) => {
         package_quantity: Number(data.package_quantity || 0),
         price: isChristmasJob() ? packagePrice * Number(data.package_quantity || 0) : Number(data.price || 0),
         notes: data.notes || null,
-        sort_order: schoolGroups.length + 1
+        sort_order: data.group_id ? schoolGroups.find((entry) => entry.id === data.group_id)?.sort_order || 0 : schoolGroups.length + 1
       };
       const group = data.group_id ? await updateSchoolGroup(data.group_id, payload) : await createSchoolGroup(jobId, payload);
       if (!isChristmasJob()) await ensureDefaultPrintItems(jobId, group.id);
-      await recalculateJobFromGroups();
     }
     if (data.form_type === "r2_file") await createR2File(jobId, { print_item_id: data.print_item_id || null, file_type: data.file_type, r2_key: data.r2_key.trim(), file_name: data.file_name.trim(), content_type: data.content_type || null, size_bytes: data.size_bytes ? Number(data.size_bytes) : null, notes: data.notes || null });
     if (data.form_type === "r2_share_link") {
@@ -848,7 +847,6 @@ document.addEventListener("click", async (event) => {
     if (event.target.dataset.editGroup) openGroupForm(schoolGroups.find((group) => group.id === event.target.dataset.editGroup));
     if (event.target.dataset.deleteGroup && confirm("¿Eliminar este grupo y sus validaciones?")) {
       await deleteSchoolGroup(event.target.dataset.deleteGroup);
-      await recalculateJobFromGroups();
       showToast("Grupo eliminado.");
       await loadJob();
       return;

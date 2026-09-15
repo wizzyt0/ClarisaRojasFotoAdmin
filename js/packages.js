@@ -4,6 +4,7 @@ import { getCatalogFileUrl, getPackageImages, uploadPackageImage } from "./catal
 import { PACKAGE_TYPES } from "./constants.js";
 import { escapeHtml, formToObject, showToast } from "./utils.js";
 import { formatMoney } from "./formatters.js";
+import { PACKAGE_LEVELS } from "./package-levels.js";
 
 await requireAuth(["owner"]);
 let packages = [];
@@ -25,11 +26,19 @@ function renderForm(item = {}) {
     <div class="form-grid">
       <div class="form-group"><label>Nombre</label><input class="input" name="name" required value="${escapeHtml(item.name)}"></div>
       <div class="form-group"><label>Tipo de paquete</label><select class="select" name="package_type" required>${options(item.package_type || "GENERAL")}</select></div>
+      <div class="form-group" id="packageLevelField"><label>Nivel escolar</label><select class="select" name="school_level"><option value="">Seleccione</option>${Object.entries(PACKAGE_LEVELS).map(([value, label]) => `<option value="${value}" ${item.school_level === value ? "selected" : ""}>${label}</option>`).join("")}</select></div>
       <div class="form-group"><label>Precio</label><input class="input" type="number" min="0" step="0.01" name="price" required value="${item.price ?? 0}"></div>
       <div class="form-group"><label>Activo</label><select class="select" name="is_active"><option value="true" ${item.is_active !== false ? "selected" : ""}>Sí</option><option value="false" ${item.is_active === false ? "selected" : ""}>No</option></select></div>
     </div>
     <div class="form-group"><label>Descripción</label><textarea class="textarea" name="description">${escapeHtml(item.description)}</textarea></div>
     <button class="btn btn-primary" type="submit">Guardar paquete</button>`;
+  const updateLevel = () => {
+    const graduation = form.package_type.value === "SCHOOL_GRADUATION";
+    form.school_level.required = graduation;
+    document.querySelector("#packageLevelField").hidden = !graduation;
+  };
+  form.package_type.addEventListener("change", updateLevel);
+  updateLevel();
 }
 
 function renderPackageCard(item) {
@@ -43,6 +52,12 @@ function render() {
   const visiblePackages = packages.filter((item) => (!search || item.name.toLowerCase().includes(search)) && (active === "" || String(item.is_active) === active));
   const sections = packageSections.map((section) => {
     const items = visiblePackages.filter((item) => item.package_type === section.type);
+    if (section.type === "SCHOOL_GRADUATION") {
+      return `<section class="package-category"><h2>Graduaciones escolares</h2>${[...Object.entries(PACKAGE_LEVELS), ["", "Sin nivel asignado"]].map(([level, label]) => {
+        const levelItems = items.filter((item) => (item.school_level || "") === level);
+        return `<section class="catalog-subsection"><div class="page-header"><h3>${label}</h3>${level ? `<button class="btn" data-new-package-type="SCHOOL_GRADUATION" data-level="${level}">Agregar paquete</button>` : ""}</div>${levelItems.length ? `<div class="catalog-grid">${levelItems.map(renderPackageCard).join("")}</div>` : '<div class="empty-state compact-empty">Sin paquetes</div>'}</section>`;
+      }).join("")}</section>`;
+    }
     return `<section class="package-category" data-package-category="${section.type}"><div class="package-category-header"><div><h2>${section.title}</h2><p class="muted">${section.description}</p></div><button class="btn" type="button" data-new-package-type="${section.type}">Agregar paquete</button></div>${items.length ? `<div class="catalog-grid">${items.map(renderPackageCard).join("")}</div>` : `<div class="empty-state compact-empty">No hay paquetes en esta categoría.</div>`}</section>`;
   }).join("");
   document.querySelector("#packagesTable").innerHTML = `<div class="package-categories">${sections}</div>`;
@@ -70,10 +85,10 @@ async function hydrateCatalogThumbs() {
   }));
 }
 
-function openModal(item = null, packageType = "SCHOOL_GRADUATION") {
+function openModal(item = null, packageType = "SCHOOL_GRADUATION", schoolLevel = "") {
   editingPackage = item;
   document.querySelector("#packageModalTitle").textContent = item ? "Editar paquete" : "Nuevo paquete";
-  renderForm(item || { is_active: true, price: 0, package_type: packageType });
+  renderForm(item || { is_active: true, price: 0, package_type: packageType, school_level: schoolLevel });
   modal.classList.remove("hidden");
 }
 
@@ -89,6 +104,8 @@ form.addEventListener("submit", async (event) => {
     }
   }
   const payload = { name: data.name.trim(), package_type: data.package_type, description: data.description || null, price: Number(data.price), is_active: data.is_active === "true" };
+  payload.school_level = data.package_type === "SCHOOL_GRADUATION" ? data.school_level : null;
+  if (data.package_type === "SCHOOL_GRADUATION" && !PACKAGE_LEVELS[data.school_level]) return showToast("Seleccione el nivel escolar.", "error");
   const { error } = editingPackage ? await supabase.from("packages").update(payload).eq("id", editingPackage.id) : await supabase.from("packages").insert(payload);
   if (error) { console.error(error); return showToast("No se pudo guardar el paquete.", "error"); }
   modal.classList.add("hidden");
@@ -99,7 +116,7 @@ form.addEventListener("submit", async (event) => {
 document.addEventListener("click", async (event) => {
   const catalogButton = event.target.closest("[data-open-catalog-file]");
   if (event.target.matches("#newPackageBtn")) openModal();
-  if (event.target.dataset.newPackageType) openModal(null, event.target.dataset.newPackageType);
+  if (event.target.dataset.newPackageType) openModal(null, event.target.dataset.newPackageType, event.target.dataset.level);
   if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");
   if (event.target.dataset.edit) openModal(packages.find((item) => item.id === event.target.dataset.edit));
   if (catalogButton) {

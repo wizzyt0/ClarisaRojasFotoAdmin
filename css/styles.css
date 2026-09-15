@@ -289,6 +289,7 @@ label { font-weight: 650; }
 }
 .modal-content { width: min(760px, 100%); max-height: 90vh; overflow: auto; background: white; border-radius: var(--radius); padding: 20px; }
 .hidden { display: none !important; }
+#packageLevelField[hidden], #moreJobActivity[hidden] { display: none !important; }
 .loading { opacity: 0.65; pointer-events: none; }
 .empty-state { padding: 28px; color: var(--muted); text-align: center; border: 1px dashed var(--border); border-radius: var(--radius); }
 .dropzone {
@@ -390,6 +391,9 @@ label { font-weight: 650; }
 .filters { display: grid; gap: 10px; grid-template-columns: 1fr repeat(2, minmax(160px, 220px)); margin-bottom: 14px; }
 .approval-page { max-width: 780px; margin: 0 auto; padding: 24px; }
 .approval-title { font-size: 2rem; margin-bottom: 4px; }
+.activity-entry { padding: 14px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.activity-entry p { margin: 4px 0; white-space: pre-wrap; }
+#jobActivity { margin-top: 24px; }
 html[data-staff-role="editor"] [data-owner-only] { display: none !important; }
 .assignment-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
 .assignment-summary span { color: var(--muted); }

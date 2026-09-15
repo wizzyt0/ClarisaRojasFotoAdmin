@@ -235,6 +235,17 @@ Use las copias automáticas del panel de Supabase si su plan las incluye. Tambi�
 
 ## Problemas comunes
 
+### Paquetes por nivel e historial de actividad
+
+Para activar la separacion de paquetes de graduacion por nivel escolar y el historial privado,
+siga [la guia de actualizacion](docs/paquetes-niveles-actividad.md). Esta actualizacion requiere
+ejecutar `sql/package-levels-activity.sql` antes de publicar los archivos del panel.
+Los paquetes antiguos quedan sin nivel hasta clasificarlos; no se cambian automaticamente
+las selecciones existentes. No vuelva a ejecutar los SQL antiguos de roles o catalogos.
+
+Las pruebas se ejecutan con Node 22: `npm ci`, `npm run verify` y `npm test`.
+Utilizan una base PostgreSQL temporal, nunca la base de Supabase en produccion.
+
 - “Debe iniciar sesión”: no hay sesión activa de Supabase Auth.
 - “No se pudo cargar la información”: revise `SUPABASE_URL`, `SUPABASE_ANON_KEY`, RLS y que las tablas existan.
 - “El link de aprobación no existe o expiró”: token incorrecto, revocado o expirado.
