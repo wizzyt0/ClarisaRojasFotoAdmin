@@ -264,9 +264,8 @@ las selecciones existentes. No vuelva a ejecutar los SQL antiguos de roles o cat
 Las pruebas se ejecutan con Node 22: `npm ci`, `npm run verify` y `npm test`.
 Utilizan una base PostgreSQL temporal, nunca la base de Supabase en produccion.
 
-Para indicar si un paquete corresponde a foto grupal o individual, ejecute
-`sql/package-photo-format.sql` y siga [la guia de formato de foto](docs/formato-foto-paquetes.md).
-Los paquetes existentes quedan sin clasificar hasta que se editen desde el panel.
+Para que la maestra elija foto grupal o individual dentro del paquete seleccionado, aplique
+`sql/package-photo-selection.sql` y siga [la guía de selección de paquetes](docs/seleccion-paquete-formato.md).
 
 - “Debe iniciar sesión”: no hay sesión activa de Supabase Auth.
 - “No se pudo cargar la información”: revise `SUPABASE_URL`, `SUPABASE_ANON_KEY`, RLS y que las tablas existan.

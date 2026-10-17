@@ -13,10 +13,6 @@ let editingPackage = null;
 const modal = document.querySelector("#packageModal");
 const form = document.querySelector("#packageForm");
 const options = (selected = "") => Object.entries(PACKAGE_TYPES).map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
-const photoFormatOptions = (selected = "") => [
-  ["GROUP", "Foto grupal"],
-  ["INDIVIDUAL", "Foto individual"]
-].map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
 const packageSections = [
   { type: "SCHOOL_GRADUATION", title: "Graduaciones escolares", description: "Solo se mostrarán a los grupos de trabajos de graduación." },
   { type: "SCHOOL_MEMORY", title: "Fotografía de recuerdo", description: "Solo se mostrarán a los grupos de trabajos de fotografía de recuerdo." },
@@ -30,7 +26,6 @@ function renderForm(item = {}) {
     <div class="form-grid">
       <div class="form-group"><label>Nombre</label><input class="input" name="name" required value="${escapeHtml(item.name)}"></div>
       <div class="form-group"><label>Tipo de paquete</label><select class="select" name="package_type" required>${options(item.package_type || "GENERAL")}</select></div>
-      <div class="form-group"><label>Formato de foto</label><select class="select" name="photo_format" required><option value="">Seleccione</option>${photoFormatOptions(item.photo_format || "")}</select></div>
       <div class="form-group" id="packageLevelField"><label>Nivel escolar</label><select class="select" name="school_level"><option value="">Seleccione</option>${Object.entries(PACKAGE_LEVELS).map(([value, label]) => `<option value="${value}" ${item.school_level === value ? "selected" : ""}>${label}</option>`).join("")}</select></div>
       <div class="form-group"><label>Precio</label><input class="input" type="number" min="0" step="0.01" name="price" required value="${item.price ?? 0}"></div>
       <div class="form-group"><label>Activo</label><select class="select" name="is_active"><option value="true" ${item.is_active !== false ? "selected" : ""}>Sí</option><option value="false" ${item.is_active === false ? "selected" : ""}>No</option></select></div>
@@ -48,8 +43,7 @@ function renderForm(item = {}) {
 
 function renderPackageCard(item) {
   const images = packageImages.filter((image) => image.package_id === item.id);
-  const photoFormat = item.photo_format === "GROUP" ? "Foto grupal" : item.photo_format === "INDIVIDUAL" ? "Foto individual" : "Formato sin definir";
-  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(item.name)}</h3><p class="muted">${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div><p><strong>Formato:</strong> ${photoFormat}</p><p>${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="actions"><label class="btn">Subir imagen<input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></label><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
+  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(item.name)}</h3><p class="muted">${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div><p>${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="actions"><label class="btn">Subir imagen<input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></label><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
 }
 
 function render() {
@@ -109,8 +103,7 @@ form.addEventListener("submit", async (event) => {
       return showToast("Solo puede existir un paquete navideño activo. Desactive o edite el paquete actual.", "error");
     }
   }
-  const payload = { name: data.name.trim(), package_type: data.package_type, photo_format: data.photo_format, description: data.description || null, price: Number(data.price), is_active: data.is_active === "true" };
-  if (!["GROUP", "INDIVIDUAL"].includes(payload.photo_format)) return showToast("Seleccione si la foto será grupal o individual.", "error");
+  const payload = { name: data.name.trim(), package_type: data.package_type, description: data.description || null, price: Number(data.price), is_active: data.is_active === "true" };
   payload.school_level = data.package_type === "SCHOOL_GRADUATION" ? data.school_level : null;
   if (data.package_type === "SCHOOL_GRADUATION" && !PACKAGE_LEVELS[data.school_level]) return showToast("Seleccione el nivel escolar.", "error");
   const { error } = editingPackage ? await supabase.from("packages").update(payload).eq("id", editingPackage.id) : await supabase.from("packages").insert(payload);

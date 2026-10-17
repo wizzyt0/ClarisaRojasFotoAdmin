@@ -35,7 +35,7 @@ try {
     create table clients(id uuid primary key);
     create table jobs(id uuid primary key, client_id uuid, event_type text, package_id uuid, status text, price numeric default 0, package_quantity integer default 0);
     create table school_profiles(id uuid primary key default gen_random_uuid(), client_id uuid, school_level text);
-    create table school_groups(id uuid primary key, job_id uuid, group_name text, selected_package_id uuid, package_quantity integer default 0, price numeric default 0, notes text);
+    create table school_groups(id uuid primary key, job_id uuid, group_name text, selected_package_id uuid, photo_format text, package_quantity integer default 0, price numeric default 0, notes text);
     create table package_images(id uuid primary key, package_id uuid, file_name text, created_at timestamptz default now());
     create table diploma_templates(id uuid, name text, file_name text, school_level text, is_active boolean, created_at timestamptz);
     create table folder_templates(like diploma_templates);
@@ -54,6 +54,9 @@ try {
   const migration = readFileSync(resolve(root, "sql/package-levels-activity.sql"), "utf8");
   await db.exec(migration);
   await db.exec(migration); // Re-running must preserve records and policies.
+  const photoSelectionMigration = readFileSync(resolve(root, "sql/package-photo-selection.sql"), "utf8");
+  await db.exec(photoSelectionMigration);
+  await db.exec(photoSelectionMigration); // The format migration must also be repeatable.
   await db.exec(`
     insert into packages(id,name,price,package_type,school_level) values
       ('${primary}','Primaria',100,'SCHOOL_GRADUATION','PRIMARY'),
@@ -67,10 +70,17 @@ try {
       values ('${pieceA}','${job}','${groupA}','PHOTO_PACKAGE','test-token');
   `);
   assert.deepEqual((await rows("select get_public_catalog_by_print_item_token('test-token') as catalog"))[0].catalog.map(x=>x.package_id), [primary]);
-  await assert.rejects(() => query("select select_catalog_option_by_token('test-token','package_images',$1,null,20)",[imageB]), /nivel escolar/);
-  await query("select select_catalog_option_by_token('test-token','package_images',$1,null,20)",[imageA]);
+  await assert.rejects(() => query("select select_package_option_by_token('test-token',$1,null,20,'GROUP')",[imageB]), /nivel escolar/);
+  await query("select select_package_option_by_token('test-token',$1,null,20,'GROUP')",[imageA]);
   assert.equal(Number((await rows("select price from jobs where id=$1",[job]))[0].price), 2000);
-  await query("update school_groups set selected_package_id=$1,package_quantity=10 where id=$2",[primary,groupB]);
+  assert.equal((await rows("select photo_format from school_groups where id=$1",[groupA]))[0].photo_format, "GROUP");
+  const missingFormat = (await rows("select select_package_option_by_token('test-token',$1,null,20,null) as result",[imageA]))[0].result;
+  assert.equal(missingFormat.ok, false);
+  await query("update school_groups set photo_format='INDIVIDUAL' where id=$1",[groupA]);
+  assert.equal(Number((await rows("select price from school_groups where id=$1",[groupA]))[0].price),2000);
+  await query("update school_groups set photo_format='GROUP' where id=$1",[groupA]);
+  assert.equal((await rows("select after_data->>'photo_format' as format from job_activity where entity_type='school_groups' and after_data->>'photo_format'='INDIVIDUAL' order by id desc limit 1"))[0].format,"INDIVIDUAL");
+  await query("update school_groups set selected_package_id=$1,photo_format='GROUP',package_quantity=10 where id=$2",[primary,groupB]);
   assert.equal(Number((await rows("select price from jobs where id=$1",[job]))[0].price), 3000);
   await query("update school_groups set package_quantity=15 where id=$1",[groupA]);
   let totals = (await rows("select price,package_quantity from jobs where id=$1",[job]))[0];

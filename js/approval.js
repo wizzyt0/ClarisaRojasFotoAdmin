@@ -135,8 +135,9 @@ function renderPackageQuantityDialog() {
   }).join("");
   return `<div id="packageQuantityDialog" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content compact-modal">
-      <div class="page-header"><h2>Cantidad de paquetes</h2><button class="btn" data-cancel-package-selection type="button">Cerrar</button></div>
-      <p class="muted">Seleccione cuántos paquetes necesita para este grupo.</p>
+      <div class="page-header"><h2>Opciones del paquete</h2><button class="btn" data-cancel-package-selection type="button">Cerrar</button></div>
+      <div class="form-group"><label>Formato de la foto</label><select id="catalogPhotoFormat" class="select"><option value="">Seleccione</option><option value="GROUP">Foto grupal</option><option value="INDIVIDUAL">Foto individual</option></select></div>
+      <p class="muted">Seleccione el formato y cuántos paquetes necesita para este grupo.</p>
       <div class="form-group"><label>Cantidad</label><select id="catalogPackageQuantity" class="select">${quantityOptions}</select></div>
       <div class="actions"><button class="btn btn-primary" data-confirm-package-selection type="button">Continuar</button><button class="btn" data-cancel-package-selection type="button">Cancelar</button></div>
     </div>
@@ -147,21 +148,23 @@ function selectedCatalogOption(optionId) {
   return catalogOptions.find((option) => option.id === optionId);
 }
 
-async function saveCatalogSelection(optionTable, optionId, packageQuantity = null) {
+async function saveCatalogSelection(optionTable, optionId, packageQuantity = null, photoFormat = null) {
   const notes = document.querySelector("#catalogClientNotes")?.value || "";
-  const { data, error } = await supabase.rpc("select_catalog_option_by_token", {
-    token: itemToken,
-    option_table: optionTable,
-    option_id: optionId,
-    client_notes: notes,
-    package_quantity: packageQuantity
-  });
+  const rpc = photoFormat ? "select_package_option_by_token" : "select_catalog_option_by_token";
+  const args = photoFormat
+    ? { token: itemToken, option_id: optionId, client_notes: notes, package_quantity: packageQuantity, photo_format: photoFormat }
+    : { token: itemToken, option_table: optionTable, option_id: optionId, client_notes: notes };
+  const { data, error } = await supabase.rpc(rpc, args);
   if (error || !data?.ok) {
     console.error(error || data);
     showToast(data?.message || error?.message || "No se pudo guardar la selección.", "error");
     return;
   }
-  content.innerHTML = `<div class="alert alert-success"><h1>Selección guardada.</h1><p>Gracias. Clarisa recibirá su selección para continuar con el pedido.</p><p><strong>Selección:</strong> ${escapeHtml(data.selected_name || "")}</p>${data.package_quantity ? `<p><strong>Cantidad:</strong> ${data.package_quantity}<br><strong>Total:</strong> ${formatMoney(data.price || 0)}</p>` : ""}</div>`;
+  const photoFormatLabel = data.photo_format === "GROUP" ? "Foto grupal" : data.photo_format === "INDIVIDUAL" ? "Foto individual" : "";
+  const selectedPackageImage = optionTable === "package_images"
+    ? `<div class="catalog-preview-large"><span><img src="${escapeHtml(catalogFileUrl({ table: optionTable, id: optionId }))}" alt="${escapeHtml(data.selected_name || "Paquete seleccionado")}"></span></div>`
+    : "";
+  content.innerHTML = `<div class="alert alert-success"><h1>Selección guardada.</h1><p>Gracias. Clarisa recibirá su selección para continuar con el pedido.</p>${selectedPackageImage}<p><strong>Selección:</strong> ${escapeHtml(data.selected_name || "")}${photoFormatLabel ? ` · ${photoFormatLabel}` : ""}</p>${data.package_quantity ? `<p><strong>Cantidad:</strong> ${data.package_quantity}<br><strong>Total:</strong> ${formatMoney(data.price || 0)}</p>` : ""}</div>`;
 }
 
 async function load() {
@@ -205,6 +208,7 @@ document.addEventListener("click", async (event) => {
   if (optionTable === "package_images") {
     pendingCatalogSelection = { optionTable, optionId };
     document.querySelector("#catalogPackageQuantity").value = "1";
+    document.querySelector("#catalogPhotoFormat").value = "";
     document.querySelector("#packageQuantityDialog").classList.remove("hidden");
     return;
   }
@@ -221,14 +225,17 @@ document.addEventListener("click", async (event) => {
   }
   if (event.target.dataset.confirmPackageSelection === undefined || !pendingCatalogSelection) return;
   const packageQuantity = Number(document.querySelector("#catalogPackageQuantity")?.value || 0);
+  const photoFormat = document.querySelector("#catalogPhotoFormat")?.value || "";
+  if (!["GROUP", "INDIVIDUAL"].includes(photoFormat)) return showToast("Seleccione foto grupal o individual.", "error");
   const option = selectedCatalogOption(pendingCatalogSelection.optionId);
   const optionName = option?.name || "este paquete";
-  const confirmed = confirm(`¿Confirmar ${packageQuantity} paquete${packageQuantity === 1 ? "" : "s"} de "${optionName}"?`);
+  const photoFormatLabel = photoFormat === "GROUP" ? "Foto grupal" : "Foto individual";
+  const confirmed = confirm(`¿Confirmar "${optionName}", ${photoFormatLabel} y ${packageQuantity} paquete${packageQuantity === 1 ? "" : "s"}?`);
   if (!confirmed) return;
   const selection = pendingCatalogSelection;
   pendingCatalogSelection = null;
   document.querySelector("#packageQuantityDialog")?.classList.add("hidden");
-  await saveCatalogSelection(selection.optionTable, selection.optionId, packageQuantity);
+  await saveCatalogSelection(selection.optionTable, selection.optionId, packageQuantity, photoFormat);
 });
 
 document.addEventListener("submit", async (event) => {

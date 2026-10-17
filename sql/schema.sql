@@ -47,7 +47,6 @@ create table packages (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   package_type text not null check (package_type in ('PHOTO_SESSION', 'SCHOOL_GRADUATION', 'SCHOOL_MEMORY', 'SCHOOL_CHRISTMAS', 'GENERAL')),
-  photo_format text check (photo_format in ('GROUP', 'INDIVIDUAL')),
   description text,
   price numeric(12,2) not null default 0 check (price >= 0),
   is_active boolean default true,

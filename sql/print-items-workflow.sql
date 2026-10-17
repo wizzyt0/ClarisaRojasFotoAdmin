@@ -29,6 +29,7 @@ create table if not exists school_groups (
   teacher_phone text,
   student_count integer,
   selected_package_id uuid references packages(id) on delete set null,
+  photo_format text check (photo_format in ('GROUP', 'INDIVIDUAL')),
   package_quantity integer not null default 0 check (package_quantity >= 0),
   price numeric(12,2) not null default 0 check (price >= 0),
   notes text,
@@ -45,6 +46,7 @@ alter table print_items add constraint print_items_group_id_fkey foreign key (gr
 alter table print_items add column if not exists client_notes text;
 alter table print_items add column if not exists changes_requested_at timestamptz;
 alter table school_groups add column if not exists selected_package_id uuid references packages(id) on delete set null;
+alter table school_groups add column if not exists photo_format text check (photo_format in ('GROUP', 'INDIVIDUAL'));
 alter table school_groups add column if not exists package_quantity integer not null default 0 check (package_quantity >= 0);
 alter table school_groups add column if not exists price numeric(12,2) not null default 0 check (price >= 0);
 alter table print_items drop constraint if exists print_items_status_check;

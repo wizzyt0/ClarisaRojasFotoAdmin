@@ -3,6 +3,8 @@
 begin;
 alter table public.packages add column if not exists school_level text
   check (school_level in ('KINDER', 'PRIMARY', 'SECONDARY'));
+alter table public.school_groups add column if not exists photo_format text
+  check (photo_format in ('GROUP', 'INDIVIDUAL'));
 
 -- Validate selections on the server, including public token calls.
 create or replace function public.validate_school_package(p_job uuid, p_package uuid)
@@ -44,7 +46,9 @@ begin
       select im.id into new.selected_file_id from public.package_images im
         where im.package_id = grp.selected_package_id order by im.created_at desc, im.id limit 1;
       new.status := 'CATALOG_SELECTED';
-      select 'Paquete seleccionado: ' || p.name into new.notes from public.packages p where p.id = grp.selected_package_id;
+      select 'Paquete seleccionado: ' || p.name || case grp.photo_format
+        when 'GROUP' then ' · Foto grupal' when 'INDIVIDUAL' then ' · Foto individual' else '' end
+        into new.notes from public.packages p where p.id = grp.selected_package_id;
     end if;
   end if;
   if new.item_type = 'PHOTO_PACKAGE' and new.selected_file_id is not null then
@@ -102,7 +106,8 @@ begin
     target_job := new.job_id;
     if tg_op = 'INSERT' or
       new.selected_package_id is distinct from old.selected_package_id or
-      new.package_quantity is distinct from old.package_quantity then
+      new.package_quantity is distinct from old.package_quantity or
+      new.photo_format is distinct from old.photo_format then
       update public.print_items pi set
         selected_package_id = new.selected_package_id,
         selected_file_id = case when exists (
@@ -111,7 +116,9 @@ begin
           select im.id from public.package_images im where im.package_id = new.selected_package_id order by im.created_at desc, im.id limit 1
         ) end,
         status = case when new.selected_package_id is null then 'PENDING' else 'CATALOG_SELECTED' end,
-        notes = (select 'Paquete seleccionado: ' || p.name from public.packages p where p.id = new.selected_package_id)
+        notes = (select 'Paquete seleccionado: ' || p.name || case new.photo_format
+          when 'GROUP' then ' · Foto grupal' when 'INDIVIDUAL' then ' · Foto individual' else '' end
+          from public.packages p where p.id = new.selected_package_id)
       where pi.group_id = new.id and pi.item_type = 'PHOTO_PACKAGE';
     end if;
   end if;
@@ -408,7 +415,6 @@ begin
           package_quantity = quantity,
           price = package_price * quantity
       where id = item.group_id;
-
       -- The group trigger synchronizes the work total in this transaction.
     else
       update jobs
