@@ -2,7 +2,7 @@ import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { getCatalogFileUrl, getPackageImages, uploadPackageImage } from "./catalog.js";
 import { PACKAGE_TYPES } from "./constants.js";
-import { escapeHtml, formToObject, showToast } from "./utils.js";
+import { bindFileDropzone, escapeHtml, formToObject, showToast } from "./utils.js";
 import { formatMoney } from "./formatters.js";
 import { PACKAGE_LEVELS } from "./package-levels.js";
 
@@ -43,7 +43,7 @@ function renderForm(item = {}) {
 
 function renderPackageCard(item) {
   const images = packageImages.filter((image) => image.package_id === item.id);
-  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(item.name)}</h3><p class="muted">${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div><p>${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="actions"><label class="btn">Subir imagen<input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></label><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
+  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(item.name)}</h3><p class="muted">${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div><p>${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="mini-dropzone package-image-dropzone" tabindex="0" data-package-dropzone="${item.id}"><strong>Subir imagen(es)</strong><span>Arrastre aquí o haga clic</span><input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></div><div class="actions"><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
 }
 
 function render() {
@@ -61,7 +61,30 @@ function render() {
     return `<section class="package-category" data-package-category="${section.type}"><div class="package-category-header"><div><h2>${section.title}</h2><p class="muted">${section.description}</p></div><button class="btn" type="button" data-new-package-type="${section.type}">Agregar paquete</button></div>${items.length ? `<div class="catalog-grid">${items.map(renderPackageCard).join("")}</div>` : `<div class="empty-state compact-empty">No hay paquetes en esta categoría.</div>`}</section>`;
   }).join("");
   document.querySelector("#packagesTable").innerHTML = `<div class="package-categories">${sections}</div>`;
+  bindPackageDropzones();
   hydrateCatalogThumbs();
+}
+
+function bindPackageDropzones() {
+  document.querySelectorAll("[data-package-dropzone]").forEach((dropzone) => {
+    const packageId = dropzone.dataset.packageDropzone;
+    const input = dropzone.querySelector("[data-package-upload]");
+    bindFileDropzone(dropzone, input, (files) => uploadPackageFiles(packageId, files, input));
+  });
+}
+
+async function uploadPackageFiles(packageId, files, input) {
+  if (!files.length) return;
+  try {
+    for (const file of files) await uploadPackageImage(packageId, file);
+    showToast(files.length === 1 ? "Imagen del paquete subida." : "Imágenes del paquete subidas.");
+    await load();
+  } catch (error) {
+    console.error(error);
+    showToast(error.message || "No se pudo subir la imagen.", "error");
+  } finally {
+    if (input) input.value = "";
+  }
 }
 
 async function load() {
@@ -127,21 +150,6 @@ document.addEventListener("click", async (event) => {
     await supabase.from("packages").update({ is_active: false }).eq("id", event.target.dataset.deactivate);
     showToast("Paquete desactivado.");
     load();
-  }
-});
-document.addEventListener("change", async (event) => {
-  if (!event.target.dataset.packageUpload) return;
-  const files = Array.from(event.target.files || []);
-  if (!files.length) return;
-  try {
-    for (const file of files) await uploadPackageImage(event.target.dataset.packageUpload, file);
-    showToast(files.length === 1 ? "Imagen del paquete subida." : "Imágenes del paquete subidas.");
-    await load();
-  } catch (error) {
-    console.error(error);
-    showToast(error.message || "No se pudo subir la imagen.", "error");
-  } finally {
-    event.target.value = "";
   }
 });
 ["searchInput", "activeFilter"].forEach((id) => document.querySelector(`#${id}`).addEventListener("input", render));

@@ -1,5 +1,44 @@
 import { APP_CONFIG } from "./config.js";
 
+const isFileDrag = (event) => Array.from(event.dataTransfer?.types || []).includes("Files");
+document.addEventListener("dragover", (event) => {
+  if (isFileDrag(event)) event.preventDefault();
+}, true);
+document.addEventListener("drop", (event) => {
+  if (isFileDrag(event)) event.preventDefault();
+}, true);
+
+export function bindFileDropzone(dropzone, input, onFiles) {
+  if (!dropzone || !input || dropzone.dataset.dropBound) return;
+  dropzone.dataset.dropBound = "true";
+  dropzone.addEventListener("click", (event) => {
+    if (event.target !== input) input.click();
+  });
+  dropzone.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      input.click();
+    }
+  });
+  dropzone.addEventListener("dragover", (event) => {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    dropzone.classList.add("dragover");
+  });
+  dropzone.addEventListener("dragleave", (event) => {
+    if (!dropzone.contains(event.relatedTarget)) dropzone.classList.remove("dragover");
+  });
+  dropzone.addEventListener("drop", async (event) => {
+    if (!isFileDrag(event)) return;
+    event.preventDefault();
+    dropzone.classList.remove("dragover");
+    await onFiles(Array.from(event.dataTransfer.files || []));
+  });
+  input.addEventListener("change", async () => {
+    await onFiles(Array.from(input.files || []));
+  });
+}
+
 export function generateToken(length = 40) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   const bytes = new Uint8Array(length);

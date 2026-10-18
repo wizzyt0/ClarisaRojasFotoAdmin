@@ -1,7 +1,7 @@
 import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { deleteDiplomaTemplate, getCatalogFileUrl, getDiplomaTemplates, getFolderTemplates, updateDiplomaTemplate, uploadDiplomaTemplate, uploadFolderTemplate } from "./catalog.js";
-import { escapeHtml, showToast } from "./utils.js";
+import { bindFileDropzone, escapeHtml, showToast } from "./utils.js";
 import { formatDateTime } from "./formatters.js";
 
 await requireAuth(["owner"]);
@@ -10,6 +10,7 @@ let templates = [];
 let folderTemplates = [];
 const modal = document.querySelector("#diplomaModal");
 const form = document.querySelector("#diplomaForm");
+let droppedDesignFile = null;
 const schoolLevelLabel = (value) => ({ KINDER: "Preescolar / Kinder", PRIMARY: "Primaria", SECONDARY: "Secundaria" }[value] || "Sin nivel");
 const safeCanvaUrl = (value) => {
   try {
@@ -21,6 +22,19 @@ const safeCanvaUrl = (value) => {
     return "";
   }
 };
+
+bindFileDropzone(document.querySelector("#catalogDesignDropzone"), form.file, async (files) => {
+  droppedDesignFile = files[0] || null;
+  if (!droppedDesignFile) return;
+  try {
+    const transfer = new DataTransfer();
+    transfer.items.add(droppedDesignFile);
+    form.file.files = transfer.files;
+  } catch {
+    // Keep the dropped File in memory for browsers without writable FileList support.
+  }
+  document.querySelector("#catalogDesignFileName").textContent = droppedDesignFile.name;
+});
 
 function render() {
   document.querySelector("#diplomaTemplates").innerHTML = `
@@ -123,12 +137,15 @@ document.addEventListener("click", async (event) => {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const file = form.file.files?.[0];
-  if (!file) return showToast("Seleccione un archivo.", "error");
+  const uploadFile = file || droppedDesignFile;
+  if (!uploadFile) return showToast("Seleccione o arrastre un archivo.", "error");
   try {
-    if (form.catalog_kind.value === "FOLDER") await uploadFolderTemplate(form.name.value.trim(), form.school_level.value, file);
-    else await uploadDiplomaTemplate(form.name.value.trim(), form.school_level.value, file, form.canva_url.value);
+    if (form.catalog_kind.value === "FOLDER") await uploadFolderTemplate(form.name.value.trim(), form.school_level.value, uploadFile);
+    else await uploadDiplomaTemplate(form.name.value.trim(), form.school_level.value, uploadFile, form.canva_url.value);
     showToast("Diseño subido al catálogo.");
     form.reset();
+    droppedDesignFile = null;
+    document.querySelector("#catalogDesignFileName").textContent = "";
     modal.classList.add("hidden");
     await load();
   } catch (error) {

@@ -404,6 +404,10 @@ function setupItemDropzones() {
       dropzone.classList.remove("dragover");
       await uploadPrintItemFiles(itemId, fileType, Array.from(event.dataTransfer.files || []));
     });
+    input?.addEventListener("change", async () => {
+      await uploadPrintItemFiles(itemId, fileType, Array.from(input.files || []));
+      input.value = "";
+    });
   });
 }
 
