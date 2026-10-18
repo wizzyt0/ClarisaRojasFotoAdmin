@@ -101,13 +101,23 @@ function renderSavedPackageSelection() {
   const { print_item: item, job, client, school_group: group } = printItemData;
   const option = catalogOptions.find((entry) => entry.id === item.selected_file_id);
   const imageUrl = option ? catalogFileUrl(option) : "";
+  const unitPrice = Number(option?.price ?? printItemData.school_group?.unit_package_price ?? 0);
+  const groupTotal = Number(group?.price || 0);
+  const deposited = Number(group?.total_deposited || 0);
+  const remaining = Number(group?.remaining_balance ?? Math.max(groupTotal - deposited, 0));
   const photoFormat = group?.photo_format === "GROUP" ? "Foto grupal" : group?.photo_format === "INDIVIDUAL" ? "Foto individual" : "Formato no disponible";
   content.innerHTML = `<h1 class="approval-title">Su selección está registrada</h1>
     <p class="muted">${escapeHtml(client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p>
     <div class="alert alert-success"><strong>Esta es la opción que eligió:</strong>
       ${imageUrl ? `<div class="catalog-preview-large"><span><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(option.name)}"></span></div>` : ""}
       <p><strong>Paquete:</strong> ${escapeHtml(option?.name || "Selección guardada")}</p>
-      <p><strong>Formato:</strong> ${photoFormat}<br><strong>Cantidad:</strong> ${Number(group?.package_quantity || 0)} paquete(s)<br><strong>Total:</strong> ${formatMoney(group?.price || 0)}</p>
+      <p><strong>Formato:</strong> ${photoFormat}<br><strong>Cantidad:</strong> ${Number(group?.package_quantity || 0)} paquete(s)</p>
+    </div>
+    <h2>Resumen de su grupo</h2><div class="grid">
+      <p><strong>Precio por paquete:</strong><br>${formatMoney(unitPrice)}</p>
+      <p><strong>Total del grupo:</strong><br>${formatMoney(groupTotal)}</p>
+      <p><strong>Abonado a este grupo:</strong><br>${formatMoney(deposited)}</p>
+      <p><strong>Pendiente del grupo:</strong><br>${formatMoney(remaining)}</p>
     </div>
     <p class="muted">Gracias. Clarisa recibió su selección y continuará con el pedido.</p>
     <div class="alert"><strong>¿Requiere algún cambio?</strong><br>Comuníquese directamente con Clarisa Rojas.</div>`;

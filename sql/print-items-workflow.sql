@@ -157,8 +157,11 @@ begin
         'student_count', sg.student_count,
         'selected_package_id', sg.selected_package_id,
         'photo_format', sg.photo_format,
+        'unit_package_price', (select p.price from packages p where p.id = sg.selected_package_id),
         'package_quantity', sg.package_quantity,
-        'price', sg.price
+        'price', sg.price,
+        'total_deposited', coalesce((select sum(d.amount) from deposits d where d.group_id = sg.id), 0),
+        'remaining_balance', greatest(sg.price - coalesce((select sum(d.amount) from deposits d where d.group_id = sg.id), 0), 0)
       )
     end
   )
