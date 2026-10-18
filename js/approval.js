@@ -1,7 +1,7 @@
 import { supabase } from "./supabase.js";
 import { APP_CONFIG } from "./config.js";
 import { GALLERY_TYPES, getGalleryTypeLabel } from "./constants.js";
-import { formatMoney } from "./formatters.js";
+import { formatDate, formatMoney } from "./formatters.js";
 import { escapeHtml, getQueryParam, openInNewTab, showToast } from "./utils.js";
 
 const token = getQueryParam("token");
@@ -117,6 +117,7 @@ function renderSavedPackageSelection() {
       <p><strong>Precio por paquete:</strong><br>${formatMoney(unitPrice)}</p>
       <p><strong>Total del grupo:</strong><br>${formatMoney(groupTotal)}</p>
       <p><strong>Abonado a este grupo:</strong><br>${formatMoney(deposited)}</p>
+      <p><strong>Fecha del último abono:</strong><br>${group?.last_deposit_date ? formatDate(group.last_deposit_date) : "Sin abonos registrados"}</p>
       <p><strong>Pendiente del grupo:</strong><br>${formatMoney(remaining)}</p>
     </div>
     <p class="muted">Gracias. Clarisa recibió su selección y continuará con el pedido.</p>

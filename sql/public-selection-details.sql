@@ -72,7 +72,8 @@ begin
         'package_quantity', sg.package_quantity,
         'price', sg.price,
         'total_deposited', coalesce((select sum(d.amount) from deposits d where d.group_id = sg.id), 0),
-        'remaining_balance', greatest(sg.price - coalesce((select sum(d.amount) from deposits d where d.group_id = sg.id), 0), 0)
+        'remaining_balance', greatest(sg.price - coalesce((select sum(d.amount) from deposits d where d.group_id = sg.id), 0), 0),
+        'last_deposit_date', (select max(d.deposit_date) from deposits d where d.group_id = sg.id)
       )
     end
   )
