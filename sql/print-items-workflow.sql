@@ -155,6 +155,8 @@ begin
         'teacher_name', sg.teacher_name,
         'teacher_phone', sg.teacher_phone,
         'student_count', sg.student_count,
+        'selected_package_id', sg.selected_package_id,
+        'photo_format', sg.photo_format,
         'package_quantity', sg.package_quantity,
         'price', sg.price
       )

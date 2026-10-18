@@ -67,8 +67,8 @@ function renderPrintItemApproval() {
     content.innerHTML = `<h1>Esta pieza ya fue aprobada para impresión.</h1><p class="muted">Fecha de aprobación: ${new Date(item.approved_at).toLocaleString("es-MX")}</p>`;
     return;
   }
-  if (item.status === "CATALOG_SELECTED" && !["DIPLOMA", "FOLDER_OPTION"].includes(item.item_type)) {
-    content.innerHTML = `<div class="alert alert-success"><h1>Selección recibida.</h1><p>Gracias. Clarisa preparará la versión personalizada y la enviará después para revisión y autorización final.</p></div>`;
+  if (item.status === "CATALOG_SELECTED" && item.item_type === "PHOTO_PACKAGE") {
+    renderSavedPackageSelection();
     return;
   }
   const needsCatalogSelection = ["DIPLOMA", "PHOTO_PACKAGE", "FOLDER_OPTION"].includes(item.item_type) && !item.selected_file_id;
@@ -95,6 +95,22 @@ function renderPrintItemApproval() {
       <label class="form-group"><span><input type="checkbox" name="terms"> Confirmo que revisé esta pieza y autorizo enviarla a impresión. Entiendo que cualquier cambio solicitado después de esta aprobación tendrá costo adicional.</span></label>
       <div class="actions"><button class="btn btn-primary" type="submit" name="action" value="approve">Autorizar esta pieza para impresión</button><button class="btn" type="submit" name="action" value="changes">Solicitar cambios</button></div>
     </form>`;
+}
+
+function renderSavedPackageSelection() {
+  const { print_item: item, job, client, school_group: group } = printItemData;
+  const option = catalogOptions.find((entry) => entry.id === item.selected_file_id);
+  const imageUrl = option ? catalogFileUrl(option) : "";
+  const photoFormat = group?.photo_format === "GROUP" ? "Foto grupal" : group?.photo_format === "INDIVIDUAL" ? "Foto individual" : "Formato no disponible";
+  content.innerHTML = `<h1 class="approval-title">Su selección está registrada</h1>
+    <p class="muted">${escapeHtml(client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p>
+    <div class="alert alert-success"><strong>Esta es la opción que eligió:</strong>
+      ${imageUrl ? `<div class="catalog-preview-large"><span><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(option.name)}"></span></div>` : ""}
+      <p><strong>Paquete:</strong> ${escapeHtml(option?.name || "Selección guardada")}</p>
+      <p><strong>Formato:</strong> ${photoFormat}<br><strong>Cantidad:</strong> ${Number(group?.package_quantity || 0)} paquete(s)<br><strong>Total:</strong> ${formatMoney(group?.price || 0)}</p>
+    </div>
+    <p class="muted">Gracias. Clarisa recibió su selección y continuará con el pedido.</p>
+    <div class="alert"><strong>¿Requiere algún cambio?</strong><br>Comuníquese directamente con Clarisa Rojas.</div>`;
 }
 
 function printItemFileUrl(file) {
@@ -137,7 +153,14 @@ function renderSchoolCatalog() {
     return `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(url)}" type="button"><span><img src="${escapeHtml(url)}" alt="${escapeHtml(option.name)}"></span></button><div><h3>${escapeHtml(option.name)}</h3></div>${chosen ? `<span class="badge badge-success">Seleccionado</span>` : `<button class="btn btn-primary" data-select-school-catalog="${kind}:${option.id}">Elegir este diseño</button>`}</article>`;
   }).join("") : `<div class="empty-state">No hay diseños disponibles para este nivel escolar.</div>`}</div></section>`;
   const bothSelected = schoolCatalog.diploma_selected_id && schoolCatalog.folder_selected_id;
-  content.innerHTML = `<h1 class="approval-title">Elija diploma y carpeta</h1><p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p><p>Las opciones corresponden a ${escapeHtml({ KINDER: "preescolar", PRIMARY: "primaria", SECONDARY: "secundaria" }[schoolCatalog.school_level] || "su nivel escolar")}.</p>${catalogSection("DIPLOMA", "Diplomas", schoolCatalog.diploma_options, schoolCatalog.diploma_selected_id)}${catalogSection("FOLDER", "Carpetas", schoolCatalog.folder_options, schoolCatalog.folder_selected_id)}${bothSelected ? `<div class="alert alert-success"><strong>Sus dos elecciones quedaron registradas.</strong></div>` : ""}`;
+  const selectedSummary = (title, options, selectedId) => {
+    const selected = options.find((option) => option.id === selectedId);
+    if (!selected) return "";
+    const url = catalogFileUrl(selected);
+    return `<article class="catalog-card"><div class="catalog-preview-large"><span><img src="${escapeHtml(url)}" alt="${escapeHtml(selected.name)}"></span></div><h3>${escapeHtml(title)}: ${escapeHtml(selected.name)}</h3></article>`;
+  };
+  const hasSelection = schoolCatalog.diploma_selected_id || schoolCatalog.folder_selected_id;
+  content.innerHTML = `<h1 class="approval-title">Elija diploma y carpeta</h1><p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p><p>Las opciones corresponden a ${escapeHtml({ KINDER: "preescolar", PRIMARY: "primaria", SECONDARY: "secundaria" }[schoolCatalog.school_level] || "su nivel escolar")}.</p>${hasSelection ? `<section class="catalog-section"><h2>Sus elecciones guardadas</h2><div class="catalog-grid">${selectedSummary("Diploma elegido", schoolCatalog.diploma_options, schoolCatalog.diploma_selected_id)}${selectedSummary("Carpeta elegida", schoolCatalog.folder_options, schoolCatalog.folder_selected_id)}</div>${bothSelected ? `<div class="alert alert-success">Sus dos elecciones quedaron registradas.</div>` : ""}<div class="alert"><strong>¿Requiere algún cambio?</strong><br>Comuníquese directamente con Clarisa Rojas.</div></section>` : ""}${catalogSection("DIPLOMA", "Diplomas", schoolCatalog.diploma_options, schoolCatalog.diploma_selected_id)}${catalogSection("FOLDER", "Carpetas", schoolCatalog.folder_options, schoolCatalog.folder_selected_id)}`;
 }
 
 async function saveSchoolCatalogSelection(kind, optionId) {
@@ -220,7 +243,7 @@ async function load() {
         return;
       }
     }
-    if (["DIPLOMA", "PHOTO_PACKAGE", "FOLDER_OPTION"].includes(data.print_item?.item_type) && !data.print_item?.selected_file_id) {
+    if (["DIPLOMA", "PHOTO_PACKAGE", "FOLDER_OPTION"].includes(data.print_item?.item_type) && (!data.print_item?.selected_file_id || data.print_item?.item_type === "PHOTO_PACKAGE")) {
       const catalogResult = await supabase.rpc("get_public_catalog_by_print_item_token", { token: itemToken });
       if (!catalogResult.error) catalogOptions = catalogResult.data || [];
     }
