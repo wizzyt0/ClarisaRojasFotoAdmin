@@ -175,13 +175,18 @@ function renderSchoolGroupCard(group, index) {
   const approvalItems = items.filter((item) => item.item_type !== "PHOTO_PACKAGE");
   const approved = approvalItems.filter((item) => printItemClass(item.status) === "approved").length;
   const changes = items.filter((item) => item.status === "CHANGES_REQUESTED").length;
+  const schoolDesignItems = items.filter((item) => ["DIPLOMA", "FOLDER_OPTION"].includes(item.item_type));
+  const schoolDesignCatalogPending = schoolDesignItems.some((item) => !item.selected_file_id);
+  const schoolDesignCatalogItem = schoolDesignItems.find((item) => !item.selected_file_id)
+    || schoolDesignItems.find((item) => item.item_type === "DIPLOMA")
+    || schoolDesignItems[0];
   const groupGalleries = galleries.filter((gallery) => gallery.group_id === group.id);
   const progress = isChristmasJob()
     ? (groupGalleries.some((gallery) => gallery.is_active) ? "Galería registrada" : "Galería pendiente")
     : `${approved} de ${approvalItems.length} piezas aprobadas`;
   return `<details class="workflow-group" data-disclosure="group-${group.id}" ${index === 0 ? "open" : ""}>
     <summary class="workflow-group-heading"><div><strong>${escapeHtml(group.group_name)}</strong><span class="muted"> · ${escapeHtml(group.teacher_name || "Sin maestra")}</span><p>${Number(group.package_quantity || 0)} paquetes · ${escapeHtml(group.packages?.name || "Sin selección")} · ${photoFormatLabel(group.photo_format)}</p><span class="workflow-progress">${changes ? `<b>${changes} cambio(s) pendiente(s)</b> · ` : ""}${progress}</span></div>${renderGroupFinancialSummary(group)}</summary>
-    <div class="workflow-group-content"><div class="workflow-group-actions"><span class="muted">WhatsApp: ${escapeHtml(group.teacher_phone || "Sin registrar")}</span><div class="actions"><button class="btn" data-edit-group="${group.id}">Editar grupo / paquete</button><button class="btn" data-group-deposit="${group.id}">Registrar abono</button><button class="btn btn-danger" data-delete-group="${group.id}">Eliminar grupo</button></div></div>
+    <div class="workflow-group-content"><div class="workflow-group-actions"><span class="muted">WhatsApp: ${escapeHtml(group.teacher_phone || "Sin registrar")}</span><div class="actions">${!isChristmasJob() && schoolDesignCatalogPending && schoolDesignCatalogItem ? `<button class="btn btn-primary" data-send-school-design-catalog="${schoolDesignCatalogItem.id}">Enviar diploma y carpeta por WhatsApp</button>` : ""}<button class="btn" data-edit-group="${group.id}">Editar grupo / paquete</button><button class="btn" data-group-deposit="${group.id}">Registrar abono</button><button class="btn btn-danger" data-delete-group="${group.id}">Eliminar grupo</button></div></div>
     ${isChristmasJob() ? `<div class="workflow-christmas-package"><strong>Paquete navideño</strong><span>${escapeHtml(group.packages?.name || "Pendiente")} · ${photoFormatLabel(group.photo_format)} · ${Number(group.package_quantity || 0)} paquetes</span></div><details class="workflow-piece" data-disclosure="gallery-${group.id}"><summary><span class="workflow-step">2</span><strong>Galería del grupo</strong><span class="badge">${groupGalleries.some((gallery) => gallery.is_active) ? "Registrada" : "Pendiente"}</span></summary><div class="workflow-piece-content">${renderGroupGalleries(group.id)}</div></details>` : items.map(renderPrintItemCard).join("")}
     </div></details>`;
 }
@@ -263,6 +268,7 @@ function renderPrintItemCard(item) {
   const files = r2Files.filter((file) => file.print_item_id === item.id);
   const step = printItemStep(item.item_type);
   const packagePiece = item.item_type === "PHOTO_PACKAGE";
+  const schoolDesignPiece = ["DIPLOMA", "FOLDER_OPTION"].includes(item.item_type);
   const selection = packagePiece ? groupPackageSelection(item) : null;
   const catalogPending = packagePiece ? !selection.complete : ["DIPLOMA", "FOLDER_OPTION"].includes(item.item_type) && !item.selected_file_id;
   const canUpload = !catalogPending && !packagePiece;
@@ -272,7 +278,7 @@ function renderPrintItemCard(item) {
     ${item.client_notes ? `<div class="review-note"><strong>${item.status === "CHANGES_REQUESTED" ? "Cambio solicitado" : "Observaciones de la maestra"}</strong><p>${escapeHtml(item.client_notes)}</p></div>` : ""}
     ${canUpload ? itemUpload(item, "TEACHER_PREVIEW", item.status === "CHANGES_REQUESTED" ? "Subir corrección" : "Subir preview") : ""}
     </div></div><div class="workflow-piece-toolbar">${renderAssignmentSummary(item)}
-    <div class="actions">${packagePiece && item.group_id ? `<button class="btn" data-edit-group="${item.group_id}">Editar paquete / cantidad</button>` : ""}<button class="btn btn-primary" data-send-print-item="${item.id}">${packagePiece || catalogPending ? "Enviar catálogo por WhatsApp" : "Enviar revisión por WhatsApp"}</button></div>
+    <div class="actions">${packagePiece && item.group_id ? `<button class="btn" data-edit-group="${item.group_id}">Editar paquete / cantidad</button>` : ""}${schoolDesignPiece && catalogPending ? "" : `<button class="btn btn-primary" data-send-print-item="${item.id}">${packagePiece || catalogPending ? "Enviar catálogo por WhatsApp" : "Enviar revisión por WhatsApp"}</button>`}</div>
     </div>${renderPieceFiles(item, files)}${item.item_type === "STUDENT_GALLERY" && item.group_id ? renderGroupGalleries(item.group_id) : ""}</div></details>`;
 }
 
@@ -911,6 +917,7 @@ document.addEventListener("click", async (event) => {
     if (event.target.matches("#newGalleryBtn")) openGalleryForm();
     if (event.target.matches("#sendTeacherPreviewWhatsappBtn")) await sendTeacherPreviewWhatsapp();
     if (event.target.dataset.sendGalleryWhatsapp) await sendChristmasGalleryWhatsapp(event.target.dataset.sendGalleryWhatsapp);
+    if (event.target.dataset.sendSchoolDesignCatalog) await sendPrintItemWhatsapp(event.target.dataset.sendSchoolDesignCatalog);
     if (event.target.dataset.sendPrintItem) await sendPrintItemWhatsapp(event.target.dataset.sendPrintItem);
     if (catalogButton) {
       const [table, fileId] = catalogButton.dataset.openCatalogFile.split(":");
