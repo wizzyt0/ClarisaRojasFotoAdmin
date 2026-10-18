@@ -19,3 +19,22 @@ $$;
 
 revoke all on function public.get_my_assignment_canva_links() from public;
 grant execute on function public.get_my_assignment_canva_links() to authenticated;
+
+-- Return client correction notes only for assignments owned by the signed-in editor.
+create or replace function public.get_my_assignment_review_notes()
+returns table (assignment_id uuid, client_notes text)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select wa.id, pi.client_notes
+  from public.work_assignments wa
+  join public.print_items pi on pi.id = wa.print_item_id
+  where wa.assigned_to = (select auth.uid())
+    and pi.client_notes is not null
+    and btrim(pi.client_notes) <> '';
+$$;
+
+revoke all on function public.get_my_assignment_review_notes() from public;
+grant execute on function public.get_my_assignment_review_notes() to authenticated;

@@ -60,6 +60,7 @@ function render(tasks) {
     <div class="page-header"><div><h2>${escapeHtml(task.display_label)}</h2><span class="badge">${escapeHtml(ASSIGNMENT_STATUSES[task.status] || task.status)}</span></div></div>
     ${task.internal_brief ? `<p><strong>Indicaciones:</strong><br>${escapeHtml(task.internal_brief)}</p>` : ""}
     ${canvaUrl ? `<p><strong>Diseño base${task.template_name ? `: ${escapeHtml(task.template_name)}` : ""}:</strong></p><p><a class="btn btn-secondary" href="${escapeHtml(canvaUrl)}" target="_blank" rel="noopener noreferrer">Abrir diseño en Canva</a></p>` : ""}
+    ${task.client_notes && ["CHANGES_REQUESTED", "IN_PROGRESS"].includes(task.status) ? `<div class="alert alert-warning"><strong>Correcciones solicitadas por la maestra</strong><p>${escapeHtml(task.client_notes)}</p></div>` : ""}
     ${task.editor_note ? `<p><strong>Tu nota anterior:</strong><br>${escapeHtml(task.editor_note)}</p>` : ""}
     <div class="task-preview-frame" data-task-preview="${task.id}"></div>
     <div class="form-group"><label>Nota para revisión interna</label><textarea class="textarea" data-editor-note="${task.id}" placeholder="Describe lo que preparaste o responde a las observaciones."></textarea></div>

@@ -47,16 +47,21 @@ export async function getMyAssignments() {
     .order("updated_at", { ascending: false });
   if (error) throw error;
   const assignments = data || [];
-  const { data: canvaLinks, error: canvaError } = await supabase.rpc("get_my_assignment_canva_links");
-  if (canvaError) {
-    console.warn("No se pudieron cargar los links de Canva de las tareas.", canvaError);
-    return assignments;
-  }
+  const [canvaResult, notesResult] = await Promise.all([
+    supabase.rpc("get_my_assignment_canva_links"),
+    supabase.rpc("get_my_assignment_review_notes")
+  ]);
+  const { data: canvaLinks, error: canvaError } = canvaResult;
+  const { data: reviewNotes, error: notesError } = notesResult;
+  if (canvaError) console.warn("No se pudieron cargar los links de Canva de las tareas.", canvaError);
+  if (notesError) console.warn("No se pudieron cargar las observaciones de las maestras.", notesError);
   const linksByAssignment = new Map((canvaLinks || []).map((entry) => [entry.assignment_id, entry]));
+  const notesByAssignment = new Map((reviewNotes || []).map((entry) => [entry.assignment_id, entry.client_notes]));
   return assignments.map((assignment) => ({
     ...assignment,
     canva_url: linksByAssignment.get(assignment.id)?.canva_url || null,
-    template_name: linksByAssignment.get(assignment.id)?.template_name || null
+    template_name: linksByAssignment.get(assignment.id)?.template_name || null,
+    client_notes: notesByAssignment.get(assignment.id) || null
   }));
 }
 

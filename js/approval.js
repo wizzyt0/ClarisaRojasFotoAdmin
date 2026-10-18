@@ -263,7 +263,8 @@ async function load() {
       return;
     }
     printItemData = data;
-    if (["DIPLOMA", "FOLDER_OPTION"].includes(data.print_item?.item_type)) {
+    const hasPersonalizedPreview = (data.preview_files || []).length > 0;
+    if (["DIPLOMA", "FOLDER_OPTION"].includes(data.print_item?.item_type) && !hasPersonalizedPreview) {
       const combinedResult = await supabase.rpc("get_public_school_catalog_by_print_item_token", { token: itemToken });
       if (combinedResult.error) {
         console.error(combinedResult.error);
