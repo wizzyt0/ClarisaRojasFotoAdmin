@@ -29,6 +29,7 @@ let schoolGroups = [];
 let packages = [];
 let assignments = [];
 let editors = [];
+let diplomaCanvaLinks = new Map();
 let selectedWhatsappUrl = "";
 let currentMessage = "";
 const modal = document.querySelector("#detailModal");
@@ -36,6 +37,14 @@ const form = document.querySelector("#detailForm");
 
 const isChristmasJob = () => job?.job_type === "SCHOOL_GRADUATION" && job?.event_type === "CHRISTMAS";
 const photoFormatLabel = (value) => value === "GROUP" ? "Foto grupal" : value === "INDIVIDUAL" ? "Foto individual" : "Formato pendiente";
+function safeCanvaUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return url.protocol === "https:" && (url.hostname === "canva.com" || url.hostname.endsWith(".canva.com")) ? url.href : "";
+  } catch {
+    return "";
+  }
+}
 
 function approvalUrl() {
   return `${APP_CONFIG.appUrl.replace(/\/$/, "")}/approval.html?token=${job.approval_token}`;
@@ -104,6 +113,18 @@ async function loadJob() {
       assignments = [];
       editors = [];
       showToast(`Las piezas cargaron, pero no las asignaciones de editor: ${error.message || "error desconocido"}`, "error");
+    }
+    diplomaCanvaLinks = new Map();
+    const diplomaIds = [...new Set(printItems
+      .filter((item) => item.item_type === "DIPLOMA" && item.selected_file_id)
+      .map((item) => item.selected_file_id))];
+    if (diplomaIds.length) {
+      const { data: diplomaRows, error: diplomaError } = await supabase
+        .from("diploma_templates")
+        .select("id, canva_url")
+        .in("id", diplomaIds);
+      if (diplomaError) console.warn("No se pudieron cargar los links de Canva de los diplomas.", diplomaError);
+      else diplomaCanvaLinks = new Map((diplomaRows || []).map((row) => [row.id, row.canva_url]));
     }
   }
   const { data: packagesData, error: packagesError } = await supabase.from("packages").select("*").eq("is_active", true).order("name");
@@ -335,7 +356,8 @@ function renderSelectedVisual(item, files) {
     return `<div class="selected-visual"><span class="selection-label">Preview personalizado</span><button class="catalog-preview-large" data-preview-r2-file="${latestPreview.id}" type="button"><span data-r2-thumb="${latestPreview.id}">PREVIEW</span></button><p>${escapeHtml(latestPreview.file_name)}</p></div>`;
   }
   if (item.selected_file_id && item.item_type === "DIPLOMA") {
-    return `<div class="selected-visual"><span class="selection-label">Diploma seleccionado</span><button class="catalog-preview-large" data-open-catalog-file="diploma_templates:${item.selected_file_id}" type="button"><span data-catalog-thumb="diploma_templates:${item.selected_file_id}">DIPLOMA</span></button><p>${escapeHtml(item.notes || "")}</p></div>`;
+    const canvaUrl = safeCanvaUrl(diplomaCanvaLinks.get(item.selected_file_id));
+    return `<div class="selected-visual"><span class="selection-label">Diploma seleccionado</span><button class="catalog-preview-large" data-open-catalog-file="diploma_templates:${item.selected_file_id}" type="button"><span data-catalog-thumb="diploma_templates:${item.selected_file_id}">DIPLOMA</span></button><p>${escapeHtml(item.notes || "")}</p>${canvaUrl ? `<a class="btn btn-secondary" href="${escapeHtml(canvaUrl)}" target="_blank" rel="noopener noreferrer">Abrir diseño en Canva</a>` : `<p class="muted">Este diseño todavía no tiene link de Canva.</p>`}</div>`;
   }
   if (item.selected_file_id && item.item_type === "FOLDER_OPTION") {
     return `<div class="selected-visual"><span class="selection-label">Carpeta seleccionada</span><button class="catalog-preview-large" data-open-catalog-file="folder_templates:${item.selected_file_id}" type="button"><span data-catalog-thumb="folder_templates:${item.selected_file_id}">CARPETA</span></button><p>${escapeHtml(item.notes || "")}</p></div>`;

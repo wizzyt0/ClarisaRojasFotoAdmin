@@ -46,6 +46,7 @@ function render(tasks) {
   list.innerHTML = tasks.length ? tasks.map((task) => `<article class="card editor-task">
     <div class="page-header"><div><h2>${escapeHtml(task.display_label)}</h2><span class="badge">${escapeHtml(ASSIGNMENT_STATUSES[task.status] || task.status)}</span></div></div>
     ${task.internal_brief ? `<p><strong>Indicaciones:</strong><br>${escapeHtml(task.internal_brief)}</p>` : ""}
+    ${task.canva_url ? `<p><strong>Diseño base${task.template_name ? `: ${escapeHtml(task.template_name)}` : ""}:</strong></p><p><a class="btn btn-secondary" href="${escapeHtml(task.canva_url)}" target="_blank" rel="noopener noreferrer">Abrir diseño en Canva</a></p>` : ""}
     ${task.editor_note ? `<p><strong>Tu nota anterior:</strong><br>${escapeHtml(task.editor_note)}</p>` : ""}
     <div class="task-preview-frame" data-task-preview="${task.id}"></div>
     <div class="form-group"><label>Nota para revisión interna</label><textarea class="textarea" data-editor-note="${task.id}" placeholder="Describe lo que preparaste o responde a las observaciones."></textarea></div>
