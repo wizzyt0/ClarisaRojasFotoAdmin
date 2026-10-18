@@ -690,17 +690,11 @@ ${followUpText}
 Muchas gracias.
 Clarisa Rojas Fotografia`;
   } else {
-    const expiresAt = new Date(defaultR2Expiry(7)).toISOString();
-    const link = await createR2ShareLink(jobId, "TEACHER_PREVIEW", expiresAt, item.id);
-    const previewUrl = r2ShareUrl(link);
     message = `Hola ${contactName} 👋
 
 Ya está lista la revisión de: ${item.title}
 
-Puede revisar los archivos aquí:
-${previewUrl}
-
-Cuando esté correcto, por favor autorice esta pieza para impresión:
+En este mismo enlace puede revisar el preview, solicitar correcciones o autorizar la pieza para impresión:
 ${printItemApprovalUrl(item)}
 
 IMPORTANTE:
