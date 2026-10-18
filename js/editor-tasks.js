@@ -10,6 +10,17 @@ const welcomeName = currentUser?.staffName?.trim() || currentUser?.email || "Edi
 document.querySelector("#editorWelcome").textContent = `Bienvenido, ${welcomeName}`;
 document.querySelector("#editorEmail").textContent = currentUser?.email || "";
 
+function safeCanvaUrl(value) {
+  try {
+    const rawUrl = String(value || "").trim();
+    if (!rawUrl) return "";
+    const url = new URL(/^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`);
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
 async function authHeader() {
   const { supabase } = await import("./supabase.js");
   const { data } = await supabase.auth.getSession();
@@ -43,10 +54,12 @@ async function hydratePreviews() {
 }
 
 function render(tasks) {
-  list.innerHTML = tasks.length ? tasks.map((task) => `<article class="card editor-task">
+  list.innerHTML = tasks.length ? tasks.map((task) => {
+    const canvaUrl = safeCanvaUrl(task.canva_url);
+    return `<article class="card editor-task">
     <div class="page-header"><div><h2>${escapeHtml(task.display_label)}</h2><span class="badge">${escapeHtml(ASSIGNMENT_STATUSES[task.status] || task.status)}</span></div></div>
     ${task.internal_brief ? `<p><strong>Indicaciones:</strong><br>${escapeHtml(task.internal_brief)}</p>` : ""}
-    ${task.canva_url ? `<p><strong>Diseño base${task.template_name ? `: ${escapeHtml(task.template_name)}` : ""}:</strong></p><p><a class="btn btn-secondary" href="${escapeHtml(task.canva_url)}" target="_blank" rel="noopener noreferrer">Abrir diseño en Canva</a></p>` : ""}
+    ${canvaUrl ? `<p><strong>Diseño base${task.template_name ? `: ${escapeHtml(task.template_name)}` : ""}:</strong></p><p><a class="btn btn-secondary" href="${escapeHtml(canvaUrl)}" target="_blank" rel="noopener noreferrer">Abrir diseño en Canva</a></p>` : ""}
     ${task.editor_note ? `<p><strong>Tu nota anterior:</strong><br>${escapeHtml(task.editor_note)}</p>` : ""}
     <div class="task-preview-frame" data-task-preview="${task.id}"></div>
     <div class="form-group"><label>Nota para revisión interna</label><textarea class="textarea" data-editor-note="${task.id}" placeholder="Describe lo que preparaste o responde a las observaciones."></textarea></div>
@@ -54,7 +67,8 @@ function render(tasks) {
       ${["ASSIGNED", "CHANGES_REQUESTED"].includes(task.status) ? `<button class="btn" data-start-task="${task.id}">Marcar en proceso</button>` : ""}
       ${!["COMPLETED", "CANCELLED", "SENT_TO_CLIENT"].includes(task.status) ? `<div class="editor-dropzone" tabindex="0" data-editor-dropzone="${task.id}"><strong>Subir preview</strong><span>Arrastre aquí o haga clic para seleccionar un archivo.</span><input hidden type="file" accept="image/*,.pdf" data-task-upload="${task.id}"></div><button class="btn btn-secondary" data-ready-task="${task.id}">Listo para revisión interna</button>` : ""}
     </div>
-  </article>`).join("") : `<div class="empty-state">No tienes tareas asignadas. Cuando una propietaria te asigne una pieza, aparecerá aquí.</div>`;
+  </article>`;
+  }).join("") : `<div class="empty-state">No tienes tareas asignadas. Cuando una propietaria te asigne una pieza, aparecerá aquí.</div>`;
 }
 
 async function load() {
