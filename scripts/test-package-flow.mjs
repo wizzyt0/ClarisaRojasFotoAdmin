@@ -15,6 +15,7 @@ const primary = id(5), kinder = id(6), christmas = id(7), unclassified = id(8);
 const groupA = id(9), groupB = id(10), pieceA = id(11);
 const imageA = id(12), imageB = id(13), deposit = id(14);
 const alternative = id(15), alternativeImage = id(16);
+const diplomaItem = id(17), folderItem = id(18), diplomaPrimary = id(19), diplomaKinder = id(20), folderPrimary = id(21), folderKinder = id(22);
 const query = (sql, args = []) => db.query(sql, args);
 const rows = async (sql, args) => (await query(sql, args)).rows;
 
@@ -57,6 +58,9 @@ try {
   const photoSelectionMigration = readFileSync(resolve(root, "sql/package-photo-selection.sql"), "utf8");
   await db.exec(photoSelectionMigration);
   await db.exec(photoSelectionMigration); // The format migration must also be repeatable.
+  const combinedCatalogMigration = readFileSync(resolve(root, "sql/combined-school-catalog.sql"), "utf8");
+  await db.exec(combinedCatalogMigration);
+  await db.exec(combinedCatalogMigration); // Combined catalog RPCs must also be repeatable.
   await db.exec(`
     insert into packages(id,name,price,package_type,school_level) values
       ('${primary}','Primaria',100,'SCHOOL_GRADUATION','PRIMARY'),
@@ -68,7 +72,27 @@ try {
     insert into school_groups(id,job_id,group_name) values ('${groupA}','${job}','6A'), ('${groupB}','${job}','6B');
     insert into print_items(id,job_id,group_id,item_type,approval_token)
       values ('${pieceA}','${job}','${groupA}','PHOTO_PACKAGE','test-token');
+    insert into diploma_templates(id,name,file_name,school_level,is_active,created_at) values
+      ('${diplomaPrimary}','Diploma primaria','primary-diploma.jpg','PRIMARY',true,now()),
+      ('${diplomaKinder}','Diploma preescolar','kinder-diploma.jpg','KINDER',true,now());
+    insert into folder_templates(id,name,file_name,school_level,is_active,created_at) values
+      ('${folderPrimary}','Carpeta primaria','primary-folder.jpg','PRIMARY',true,now()),
+      ('${folderKinder}','Carpeta preescolar','kinder-folder.jpg','KINDER',true,now());
+    insert into print_items(id,job_id,group_id,item_type,title,status,approval_token) values
+      ('${diplomaItem}','${job}','${groupA}','DIPLOMA','Diploma','PENDING','school-catalog-token'),
+      ('${folderItem}','${job}','${groupA}','FOLDER_OPTION','Carpeta','PENDING','folder-link-token');
   `);
+  const schoolCatalog = (await rows("select public.get_public_school_catalog_by_print_item_token('school-catalog-token') as result"))[0].result;
+  assert.deepEqual(schoolCatalog.diploma_options.map((option) => option.id), [diplomaPrimary]);
+  assert.deepEqual(schoolCatalog.folder_options.map((option) => option.id), [folderPrimary]);
+  const diplomaSelection = (await rows("select public.select_school_catalog_option_by_token('school-catalog-token','DIPLOMA',$1,null) as result", [diplomaPrimary]))[0].result;
+  assert.equal(diplomaSelection.ok, true);
+  const folderSelection = (await rows("select public.select_school_catalog_option_by_token('school-catalog-token','FOLDER',$1,null) as result", [folderPrimary]))[0].result;
+  assert.equal(folderSelection.ok, true);
+  assert.equal((await rows("select selected_file_id from print_items where id=$1", [diplomaItem]))[0].selected_file_id, diplomaPrimary);
+  assert.equal((await rows("select selected_file_id from print_items where id=$1", [folderItem]))[0].selected_file_id, folderPrimary);
+  const invalidLevelChoice = (await rows("select public.select_school_catalog_option_by_token('school-catalog-token','FOLDER',$1,null) as result", [folderKinder]))[0].result;
+  assert.equal(invalidLevelChoice.ok, false);
   assert.deepEqual((await rows("select get_public_catalog_by_print_item_token('test-token') as catalog"))[0].catalog.map(x=>x.package_id), [primary]);
   await assert.rejects(() => query("select select_package_option_by_token('test-token',$1,null,20,'GROUP')",[imageB]), /nivel escolar/);
   await query("select select_package_option_by_token('test-token',$1,null,20,'GROUP')",[imageA]);

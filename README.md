@@ -267,6 +267,10 @@ Utilizan una base PostgreSQL temporal, nunca la base de Supabase en produccion.
 Para que la maestra elija foto grupal o individual dentro del paquete seleccionado, aplique
 `sql/package-photo-selection.sql` y siga [la guía de selección de paquetes](docs/seleccion-paquete-formato.md).
 
+Para mostrar diplomas y carpetas en una sola página pública por grupo, filtrados al nivel escolar,
+aplique después `sql/combined-school-catalog.sql`. El enlace enviado desde cualquiera de esas dos
+piezas abre el mismo catálogo y registra cada selección en su pieza correspondiente.
+
 - “Debe iniciar sesión”: no hay sesión activa de Supabase Auth.
 - “No se pudo cargar la información”: revise `SUPABASE_URL`, `SUPABASE_ANON_KEY`, RLS y que las tablas existan.
 - “El link de aprobación no existe o expiró”: token incorrecto, revocado o expirado.

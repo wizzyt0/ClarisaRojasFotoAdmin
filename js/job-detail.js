@@ -617,10 +617,16 @@ async function sendPrintItemWhatsapp(itemId) {
   const groupLine = group?.group_name ? `Grupo: ${group.group_name}\n` : "";
   let message = "";
   if (isCatalogSelection) {
-    const catalogName = item.item_type === "DIPLOMA" ? "diplomas" : item.item_type === "FOLDER_OPTION" ? "carpetas" : "paquetes de fotos";
+    const isSchoolDesignCatalog = ["DIPLOMA", "FOLDER_OPTION"].includes(item.item_type);
+    const catalogItem = isSchoolDesignCatalog
+      ? printItems.find((entry) => entry.group_id === item.group_id && entry.item_type === "DIPLOMA") || item
+      : item;
+    const catalogName = isSchoolDesignCatalog ? "diplomas y carpetas" : "paquetes de fotos";
     const followUpText = item.item_type === "PHOTO_PACKAGE"
       ? "Al elegir un paquete, podrá indicar si desea foto grupal o individual y la cantidad. El precio corresponde al paquete elegido; el formato no agrega costo."
-      : "Cuando elija una opción, quedará registrada su selección para este grupo.";
+      : isSchoolDesignCatalog
+        ? "En el mismo enlace podrá elegir un diploma y una carpeta. Solo verá diseños correspondientes al nivel escolar de su grupo."
+        : "Cuando elija una opción, quedará registrada su selección para este grupo.";
     message = `Hola ${contactName} 👋
 
 Ya está listo el catálogo de ${catalogName} para que pueda elegir la opción que más le guste.
@@ -629,7 +635,7 @@ Escuela: ${school.school_name || job.clients.name}
 ${groupLine}Trabajo: ${job.title}
 
 Puede revisar y seleccionar aquí:
-${printItemApprovalUrl(item)}
+${printItemApprovalUrl(catalogItem)}
 
 ${followUpText}
 
@@ -660,7 +666,14 @@ Clarisa Rojas Fotografia`;
   selectedWhatsappUrl = waMeUrl;
   document.querySelector("#whatsappMessage").value = message;
   const nextStatus = item.item_type === "PHOTO_PACKAGE" && groupPackageSelection(item).complete ? "CATALOG_SELECTED" : "SENT_FOR_APPROVAL";
-  await updatePrintItem(item.id, { status: nextStatus, sent_at: new Date().toISOString() });
+  if (["DIPLOMA", "FOLDER_OPTION"].includes(item.item_type)) {
+    const now = new Date().toISOString();
+    await Promise.all(printItems
+      .filter((entry) => entry.group_id === item.group_id && ["DIPLOMA", "FOLDER_OPTION"].includes(entry.item_type))
+      .map((entry) => updatePrintItem(entry.id, { status: entry.status === "CATALOG_SELECTED" ? entry.status : "SENT_FOR_APPROVAL", sent_at: now })));
+  } else {
+    await updatePrintItem(item.id, { status: nextStatus, sent_at: new Date().toISOString() });
+  }
   await supabase.from("message_logs").insert({
     job_id: job.id,
     client_id: job.client_id,

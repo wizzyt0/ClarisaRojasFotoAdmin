@@ -10,6 +10,7 @@ const content = document.querySelector("#approvalContent");
 let approvalData = null;
 let printItemData = null;
 let catalogOptions = [];
+let schoolCatalog = null;
 let pendingCatalogSelection = null;
 
 function galleryButton(gallery) {
@@ -66,7 +67,7 @@ function renderPrintItemApproval() {
     content.innerHTML = `<h1>Esta pieza ya fue aprobada para impresión.</h1><p class="muted">Fecha de aprobación: ${new Date(item.approved_at).toLocaleString("es-MX")}</p>`;
     return;
   }
-  if (item.status === "CATALOG_SELECTED") {
+  if (item.status === "CATALOG_SELECTED" && !["DIPLOMA", "FOLDER_OPTION"].includes(item.item_type)) {
     content.innerHTML = `<div class="alert alert-success"><h1>Selección recibida.</h1><p>Gracias. Clarisa preparará la versión personalizada y la enviará después para revisión y autorización final.</p></div>`;
     return;
   }
@@ -128,6 +129,36 @@ function renderCatalogSelection() {
     ${item.item_type === "PHOTO_PACKAGE" ? renderPackageQuantityDialog() : ""}`;
 }
 
+function renderSchoolCatalog() {
+  const { job, client, school_profile: school, school_group: group } = printItemData;
+  const catalogSection = (kind, title, options, selectedId) => `<section class="catalog-section"><div class="page-header"><h2>${title}</h2><span class="badge">${selectedId ? "Selección guardada" : "Pendiente de elegir"}</span></div><div class="catalog-grid">${options.length ? options.map((option) => {
+    const chosen = option.id === selectedId;
+    const url = catalogFileUrl(option);
+    return `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(url)}" type="button"><span><img src="${escapeHtml(url)}" alt="${escapeHtml(option.name)}"></span></button><div><h3>${escapeHtml(option.name)}</h3></div>${chosen ? `<span class="badge badge-success">Seleccionado</span>` : `<button class="btn btn-primary" data-select-school-catalog="${kind}:${option.id}">Elegir este diseño</button>`}</article>`;
+  }).join("") : `<div class="empty-state">No hay diseños disponibles para este nivel escolar.</div>`}</div></section>`;
+  const bothSelected = schoolCatalog.diploma_selected_id && schoolCatalog.folder_selected_id;
+  content.innerHTML = `<h1 class="approval-title">Elija diploma y carpeta</h1><p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p><p>Las opciones corresponden a ${escapeHtml({ KINDER: "preescolar", PRIMARY: "primaria", SECONDARY: "secundaria" }[schoolCatalog.school_level] || "su nivel escolar")}.</p>${catalogSection("DIPLOMA", "Diplomas", schoolCatalog.diploma_options, schoolCatalog.diploma_selected_id)}${catalogSection("FOLDER", "Carpetas", schoolCatalog.folder_options, schoolCatalog.folder_selected_id)}${bothSelected ? `<div class="alert alert-success"><strong>Sus dos elecciones quedaron registradas.</strong></div>` : ""}`;
+}
+
+async function saveSchoolCatalogSelection(kind, optionId) {
+  const option = [...schoolCatalog.diploma_options, ...schoolCatalog.folder_options].find((item) => item.id === optionId);
+  if (!option || !confirm(`¿Confirmar ${kind === "DIPLOMA" ? "el diploma" : "la carpeta"} "${option.name}"?`)) return;
+  const { data, error } = await supabase.rpc("select_school_catalog_option_by_token", {
+    token: itemToken,
+    catalog_kind: kind,
+    option_id: optionId,
+    client_notes: null
+  });
+  if (error || !data?.ok) {
+    console.error(error || data);
+    showToast(data?.message || error?.message || "No se pudo guardar la selección.", "error");
+    return;
+  }
+  if (kind === "DIPLOMA") schoolCatalog.diploma_selected_id = optionId;
+  else schoolCatalog.folder_selected_id = optionId;
+  renderSchoolCatalog();
+}
+
 function renderPackageQuantityDialog() {
   const quantityOptions = Array.from({ length: 99 }, (_, index) => {
     const value = index + 1;
@@ -176,6 +207,19 @@ async function load() {
       return;
     }
     printItemData = data;
+    if (["DIPLOMA", "FOLDER_OPTION"].includes(data.print_item?.item_type)) {
+      const combinedResult = await supabase.rpc("get_public_school_catalog_by_print_item_token", { token: itemToken });
+      if (combinedResult.error) {
+        console.error(combinedResult.error);
+        content.innerHTML = `<div class="alert alert-error">No se pudo cargar el catálogo conjunto. Falta aplicar la migración de catálogo escolar en Supabase.</div>`;
+        return;
+      }
+      if (combinedResult.data) {
+        schoolCatalog = combinedResult.data;
+        renderSchoolCatalog();
+        return;
+      }
+    }
     if (["DIPLOMA", "PHOTO_PACKAGE", "FOLDER_OPTION"].includes(data.print_item?.item_type) && !data.print_item?.selected_file_id) {
       const catalogResult = await supabase.rpc("get_public_catalog_by_print_item_token", { token: itemToken });
       if (!catalogResult.error) catalogOptions = catalogResult.data || [];
@@ -200,6 +244,13 @@ async function load() {
 document.addEventListener("click", (event) => {
   const openButton = event.target.closest("[data-open-url]");
   if (openButton) openInNewTab(openButton.dataset.openUrl);
+});
+
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-select-school-catalog]");
+  if (!button || !schoolCatalog) return;
+  const [kind, optionId] = button.dataset.selectSchoolCatalog.split(":");
+  await saveSchoolCatalogSelection(kind, optionId);
 });
 
 document.addEventListener("click", async (event) => {

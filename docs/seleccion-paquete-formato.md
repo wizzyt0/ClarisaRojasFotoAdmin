@@ -14,4 +14,8 @@ Cada grupo conserva su paquete, precio e imagen de catálogo. La maestra elige *
 
 El enlace público solo muestra paquetes activos que coincidan con el evento y nivel de la escuela. Por eso, si el catálogo no tiene opciones, revise también que los paquetes tengan la categoría y el nivel correctos.
 
+## Catálogo conjunto de diploma y carpeta
+
+Para que cada maestra elija ambos diseños desde el mismo enlace, ejecute también `sql/combined-school-catalog.sql` en Supabase después de las migraciones anteriores. La página muestra las dos secciones filtradas al nivel escolar y guarda cada elección por separado en las piezas del grupo. El menú administrativo conserva un único acceso **Diplomas y carpetas**.
+
 No vuelva a ejecutar `sql/schema.sql` ni `sql/print-items-workflow.sql` en una base ya existente.
