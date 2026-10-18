@@ -13,7 +13,6 @@ let catalogOptions = [];
 let schoolCatalog = null;
 let pendingCatalogSelection = null;
 let pendingSchoolCatalogSelection = null;
-let schoolCatalogEditingKind = null;
 
 function galleryButton(gallery) {
   return `<button class="btn btn-secondary" data-open-url="${escapeHtml(gallery.google_photos_url)}">Ver ${getGalleryTypeLabel(gallery.gallery_type).toLowerCase()}</button>`;
@@ -166,18 +165,16 @@ function renderSchoolCatalog() {
     return `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(url)}" type="button"><span><img src="${escapeHtml(url)}" alt="${escapeHtml(option.name)}"></span></button><div><h3>${escapeHtml(option.name)}</h3></div>${chosen ? `<span class="badge badge-success">Seleccionado</span>` : `<button class="btn btn-primary" data-select-school-catalog="${kind}:${option.id}">Elegir este diseño</button>`}</article>`;
   }).join("") : `<div class="empty-state">No hay diseños disponibles para este nivel escolar.</div>`}</div></section>`;
   const bothSelected = Boolean(schoolCatalog.diploma_selected_id && schoolCatalog.folder_selected_id);
-  const allSelectedAndFinal = bothSelected && !schoolCatalogEditingKind;
-  const selectedSummary = (kind, title, options, selectedId) => {
+  const selectedSummary = (title, options, selectedId) => {
     const selected = options.find((option) => option.id === selectedId);
     if (!selected) return "";
     const url = catalogFileUrl(selected);
-    const actionLabel = schoolCatalogEditingKind === kind ? "Cancelar edición" : "Editar";
-    return `<article class="catalog-card"><div class="catalog-preview-large"><span><img src="${escapeHtml(url)}" alt="${escapeHtml(selected.name)}"></span></div><h3>${escapeHtml(title)}: ${escapeHtml(selected.name)}</h3><button class="btn" data-edit-school-catalog="${kind}">${actionLabel}</button></article>`;
+    return `<article class="catalog-card"><div class="catalog-preview-large"><span><img src="${escapeHtml(url)}" alt="${escapeHtml(selected.name)}"></span></div><h3>${escapeHtml(title)}: ${escapeHtml(selected.name)}</h3></article>`;
   };
   const hasSelection = Boolean(schoolCatalog.diploma_selected_id || schoolCatalog.folder_selected_id);
-  const selectedCards = `${selectedSummary("DIPLOMA", "Diploma elegido", schoolCatalog.diploma_options, schoolCatalog.diploma_selected_id)}${selectedSummary("FOLDER", "Carpeta elegida", schoolCatalog.folder_options, schoolCatalog.folder_selected_id)}`;
-  const pendingCatalogs = `${!schoolCatalog.diploma_selected_id || schoolCatalogEditingKind === "DIPLOMA" ? catalogSection("DIPLOMA", schoolCatalogEditingKind === "DIPLOMA" ? "Cambiar diploma" : "Elija un diploma", schoolCatalog.diploma_options, schoolCatalog.diploma_selected_id) : ""}${!schoolCatalog.folder_selected_id || schoolCatalogEditingKind === "FOLDER" ? catalogSection("FOLDER", schoolCatalogEditingKind === "FOLDER" ? "Cambiar carpeta" : "Elija una carpeta", schoolCatalog.folder_options, schoolCatalog.folder_selected_id) : ""}`;
-  content.innerHTML = `<h1 class="approval-title">Elija diploma y carpeta</h1><p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p><p>Las opciones corresponden a ${escapeHtml({ KINDER: "preescolar", PRIMARY: "primaria", SECONDARY: "secundaria" }[schoolCatalog.school_level] || "su nivel escolar")}.</p>${hasSelection ? `<section class="catalog-section"><h2>${allSelectedAndFinal ? "Sus diseños elegidos" : schoolCatalogEditingKind ? "Edite su selección" : "Selección guardada"}</h2><div class="catalog-grid">${selectedCards}</div>${allSelectedAndFinal ? `<div class="alert alert-success"><strong>Sus elecciones de diploma y carpeta quedaron registradas.</strong></div><div class="alert"><strong>¿Requiere algún cambio?</strong><br>Comuníquese directamente con Clarisa Rojas.</div>` : !bothSelected ? `<p class="muted">Su elección está guardada. Ahora puede elegir la opción pendiente.</p>` : ""}</section>` : ""}${pendingCatalogs}${renderSchoolCatalogConfirmDialog()}`;
+  const selectedCards = `${selectedSummary("Diploma elegido", schoolCatalog.diploma_options, schoolCatalog.diploma_selected_id)}${selectedSummary("Carpeta elegida", schoolCatalog.folder_options, schoolCatalog.folder_selected_id)}`;
+  const pendingCatalogs = `${!schoolCatalog.diploma_selected_id ? catalogSection("DIPLOMA", "Elija un diploma", schoolCatalog.diploma_options, null) : ""}${!schoolCatalog.folder_selected_id ? catalogSection("FOLDER", "Elija una carpeta", schoolCatalog.folder_options, null) : ""}`;
+  content.innerHTML = `<h1 class="approval-title">Elija diploma y carpeta</h1><p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p><p>Las opciones corresponden a ${escapeHtml({ KINDER: "preescolar", PRIMARY: "primaria", SECONDARY: "secundaria" }[schoolCatalog.school_level] || "su nivel escolar")}.</p>${hasSelection ? `<section class="catalog-section"><h2>${bothSelected ? "Sus diseños elegidos" : "Selección guardada"}</h2><div class="catalog-grid">${selectedCards}</div>${bothSelected ? `<div class="alert alert-success"><strong>Sus elecciones de diploma y carpeta quedaron registradas.</strong></div><div class="alert"><strong>¿Requiere algún cambio?</strong><br>Comuníquese directamente con Clarisa Rojas.</div>` : `<p class="muted">Su elección está guardada. Ahora puede elegir la opción pendiente.</p>`}</section>` : ""}${pendingCatalogs}${renderSchoolCatalogConfirmDialog()}`;
 }
 
 function renderSchoolCatalogConfirmDialog() {
@@ -192,21 +189,14 @@ function renderSchoolCatalogConfirmDialog() {
 function requestSchoolCatalogSelection(kind, optionId) {
   const option = [...schoolCatalog.diploma_options, ...schoolCatalog.folder_options].find((item) => item.id === optionId);
   if (!option) return;
-  const currentId = kind === "DIPLOMA" ? schoolCatalog.diploma_selected_id : schoolCatalog.folder_selected_id;
-  const isReplacement = Boolean(currentId && currentId !== optionId);
-  const currentOption = isReplacement
-    ? (kind === "DIPLOMA" ? schoolCatalog.diploma_options : schoolCatalog.folder_options).find((item) => item.id === currentId)
-    : null;
-  pendingSchoolCatalogSelection = { kind, optionId, isReplacement };
-  document.querySelector("#schoolCatalogConfirmText").textContent = isReplacement
-    ? `¿Desea reemplazar "${currentOption?.name || "su diseño actual"}" por ${kind === "DIPLOMA" ? "el diploma" : "la carpeta"} "${option.name}"?`
-    : `¿Desea confirmar ${kind === "DIPLOMA" ? "el diploma" : "la carpeta"} "${option.name}"?`;
+  pendingSchoolCatalogSelection = { kind, optionId };
+  document.querySelector("#schoolCatalogConfirmText").textContent = `¿Desea confirmar ${kind === "DIPLOMA" ? "el diploma" : "la carpeta"} "${option.name}"? Después podrá pedir cambios comunicándose directamente con Clarisa Rojas.`;
   document.querySelector("#schoolCatalogConfirmDialog").classList.remove("hidden");
 }
 
 async function saveSchoolCatalogSelection() {
   if (!pendingSchoolCatalogSelection) return;
-  const { kind, optionId, isReplacement } = pendingSchoolCatalogSelection;
+  const { kind, optionId } = pendingSchoolCatalogSelection;
   const { data, error } = await supabase.rpc("select_school_catalog_option_by_token", {
     token: itemToken,
     catalog_kind: kind,
@@ -219,10 +209,9 @@ async function saveSchoolCatalogSelection() {
     return;
   }
   pendingSchoolCatalogSelection = null;
-  schoolCatalogEditingKind = null;
   if (kind === "DIPLOMA") schoolCatalog.diploma_selected_id = optionId;
   else schoolCatalog.folder_selected_id = optionId;
-  showToast(`${kind === "DIPLOMA" ? "Diploma" : "Carpeta"} ${isReplacement ? "actualizado" : "seleccionado y guardado"}.`);
+  showToast(`${kind === "DIPLOMA" ? "Diploma" : "Carpeta"} seleccionado y guardado.`);
   renderSchoolCatalog();
 }
 
@@ -318,13 +307,6 @@ document.addEventListener("click", async (event) => {
   if (button && schoolCatalog) {
     const [kind, optionId] = button.dataset.selectSchoolCatalog.split(":");
     requestSchoolCatalogSelection(kind, optionId);
-    return;
-  }
-  const editButton = event.target.closest("[data-edit-school-catalog]");
-  if (editButton && schoolCatalog) {
-    const kind = editButton.dataset.editSchoolCatalog;
-    schoolCatalogEditingKind = schoolCatalogEditingKind === kind ? null : kind;
-    renderSchoolCatalog();
     return;
   }
   if (event.target.closest("[data-cancel-school-catalog]")) {

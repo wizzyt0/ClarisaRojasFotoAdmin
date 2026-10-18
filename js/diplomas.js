@@ -8,6 +8,7 @@ await requireAuth(["owner"]);
 
 let templates = [];
 let folderTemplates = [];
+let editingCanvaId = null;
 const modal = document.querySelector("#diplomaModal");
 const form = document.querySelector("#diplomaForm");
 let droppedDesignFile = null;
@@ -60,9 +61,12 @@ function renderSection(title, schoolLevel, sourceRows, table, label) {
 function renderTemplateCard(template, table, label) {
   const canvaUrl = safeCanvaUrl(template.canva_url);
   if (table === "diploma_templates") {
-    const canvaAction = canvaUrl
-      ? `<a class="btn btn-secondary" href="${escapeHtml(canvaUrl)}" target="_blank" rel="noopener">Abrir Canva</a>`
-      : `<input class="input" type="url" data-canva-url="${template.id}" placeholder="Pegue aquí el link de Canva"><button class="btn" type="button" data-save-canva="${template.id}">Guardar link</button>`;
+    const isEditingCanva = editingCanvaId === template.id;
+    const canvaAction = isEditingCanva
+      ? `<input class="input" type="url" data-canva-url="${template.id}" value="${escapeHtml(template.canva_url || "")}" placeholder="https://www.canva.com/design/..." required><button class="btn" type="button" data-save-canva="${template.id}">Guardar link</button><button class="btn" type="button" data-cancel-canva="${template.id}">Cancelar</button>`
+      : canvaUrl
+        ? `<a class="btn btn-secondary" href="${escapeHtml(canvaUrl)}" target="_blank" rel="noopener">Abrir Canva</a><button class="btn" type="button" data-edit-canva="${template.id}">Editar link</button>`
+        : `<input class="input" type="url" data-canva-url="${template.id}" placeholder="https://www.canva.com/design/..." required><button class="btn" type="button" data-save-canva="${template.id}">Guardar link</button>`;
     return `<article class="catalog-card diploma-catalog-card"><h3>${escapeHtml(template.name)}</h3><button class="catalog-preview-large" data-open-catalog-file="${table}:${template.id}" type="button"><span data-catalog-thumb="${table}:${template.id}">DIPLOMA</span></button><div class="actions">${canvaAction}<button class="btn btn-danger" data-delete-template="${template.id}" data-table="${table}">Eliminar</button></div></article>`;
   }
   const deleteButton = `<button class="btn btn-danger" data-delete-template="${template.id}" data-table="${table}">Eliminar</button>`;
@@ -89,6 +93,17 @@ async function load() {
 
 document.addEventListener("click", async (event) => {
   const openButton = event.target.closest("[data-open-catalog-file]");
+  if (event.target.dataset.editCanva) {
+    editingCanvaId = event.target.dataset.editCanva;
+    render();
+    document.querySelector(`[data-canva-url="${editingCanvaId}"]`)?.focus();
+    return;
+  }
+  if (event.target.dataset.cancelCanva) {
+    editingCanvaId = null;
+    render();
+    return;
+  }
   if (event.target.matches("#newDiplomaBtn")) modal.classList.remove("hidden");
   if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");
   if (openButton) {
@@ -109,10 +124,11 @@ document.addEventListener("click", async (event) => {
     const templateId = event.target.dataset.saveCanva;
     const input = document.querySelector(`[data-canva-url="${templateId}"]`);
     const canvaUrl = safeCanvaUrl(input?.value);
-    if (input?.value.trim() && !canvaUrl) return showToast("Pegue un link válido de Canva.", "error");
+    if (!canvaUrl) return showToast("Pegue un link válido de Canva.", "error");
     try {
       const { error } = await supabase.from("diploma_templates").update({ canva_url: canvaUrl || null }).eq("id", templateId);
       if (error) throw error;
+      editingCanvaId = null;
       showToast("Link de Canva guardado.");
       await load();
     } catch (error) {
