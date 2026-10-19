@@ -1,20 +1,19 @@
-# Selección de paquete y presentación
+# Paquetes con presentaciones
 
-Para graduaciones y fotografía de recuerdo, la maestra sigue dos pasos simples: primero elige **Paquete 1** o **Paquete 2** y ve sus precios; después elige **Foto individual** o **Foto grupal** y ve las imágenes correspondientes a esa combinación. Finalmente elige de 1 a 99 paquetes y confirma. Cada combinación apunta al registro de paquete correcto, así el dashboard, los totales y los abonos existentes conservan su precio.
+Cada paquete que ve la maestra es una **oferta** con un nombre y un precio propios. Una oferta puede ser Paquete chico, grande, mediano o cualquier otra opción futura. Cada oferta contiene dos presentaciones con imágenes independientes: **Foto individual** y **Foto grupal**. Ambas presentaciones comparten el precio de la oferta; la maestra elige oferta, formato y cantidad.
 
-El flujo aplica a todos los grupos escolares de graduación, en cada nivel escolar, y a fotografía de recuerdo. Navidad conserva su flujo de paquete único.
+El modelo aplica a graduaciones escolares por nivel y a fotografía de recuerdo. La selección se guarda en el registro de paquete de la presentación elegida, por lo que permanecen correctos los precios históricos, grupos y abonos. Navidad conserva su paquete único.
 
-## Configuración
+## Actualización
 
-1. En Supabase, abra **SQL Editor > New query**.
-2. Pegue y ejecute el contenido completo de `sql/school-package-presentation-options.sql`. Es una migración aditiva e idempotente: agrega los campos de clasificación y una función pública protegida por el token de la pieza. No elimina ni reasigna paquetes, imágenes, grupos o pagos.
-3. Publique los cambios del proyecto en GitHub y despliegue en HostGator estos archivos juntos: `packages.html`, `job-detail.html`, `approval.html`, `js/packages.js`, `js/job-detail.js`, `js/approval.js`, `js/school-groups.js` y `css/styles.css`.
-4. En el panel, abra **Paquetes** y edite cada paquete escolar. Asígnele **Paquete 1** o **Paquete 2** y **Foto individual** o **Foto grupal**. Para cada nivel de graduación (Preescolar, Primaria y Secundaria) deben existir las cuatro combinaciones; fotografía de recuerdo requiere las mismas cuatro. Suba al menos una imagen a cada combinación.
-5. Verifique que las dos presentaciones del paquete chico tengan el mismo precio y que las dos del paquete grande tengan el mismo precio. El sistema impedirá enviar el catálogo si falta una variante, una imagen o no coincide el precio.
-6. En el trabajo, envíe el catálogo por WhatsApp desde el paso **Paquete de fotos**. La maestra solo verá los dos paquetes; al elegir uno, verá las dos opciones de foto y sus imágenes, luego la cantidad y la confirmación.
+1. En Supabase, abre **SQL Editor > New query**.
+2. Ejecuta el contenido completo de `sql/package-offers.sql`. La migración agrega la tabla de ofertas y el vínculo opcional en paquetes existentes. Agrupa automáticamente los Paquetes 1 y 2 actuales únicamente cuando cada uno tiene ambas presentaciones y ambas comparten precio. No modifica selecciones, fotos, grupos ni abonos. Los paquetes sin pareja siguen disponibles bajo **Paquetes sin agrupar**.
+3. Despliega en HostGator los cambios de `packages.html`, `job-detail.html`, `approval.html`, `js/packages.js`, `js/job-detail.js`, `js/approval.js` y `docs/seleccion-paquete-formato.md`.
+4. En **Paquetes**, cada oferta agrupada aparece como una tarjeta con precio y dos zonas de carga de imágenes. Para agregar otro paquete (por ejemplo, “Paquete mediano”), usa **Agregar paquete**, define nombre y precio y carga una foto para cada presentación. El sistema crea las dos variantes por ti.
+5. Antes de enviar el catálogo, cada oferta activa debe tener una imagen en ambas presentaciones. La maestra verá una tarjeta por oferta, después las dos presentaciones con su imagen y luego podrá elegir la cantidad.
 
-El precio que se cobra se toma del registro real elegido. La presentación seleccionada también se guarda en `school_groups.photo_format` para conservar compatibilidad con el historial y automatizaciones previas; en la interfaz se muestra el nombre descriptivo nuevo.
+No crees manualmente una fila por formato para los paquetes nuevos: usa **Agregar paquete** dentro del nivel/categoría correspondiente. Para ajustar el costo, edita la oferta; el mismo precio se sincroniza a sus dos variantes.
 
-## Migraciones anteriores
+## Requisitos
 
-Esta migración requiere la estructura ya existente de `packages`, `package_images`, `school_groups`, `print_items`, `jobs` y `school_profiles`, además de `sql/package-photo-selection.sql` para guardar la selección pública. No vuelva a ejecutar `sql/schema.sql` ni `sql/print-items-workflow.sql` sobre una base en producción.
+Esta migración va después de `sql/package-levels-activity.sql`, `sql/school-package-presentation-options.sql` y `sql/package-photo-selection.sql`. También requiere que ya existan `package_images`, `print_items`, `jobs`, `school_profiles` y `staff_roles`. No vuelvas a ejecutar `sql/schema.sql` ni `sql/print-items-workflow.sql` en producción.

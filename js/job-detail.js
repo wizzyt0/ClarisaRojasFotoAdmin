@@ -27,6 +27,7 @@ let r2ShareLinks = [];
 let printItems = [];
 let schoolGroups = [];
 let packages = [];
+let packageOffers = [];
 let assignments = [];
 let editors = [];
 let diplomaCanvaLinks = new Map();
@@ -39,6 +40,7 @@ const form = document.querySelector("#detailForm");
 const isChristmasJob = () => job?.job_type === "SCHOOL_GRADUATION" && job?.event_type === "CHRISTMAS";
 const photoFormatLabel = (value) => value === "GROUP" ? "Foto grupal" : value === "INDIVIDUAL" ? "Foto individual" : "Formato pendiente";
 const packagePresentationLabel = (value) => value === "BASTIDOR" ? "Foto individual" : value === "GROUP_INDIVIDUAL" ? "Foto grupal" : "";
+const packageOfferLabel = (pkg) => packageOffers.find((offer) => offer.id === pkg?.package_offer_id)?.name || pkg?.name || "";
 function safeCanvaUrl(value) {
   try {
     const rawUrl = String(value || "").trim();
@@ -142,6 +144,9 @@ async function loadJob() {
   const { data: packagesData, error: packagesError } = await supabase.from("packages").select("*").eq("is_active", true).order("name");
   if (packagesError) throw packagesError;
   packages = packagesData || [];
+  const { data: offersData, error: offersError } = await supabase.from("package_offers").select("*").eq("is_active", true);
+  if (offersError) throw new Error(`No se pudieron cargar los paquetes agrupados: ${offersError.message}`);
+  packageOffers = offersData || [];
   render();
   mountJobActivity(jobId);
   await loadLogs();
@@ -213,9 +218,9 @@ function renderSchoolGroupCard(group, index) {
     ? (groupGalleries.some((gallery) => gallery.is_active) ? "Galería registrada" : "Galería pendiente")
     : `${approved} de ${approvalItems.length} piezas aprobadas`;
   return `<details class="workflow-group" data-disclosure="group-${group.id}" ${index === 0 ? "open" : ""}>
-    <summary class="workflow-group-heading"><div><strong>${escapeHtml(group.group_name)}</strong><span class="muted"> · ${escapeHtml(group.teacher_name || "Sin maestra")}</span><p>${Number(group.package_quantity || 0)} paquetes · ${escapeHtml(group.packages?.name || "Sin selección")} · ${escapeHtml(packagePresentationLabel(group.packages?.photo_presentation) || photoFormatLabel(group.photo_format))}</p><span class="workflow-progress">${changes ? `<b>${changes} cambio(s) pendiente(s)</b> · ` : ""}${progress}</span></div>${renderGroupFinancialSummary(group)}</summary>
+    <summary class="workflow-group-heading"><div><strong>${escapeHtml(group.group_name)}</strong><span class="muted"> · ${escapeHtml(group.teacher_name || "Sin maestra")}</span><p>${Number(group.package_quantity || 0)} paquetes · ${escapeHtml(packageOfferLabel(group.packages) || "Sin selección")} · ${escapeHtml(packagePresentationLabel(group.packages?.photo_presentation) || photoFormatLabel(group.photo_format))}</p><span class="workflow-progress">${changes ? `<b>${changes} cambio(s) pendiente(s)</b> · ` : ""}${progress}</span></div>${renderGroupFinancialSummary(group)}</summary>
     <div class="workflow-group-content"><div class="workflow-group-actions"><span class="muted">WhatsApp: ${escapeHtml(group.teacher_phone || "Sin registrar")}</span><div class="actions"><button class="btn" data-edit-group="${group.id}">Editar grupo / paquete</button><button class="btn" data-group-deposit="${group.id}">Registrar abono</button><button class="btn btn-danger" data-delete-group="${group.id}">Eliminar grupo</button></div></div>
-    ${isChristmasJob() ? `<div class="workflow-christmas-package"><strong>Paquete navideño</strong><span>${escapeHtml(group.packages?.name || "Pendiente")} · ${photoFormatLabel(group.photo_format)} · ${Number(group.package_quantity || 0)} paquetes</span></div><details class="workflow-piece" data-disclosure="gallery-${group.id}"><summary><span class="workflow-step">2</span><strong>Galería del grupo</strong><span class="badge">${groupGalleries.some((gallery) => gallery.is_active) ? "Registrada" : "Pendiente"}</span></summary><div class="workflow-piece-content">${renderGroupGalleries(group.id)}</div></details>` : items.map(renderPrintItemCard).join("")}
+    ${isChristmasJob() ? `<div class="workflow-christmas-package"><strong>Paquete navideño</strong><span>${escapeHtml(packageOfferLabel(group.packages) || "Pendiente")} · ${photoFormatLabel(group.photo_format)} · ${Number(group.package_quantity || 0)} paquetes</span></div><details class="workflow-piece" data-disclosure="gallery-${group.id}"><summary><span class="workflow-step">2</span><strong>Galería del grupo</strong><span class="badge">${groupGalleries.some((gallery) => gallery.is_active) ? "Registrada" : "Pendiente"}</span></summary><div class="workflow-piece-content">${renderGroupGalleries(group.id)}</div></details>` : items.map(renderPrintItemCard).join("")}
     </div></details>`;
 }
 
@@ -642,16 +647,15 @@ async function sendPrintItemWhatsapp(itemId) {
       return;
     }
     if (["SCHOOL_GRADUATION", "SCHOOL_MEMORY"].includes(packageType)) {
-      const variants = new Map(eligiblePackages.map((pkg) => [`${pkg.package_tier}:${pkg.photo_presentation}`, pkg]));
-      const expected = ["SMALL:BASTIDOR", "SMALL:GROUP_INDIVIDUAL", "LARGE:BASTIDOR", "LARGE:GROUP_INDIVIDUAL"];
-      if (variants.size !== 4 || expected.some((key) => !variants.has(key))) {
-        showToast("Complete en Paquetes las cuatro combinaciones: Paquete 1 y Paquete 2, cada uno con foto individual y grupal.", "error");
+      const eligibleOffers = packageOffers.filter((offer) => offer.package_type === packageType && (packageType !== "SCHOOL_GRADUATION" || offer.school_level === schoolLevel));
+      if (!eligibleOffers.length) {
+        showToast("Cree al menos un paquete con sus dos presentaciones en Paquetes.", "error");
         return;
       }
-      for (const tier of ["SMALL", "LARGE"]) {
-        const pair = eligiblePackages.filter((pkg) => pkg.package_tier === tier);
-        if (pair.length !== 2 || Number(pair[0].price) !== Number(pair[1].price)) {
-          showToast("Las dos presentaciones de cada tamaño deben tener el mismo precio.", "error");
+      for (const offer of eligibleOffers) {
+        const variants = eligiblePackages.filter((pkg) => pkg.package_offer_id === offer.id);
+        if (variants.length !== 2 || new Set(variants.map((pkg) => pkg.photo_presentation)).size !== 2 || variants.some((pkg) => Number(pkg.price) !== Number(offer.price))) {
+          showToast(`Revise ${offer.name}: debe tener foto individual y grupal con el mismo precio.`, "error");
           return;
         }
       }
@@ -689,7 +693,7 @@ async function sendPrintItemWhatsapp(itemId) {
       : item;
     const catalogName = isSchoolDesignCatalog ? "diplomas y carpetas" : "paquetes de fotos";
     const followUpText = item.item_type === "PHOTO_PACKAGE"
-      ? "Primero elegirá Paquete 1 o Paquete 2 y después foto individual o grupal. Al final indicará la cantidad. El formato no genera costo adicional."
+      ? "Primero elegirá el paquete y después foto individual o grupal. Podrá ver las imágenes de cada presentación y al final indicará la cantidad. El formato no genera costo adicional."
       : isSchoolDesignCatalog
         ? "En el mismo enlace podrá elegir un diploma y una carpeta. Solo verá diseños correspondientes al nivel escolar de su grupo."
         : "Cuando elija una opción, quedará registrada su selección para este grupo.";
@@ -794,7 +798,7 @@ function openGroupForm(group = null) {
   const christmasPackage = isChristmasJob() ? matchingPackages[0] : null;
   const selectedPackageId = isChristmasJob() ? christmasPackage?.id || "" : group?.selected_package_id || "";
   const packageOptions = [...matchingPackages, ...(legacyPackage ? [legacyPackage] : [])]
-    .map((pkg) => `<option value="${pkg.id}" data-price="${pkg.price}" data-presentation="${pkg.photo_presentation || ""}" ${pkg.id === selectedPackageId ? "selected" : ""}>${escapeHtml(pkg.name)} - ${formatMoney(pkg.price)}${packagePresentationLabel(pkg.photo_presentation) ? ` · ${escapeHtml(packagePresentationLabel(pkg.photo_presentation))}` : ""}</option>`)
+    .map((pkg) => { const offer = packageOffers.find((entry) => entry.id === pkg.package_offer_id); return `<option value="${pkg.id}" data-price="${pkg.price}" data-presentation="${pkg.photo_presentation || ""}" ${pkg.id === selectedPackageId ? "selected" : ""}>${escapeHtml(offer?.name || pkg.name)} - ${formatMoney(pkg.price)}${packagePresentationLabel(pkg.photo_presentation) ? ` · ${escapeHtml(packagePresentationLabel(pkg.photo_presentation))}` : ""}</option>`; })
     .join("");
   const packageField = isChristmasJob()
     ? `<div class="form-group"><label>Paquete navideño</label><input class="input" value="${escapeHtml(christmasPackage ? `${christmasPackage.name} - ${formatMoney(christmasPackage.price)}` : "Configure un paquete navideño activo")}" readonly><input type="hidden" name="selected_package_id" value="${selectedPackageId}"></div>`
