@@ -77,25 +77,29 @@ function renderPrintItemApproval() {
     renderCatalogSelection();
     return;
   }
+  const teacherName = group?.teacher_name || school?.contact_name || school?.teacher_name || school?.principal_name || client.name;
+  const schoolName = school?.school_name || client.name;
   content.innerHTML = `
-    <h1 class="approval-title">${escapeHtml(item.title)}</h1>
-    <p class="muted">Aprobación por pieza de impresión.</p>
+    <h1 class="approval-title">Revisión: ${escapeHtml(item.title)}</h1>
+    <p class="muted"><strong>Maestra:</strong> ${escapeHtml(teacherName)} · <strong>Escuela:</strong> ${escapeHtml(schoolName)} · <strong>Grupo:</strong> ${escapeHtml(group?.group_name || school?.grade_or_class || "No indicado")}</p>
     <div class="grid">
       <p><strong>Trabajo:</strong><br>${escapeHtml(job.title)}</p>
       <p><strong>Tipo:</strong><br>${escapeHtml(printItemTypeLabel(item.item_type))}</p>
-      <p><strong>Cliente/Escuela:</strong><br>${escapeHtml(school?.school_name || client.name)}</p>
-      <p><strong>Grupo:</strong><br>${escapeHtml(group?.group_name || school?.grade_or_class || "")}</p>
-      <p><strong>Contacto:</strong><br>${escapeHtml(group?.teacher_name || school?.contact_name || school?.teacher_name || school?.principal_name || client.name)}</p>
     </div>
     <h2>Archivo para revisar</h2>
+    <p class="muted">Toque o haga clic en el preview para abrirlo y revisarlo en tamaño completo.</p>
     ${renderPrintItemPreviewFiles(previewFiles)}
-    <div class="alert alert-warning"><strong>IMPORTANTE:</strong><br>Una vez aprobada esta pieza para impresión, cualquier cambio adicional solicitado después de la aprobación tendrá un costo extra. Por favor revise cuidadosamente antes de aprobar.</div>
     <form id="printItemApprovalForm">
-      <div class="form-group"><label>Nombre de quien aprueba</label><input class="input" name="approval_name" required></div>
-      <div class="form-group"><label>Observaciones o cambios solicitados</label><textarea class="textarea" name="client_notes" placeholder="Escriba aquí si algo necesita corrección antes de imprimir."></textarea></div>
-      <label class="form-group"><span><input type="checkbox" name="terms"> Confirmo que revisé esta pieza y autorizo enviarla a impresión. Entiendo que cualquier cambio solicitado después de esta aprobación tendrá costo adicional.</span></label>
-      <div class="actions"><button class="btn btn-primary" type="submit" name="action" value="approve">Autorizar esta pieza para impresión</button><button class="btn" type="submit" name="action" value="changes">Solicitar cambios</button></div>
-    </form>`;
+      <div class="form-group"><label>Nombre de quien confirma o solicita cambios</label><input class="input" name="approval_name" autocomplete="name" required></div>
+      <div class="form-group"><label>Observaciones o cambios solicitados</label><textarea class="textarea" name="client_notes" placeholder="Describa aquí los cambios que necesita antes de imprimir."></textarea></div>
+      <div class="actions"><button class="btn btn-primary" type="button" data-open-print-confirm>Autorizar esta pieza para impresión</button><button class="btn" type="submit" name="action" value="changes">Solicitar cambios</button></div>
+    </form>
+    <div id="printApprovalConfirmDialog" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="printApprovalConfirmTitle">
+      <div class="modal-content compact-modal"><div class="page-header"><h2 id="printApprovalConfirmTitle">Confirmar autorización</h2><button class="btn" type="button" data-cancel-print-confirm>Cerrar</button></div>
+        <div class="alert alert-warning"><strong>IMPORTANTE</strong><br>Una vez autorizada esta pieza para impresión, cualquier cambio adicional solicitado después de la aprobación tendrá un costo extra. Confirme que revisó cuidadosamente el diseño y sus datos.</div>
+        <div class="actions"><button class="btn btn-primary" type="button" data-confirm-print-approval>Confirmar y autorizar impresión</button><button class="btn" type="button" data-cancel-print-confirm>Volver a revisar</button></div>
+      </div>
+    </div>`;
 }
 
 function renderSavedPackageSelection() {
@@ -356,10 +360,39 @@ document.addEventListener("click", async (event) => {
   await saveCatalogSelection(selection.optionTable, selection.optionId, packageQuantity, photoFormat);
 });
 
+document.addEventListener("click", async (event) => {
+  if (event.target.closest("[data-open-print-confirm]")) {
+    const nameInput = document.querySelector('#printItemApprovalForm [name="approval_name"]');
+    if (!nameInput.value.trim()) {
+      nameInput.focus();
+      return showToast("Escriba el nombre de quien autoriza.", "error");
+    }
+    document.querySelector("#printApprovalConfirmDialog")?.classList.remove("hidden");
+    return;
+  }
+  if (event.target.closest("[data-cancel-print-confirm]")) {
+    document.querySelector("#printApprovalConfirmDialog")?.classList.add("hidden");
+    return;
+  }
+  const confirmButton = event.target.closest("[data-confirm-print-approval]");
+  if (!confirmButton) return;
+  const approvalName = document.querySelector('#printItemApprovalForm [name="approval_name"]')?.value.trim();
+  if (!approvalName) return showToast("Escriba el nombre de quien autoriza.", "error");
+  confirmButton.disabled = true;
+  const { data, error } = await supabase.rpc("approve_print_item_by_token", { token: itemToken, approval_name: approvalName });
+  confirmButton.disabled = false;
+  if (error || !data?.ok) {
+    console.error(error || data);
+    showToast(data?.message || "No se pudo aprobar la pieza.", "error");
+    return;
+  }
+  content.innerHTML = `<div class="alert alert-success"><h1>Pieza autorizada para impresión.</h1><p>Gracias. La aprobación fue registrada correctamente.</p></div>`;
+});
+
 document.addEventListener("submit", async (event) => {
   if (event.target.matches("#printItemApprovalForm")) {
     event.preventDefault();
-    const action = event.submitter?.value || "approve";
+    const action = event.submitter?.value || "changes";
     const approvalName = event.target.approval_name.value.trim();
     if (!approvalName) return showToast("Escriba el nombre de quien aprueba.", "error");
     if (action === "changes") {
@@ -374,14 +407,6 @@ document.addEventListener("submit", async (event) => {
       content.innerHTML = `<div class="alert alert-success"><h1>Observaciones enviadas.</h1><p>Gracias. Registramos los cambios solicitados para revisión.</p></div>`;
       return;
     }
-    if (!event.target.terms.checked) return showToast("Debe aceptar las condiciones antes de aprobar.", "error");
-    const { data, error } = await supabase.rpc("approve_print_item_by_token", { token: itemToken, approval_name: approvalName });
-    if (error || !data?.ok) {
-      console.error(error || data);
-      showToast(data?.message || "No se pudo aprobar la pieza.", "error");
-      return;
-    }
-    content.innerHTML = `<div class="alert alert-success"><h1>Pieza autorizada para impresión.</h1><p>Gracias. La aprobación fue registrada correctamente.</p></div>`;
     return;
   }
   if (!event.target.matches("#approvalForm")) return;
