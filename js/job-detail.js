@@ -38,7 +38,7 @@ const form = document.querySelector("#detailForm");
 
 const isChristmasJob = () => job?.job_type === "SCHOOL_GRADUATION" && job?.event_type === "CHRISTMAS";
 const photoFormatLabel = (value) => value === "GROUP" ? "Foto grupal" : value === "INDIVIDUAL" ? "Foto individual" : "Formato pendiente";
-const packagePresentationLabel = (value) => value === "BASTIDOR" ? "Foto del alumno en bastidor" : value === "GROUP_INDIVIDUAL" ? "Foto grupal e individual" : "";
+const packagePresentationLabel = (value) => value === "BASTIDOR" ? "Foto individual" : value === "GROUP_INDIVIDUAL" ? "Foto grupal" : "";
 function safeCanvaUrl(value) {
   try {
     const rawUrl = String(value || "").trim();
@@ -645,7 +645,7 @@ async function sendPrintItemWhatsapp(itemId) {
       const variants = new Map(eligiblePackages.map((pkg) => [`${pkg.package_tier}:${pkg.photo_presentation}`, pkg]));
       const expected = ["SMALL:BASTIDOR", "SMALL:GROUP_INDIVIDUAL", "LARGE:BASTIDOR", "LARGE:GROUP_INDIVIDUAL"];
       if (variants.size !== 4 || expected.some((key) => !variants.has(key))) {
-        showToast("Complete en Paquetes las cuatro variantes: chico y grande, cada uno con bastidor y grupal e individual.", "error");
+        showToast("Complete en Paquetes las cuatro combinaciones: Paquete 1 y Paquete 2, cada uno con foto individual y grupal.", "error");
         return;
       }
       for (const tier of ["SMALL", "LARGE"]) {
@@ -689,7 +689,7 @@ async function sendPrintItemWhatsapp(itemId) {
       : item;
     const catalogName = isSchoolDesignCatalog ? "diplomas y carpetas" : "paquetes de fotos";
     const followUpText = item.item_type === "PHOTO_PACKAGE"
-      ? "Primero podrá elegir paquete chico o grande y después la presentación de las fotos. Al final indicará la cantidad. Las presentaciones no generan costo adicional."
+      ? "Primero elegirá Paquete 1 o Paquete 2 y después foto individual o grupal. Al final indicará la cantidad. El formato no genera costo adicional."
       : isSchoolDesignCatalog
         ? "En el mismo enlace podrá elegir un diploma y una carpeta. Solo verá diseños correspondientes al nivel escolar de su grupo."
         : "Cuando elija una opción, quedará registrada su selección para este grupo.";
