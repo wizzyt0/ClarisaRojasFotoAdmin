@@ -149,6 +149,18 @@ Ejecute también `sql/print-items-workflow.sql` para las aprobaciones por pieza 
 
 El frontend nunca guarda llaves secretas de Cloudflare R2. La entrega de archivos se hace con un Cloudflare Worker en `cloudflare/r2-share-worker.js`.
 
+## Pedidos y finanzas (solo administradores)
+
+Ejecute `sql/admin-purchasing-finance.sql` después de `sql/staff-roles-rbac.sql`, `sql/catalog-previews.sql` y `sql/print-items-workflow.sql`. La página `purchasing.html` está restringida al rol `owner` y sus tablas tienen políticas RLS propias: los editores no pueden consultar ni modificar costos, órdenes o gastos.
+
+- En “Costos y materiales”, registre los costos de bastidores 8x12 y 8x10, impresiones, fotos infantiles, carpetas y opalinas. Para una carpeta, relacione el costo con su diseño del catálogo. Configure cuántas unidades de consumo rinde cada unidad de compra; por ejemplo, diplomas por hoja de opalina.
+- Configure las recetas de materiales por paquete, usando unidades de consumo. El cálculo multiplica la receta por la cantidad de paquetes de cada grupo y descuenta las existencias capturadas.
+- En cada trabajo escolar, prepare un borrador de carpetas. Agrupa por diseño elegido, muestra el desglose de maestra/grupo y permite ajustar la cantidad de cada grupo antes de marcar el pedido enviado. El cálculo inicial asume una carpeta por paquete, para que usted lo revise y ajuste.
+- Marque los pedidos como enviados y recibidos. Registre el importe efectivamente pagado desde el pedido para vincularlo al historial de gastos.
+- “Gastos reales” muestra venta, abonos, saldo por cobrar, gastos y venta menos gastos por trabajo. Las estimaciones no se contabilizan como gastos hasta registrar el pago real.
+
+No se precargan costos, inventario ni rendimiento de opalina: esos valores dependen de sus proveedores y deben configurarse antes de confiar en las cantidades sugeridas.
+
 Desde el detalle de un trabajo puede arrastrar archivos al panel para subirlos directamente a R2. La subida pasa por el Worker y requiere sesión de administrador.
 
 ## Flujo de impresión escolar
