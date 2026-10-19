@@ -2,7 +2,7 @@ import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { getCatalogFileUrl, getPackageImages, uploadPackageImage } from "./catalog.js";
 import { PACKAGE_TYPES } from "./constants.js";
-import { bindFileDropzone, escapeHtml, formToObject, showToast } from "./utils.js";
+import { bindFileDropzone, escapeHtml, formToObject, showToast } from "./utils.js?v=20261018-package-classification";
 import { formatMoney } from "./formatters.js";
 import { PACKAGE_LEVELS } from "./package-levels.js";
 
