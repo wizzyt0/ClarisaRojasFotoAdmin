@@ -361,8 +361,9 @@ label { font-weight: 650; }
 .catalog-tier-previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .catalog-tier-preview { display: grid; gap: 6px; min-width: 0; font-size: .85rem; color: var(--muted); }
 .catalog-tier-preview img { display: block; width: 100%; height: 130px; object-fit: contain; border: 1px solid var(--border); border-radius: 6px; background: white; }
-.package-presentation-card .catalog-preview-large { aspect-ratio: 4 / 3; }
-.package-presentation-card .catalog-preview-large img { width: 100%; height: 100%; object-fit: contain; }
+.package-presentation-card .catalog-preview-large { height: auto; min-height: 0; aspect-ratio: auto; }
+.package-presentation-card .catalog-preview-large span { height: auto; min-height: 0; max-height: none; aspect-ratio: auto; }
+.package-presentation-card .catalog-preview-large img { width: auto; height: auto; max-width: 100%; max-height: min(65vh, 640px); object-fit: contain; }
 .diploma-catalog-card .actions { justify-content: flex-end; }
 .catalog-card-header { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
 .catalog-thumbs { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); }

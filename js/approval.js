@@ -13,7 +13,6 @@ let catalogOptions = [];
 let schoolCatalog = null;
 let pendingCatalogSelection = null;
 let selectedPackageTier = null;
-let catalogClientNotes = "";
 let pendingSchoolCatalogSelection = null;
 
 function galleryButton(gallery) {
@@ -176,7 +175,7 @@ function renderCatalogSelection() {
     const packageStep = selectedPackageTier
       ? `<section class="catalog-section"><div class="package-selected-summary"><div><h2>${escapeHtml(tierLabels[selectedPackageTier])} · ${selectedTierPrice == null ? "Precio pendiente" : formatMoney(selectedTierPrice)}</h2>${selectedTierDescription ? `<p class="package-tier-description">${escapeHtml(selectedTierDescription)}</p>` : ""}</div><button class="btn" type="button" data-back-package-tiers>Elegir otro paquete</button></div><h3>Ahora elija la presentación de las fotos</h3><div class="catalog-grid">${presentationChoices}</div></section>`
       : `<div class="catalog-grid package-tier-grid">${tierCards}</div>`;
-    content.innerHTML = `<h1 class="approval-title">Seleccione el paquete de fotos</h1><p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p><p>Primero elija el paquete y después la presentación de las fotos. Ambas presentaciones tienen el mismo precio dentro de cada paquete.</p>${validCatalog ? packageStep : legacyCatalog ? `<div class="catalog-grid">${legacyCards}</div>` : `<div class="alert alert-error">El catálogo todavía no está completo. Clarisa debe configurar los dos precios y las dos presentaciones para cada nivel de paquete antes de enviar el link.</div>`}<div class="form-group"><label>Dudas sobre el paquete</label><textarea id="catalogClientNotes" class="textarea" placeholder="Si tiene alguna duda sobre este paquete o sobre lo que incluye, escríbala aquí.">${escapeHtml(catalogClientNotes)}</textarea></div>${renderPackageQuantityDialog()}`;
+    content.innerHTML = `<h1 class="approval-title">Seleccione el paquete de fotos</h1><p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p><p>Primero elija el paquete y después la presentación de las fotos. Ambas presentaciones tienen el mismo precio dentro de cada paquete.</p>${validCatalog ? packageStep : legacyCatalog ? `<div class="catalog-grid">${legacyCards}</div>` : `<div class="alert alert-error">El catálogo todavía no está completo. Clarisa debe configurar los dos precios y las dos presentaciones para cada nivel de paquete antes de enviar el link.</div>`}${renderPackageQuantityDialog()}`;
     return;
   }
   const title = item.item_type === "DIPLOMA" ? "Seleccione el diseño de diploma" : item.item_type === "FOLDER_OPTION" ? "Seleccione la carpeta" : "Seleccione el paquete de fotos";
@@ -343,10 +342,6 @@ async function load() {
 document.addEventListener("click", (event) => {
   const openButton = event.target.closest("[data-open-url]");
   if (openButton) openInNewTab(openButton.dataset.openUrl);
-});
-
-document.addEventListener("input", (event) => {
-  if (event.target.id === "catalogClientNotes") catalogClientNotes = event.target.value;
 });
 
 document.addEventListener("click", async (event) => {
