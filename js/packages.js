@@ -139,7 +139,16 @@ form.addEventListener("submit", async (event) => {
   payload.school_level = data.package_type === "SCHOOL_GRADUATION" ? data.school_level : null;
   if (data.package_type === "SCHOOL_GRADUATION" && !PACKAGE_LEVELS[data.school_level]) return showToast("Seleccione el nivel escolar.", "error");
   const { error } = editingPackage ? await supabase.from("packages").update(payload).eq("id", editingPackage.id) : await supabase.from("packages").insert(payload);
-  if (error) { console.error(error); return showToast("No se pudo guardar el paquete.", "error"); }
+  if (error) {
+    console.error(error);
+    const missingClassificationColumns = error.code === "42703" || error.code === "PGRST204";
+    return showToast(
+      missingClassificationColumns
+        ? "Supabase aún no tiene los campos de paquete y formato. Ejecute sql/school-package-presentation-options.sql y vuelva a guardar."
+        : error.message || "No se pudo guardar el paquete.",
+      "error"
+    );
+  }
   modal.classList.add("hidden");
   showToast("Paquete guardado correctamente.");
   load();
