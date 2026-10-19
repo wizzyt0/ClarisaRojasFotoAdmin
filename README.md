@@ -264,8 +264,10 @@ las selecciones existentes. No vuelva a ejecutar los SQL antiguos de roles o cat
 Las pruebas se ejecutan con Node 22: `npm ci`, `npm run verify` y `npm test`.
 Utilizan una base PostgreSQL temporal, nunca la base de Supabase en produccion.
 
-Para que la maestra elija foto grupal o individual dentro del paquete seleccionado, aplique
-`sql/package-photo-selection.sql` y siga [la guía de selección de paquetes](docs/seleccion-paquete-formato.md).
+Para que la maestra vea dos precios y luego elija entre las presentaciones con sus imágenes,
+aplique `sql/school-package-presentation-options.sql` después de las migraciones anteriores y siga
+[la guía de selección de paquetes](docs/seleccion-paquete-formato.md). Graduación y fotografía de
+recuerdo usan este flujo en todos los grupos escolares; Navidad conserva el paquete único.
 
 Para mostrar diplomas y carpetas en una sola página pública por grupo, filtrados al nivel escolar,
 aplique después `sql/combined-school-catalog.sql`. El enlace enviado desde cualquiera de esas dos

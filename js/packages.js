@@ -27,6 +27,8 @@ function renderForm(item = {}) {
       <div class="form-group"><label>Nombre</label><input class="input" name="name" required value="${escapeHtml(item.name)}"></div>
       <div class="form-group"><label>Tipo de paquete</label><select class="select" name="package_type" required>${options(item.package_type || "GENERAL")}</select></div>
       <div class="form-group" id="packageLevelField"><label>Nivel escolar</label><select class="select" name="school_level"><option value="">Seleccione</option>${Object.entries(PACKAGE_LEVELS).map(([value, label]) => `<option value="${value}" ${item.school_level === value ? "selected" : ""}>${label}</option>`).join("")}</select></div>
+      <div class="form-group" id="packageTierField"><label>Precio visible al cliente</label><select class="select" name="package_tier"><option value="">No aplica</option><option value="SMALL" ${item.package_tier === "SMALL" ? "selected" : ""}>Paquete chico</option><option value="LARGE" ${item.package_tier === "LARGE" ? "selected" : ""}>Paquete grande</option></select></div>
+      <div class="form-group" id="packagePresentationField"><label>Presentación de fotos</label><select class="select" name="photo_presentation"><option value="">Seleccione</option><option value="BASTIDOR" ${item.photo_presentation === "BASTIDOR" ? "selected" : ""}>Foto del alumno en bastidor</option><option value="GROUP_INDIVIDUAL" ${item.photo_presentation === "GROUP_INDIVIDUAL" ? "selected" : ""}>Foto grupal e individual</option></select></div>
       <div class="form-group"><label>Precio</label><input class="input" type="number" min="0" step="0.01" name="price" required value="${item.price ?? 0}"></div>
       <div class="form-group"><label>Activo</label><select class="select" name="is_active"><option value="true" ${item.is_active !== false ? "selected" : ""}>Sí</option><option value="false" ${item.is_active === false ? "selected" : ""}>No</option></select></div>
     </div>
@@ -34,8 +36,13 @@ function renderForm(item = {}) {
     <button class="btn btn-primary" type="submit">Guardar paquete</button>`;
   const updateLevel = () => {
     const graduation = form.package_type.value === "SCHOOL_GRADUATION";
+    const schoolCatalog = ["SCHOOL_GRADUATION", "SCHOOL_MEMORY"].includes(form.package_type.value);
     form.school_level.required = graduation;
     document.querySelector("#packageLevelField").hidden = !graduation;
+    document.querySelector("#packageTierField").hidden = !schoolCatalog;
+    document.querySelector("#packagePresentationField").hidden = !schoolCatalog;
+    form.package_tier.required = schoolCatalog;
+    form.photo_presentation.required = schoolCatalog;
   };
   form.package_type.addEventListener("change", updateLevel);
   updateLevel();
@@ -43,7 +50,9 @@ function renderForm(item = {}) {
 
 function renderPackageCard(item) {
   const images = packageImages.filter((image) => image.package_id === item.id);
-  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(item.name)}</h3><p class="muted">${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div><p>${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="mini-dropzone package-image-dropzone" tabindex="0" data-package-dropzone="${item.id}"><strong>Subir imagen(es)</strong><span>Arrastre aquí o haga clic</span><input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></div><div class="actions"><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
+  const tierLabel = { SMALL: "Paquete chico", LARGE: "Paquete grande" }[item.package_tier];
+  const presentationLabel = { BASTIDOR: "Foto del alumno en bastidor", GROUP_INDIVIDUAL: "Foto grupal e individual" }[item.photo_presentation];
+  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(item.name)}</h3><p class="muted">${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div>${tierLabel ? `<p><strong>${tierLabel}</strong><br>${escapeHtml(presentationLabel || "Presentación pendiente")}</p>` : ""}<p>${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="mini-dropzone package-image-dropzone" tabindex="0" data-package-dropzone="${item.id}"><strong>Subir imagen(es)</strong><span>Arrastre aquí o haga clic</span><input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></div><div class="actions"><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
 }
 
 function render() {
@@ -126,7 +135,7 @@ form.addEventListener("submit", async (event) => {
       return showToast("Solo puede existir un paquete navideño activo. Desactive o edite el paquete actual.", "error");
     }
   }
-  const payload = { name: data.name.trim(), package_type: data.package_type, description: data.description || null, price: Number(data.price), is_active: data.is_active === "true" };
+  const payload = { name: data.name.trim(), package_type: data.package_type, description: data.description || null, price: Number(data.price), is_active: data.is_active === "true", package_tier: ["SCHOOL_GRADUATION", "SCHOOL_MEMORY"].includes(data.package_type) ? data.package_tier : null, photo_presentation: ["SCHOOL_GRADUATION", "SCHOOL_MEMORY"].includes(data.package_type) ? data.photo_presentation : null };
   payload.school_level = data.package_type === "SCHOOL_GRADUATION" ? data.school_level : null;
   if (data.package_type === "SCHOOL_GRADUATION" && !PACKAGE_LEVELS[data.school_level]) return showToast("Seleccione el nivel escolar.", "error");
   const { error } = editingPackage ? await supabase.from("packages").update(payload).eq("id", editingPackage.id) : await supabase.from("packages").insert(payload);

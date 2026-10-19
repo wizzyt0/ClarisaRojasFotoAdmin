@@ -3,7 +3,7 @@ import { supabase } from "./supabase.js";
 export async function getSchoolGroupsByJob(jobId) {
   const { data, error } = await supabase
     .from("school_groups")
-    .select("*, packages(name, price)")
+    .select("*, packages(*)")
     .eq("job_id", jobId)
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });

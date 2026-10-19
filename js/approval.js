@@ -12,6 +12,8 @@ let printItemData = null;
 let catalogOptions = [];
 let schoolCatalog = null;
 let pendingCatalogSelection = null;
+let selectedPackageTier = null;
+let catalogClientNotes = "";
 let pendingSchoolCatalogSelection = null;
 
 function galleryButton(gallery) {
@@ -110,12 +112,13 @@ function renderSavedPackageSelection() {
   const groupTotal = Number(group?.price || 0);
   const deposited = Number(group?.total_deposited || 0);
   const remaining = Number(group?.remaining_balance ?? Math.max(groupTotal - deposited, 0));
-  const photoFormat = group?.photo_format === "GROUP" ? "Foto grupal" : group?.photo_format === "INDIVIDUAL" ? "Foto individual" : "Formato no disponible";
+  const photoFormat = option?.photo_presentation === "BASTIDOR" ? "Foto del alumno en bastidor" : option?.photo_presentation === "GROUP_INDIVIDUAL" ? "Foto grupal e individual" : group?.photo_format === "GROUP" ? "Foto grupal" : group?.photo_format === "INDIVIDUAL" ? "Foto individual" : "Formato no disponible";
+  const packageTier = option?.package_tier === "SMALL" ? "Paquete chico" : option?.package_tier === "LARGE" ? "Paquete grande" : "";
   content.innerHTML = `<h1 class="approval-title">Su selección está registrada</h1>
     <p class="muted">${escapeHtml(client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p>
     <div class="alert alert-success"><strong>Esta es la opción que eligió:</strong>
       ${imageUrl ? `<div class="catalog-preview-large"><span><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(option.name)}"></span></div>` : ""}
-      <p><strong>Paquete:</strong> ${escapeHtml(option?.name || "Selección guardada")}</p>
+      <p><strong>Paquete:</strong> ${escapeHtml(packageTier ? `${packageTier} · ${option?.name || ""}` : option?.name || "Selección guardada")}</p>
       <p><strong>Formato:</strong> ${photoFormat}<br><strong>Cantidad:</strong> ${Number(group?.package_quantity || 0)} paquete(s)</p>
     </div>
     <h2>Resumen de su grupo</h2><div class="grid">
@@ -148,6 +151,29 @@ function catalogFileUrl(option) {
 
 function renderCatalogSelection() {
   const { print_item: item, job, client, school_profile: school, school_group: group } = printItemData;
+  if (item.item_type === "PHOTO_PACKAGE") {
+    const tiers = ["SMALL", "LARGE"];
+    const tierLabels = { SMALL: "Paquete chico", LARGE: "Paquete grande" };
+    const formatLabels = { BASTIDOR: "Foto del alumno en bastidor", GROUP_INDIVIDUAL: "Foto grupal e individual" };
+    const packageOptions = Array.from(new Map(catalogOptions.filter((option) => option.package_tier && option.photo_presentation).map((option) => [option.package_id, option])).values());
+    const legacyOptions = catalogOptions.filter((option) => !option.package_tier || !option.photo_presentation);
+    const tierCards = tiers.map((tier) => {
+      const options = packageOptions.filter((option) => option.package_tier === tier);
+      const price = options[0]?.price;
+      const previews = options.map((option) => `<div class="catalog-tier-preview"><img src="${escapeHtml(catalogFileUrl(option))}" alt="${escapeHtml(formatLabels[option.photo_presentation] || option.name)}"><span>${escapeHtml(formatLabels[option.photo_presentation])}</span></div>`).join("");
+      return `<button type="button" class="catalog-card package-tier-card ${selectedPackageTier === tier ? "is-selected" : ""}" data-select-package-tier="${tier}" ${options.length < 2 || options.some((option) => Number(option.price) !== Number(price)) ? "disabled" : ""}><span class="badge">${escapeHtml(tierLabels[tier])}</span><strong class="package-tier-price">${price == null ? "Precio pendiente" : formatMoney(price)}</strong><span class="catalog-tier-previews">${previews || "Opciones no configuradas"}</span></button>`;
+    }).join("");
+    const selectedTierOptions = packageOptions.filter((option) => option.package_tier === selectedPackageTier);
+    const presentationChoices = selectedTierOptions.map((option) => `<article class="catalog-card package-presentation-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(catalogFileUrl(option))}" type="button"><span><img src="${escapeHtml(catalogFileUrl(option))}" alt="${escapeHtml(formatLabels[option.photo_presentation] || option.name)}"></span></button><h3>${escapeHtml(formatLabels[option.photo_presentation] || option.name)}</h3><p class="muted">${formatMoney(option.price)}</p><button class="btn btn-primary" data-select-catalog="package_images:${option.id}">Elegir esta presentación</button></article>`).join("");
+    const validCatalog = tiers.every((tier) => {
+      const options = packageOptions.filter((option) => option.package_tier === tier);
+      return options.length === 2 && new Set(options.map((option) => option.photo_presentation)).size === 2 && options.every((option) => Number(option.price) === Number(options[0].price));
+    });
+    const legacyCatalog = !packageOptions.length && legacyOptions.length > 0;
+    const legacyCards = legacyOptions.map((option) => `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(catalogFileUrl(option))}" type="button"><span><img src="${escapeHtml(catalogFileUrl(option))}" alt="${escapeHtml(option.name)}"></span></button><h3>${escapeHtml(option.name)}</h3><p class="muted">${formatMoney(option.price)}</p><button class="btn btn-primary" data-select-catalog="package_images:${option.id}">Elegir paquete</button></article>`).join("");
+    content.innerHTML = `<h1 class="approval-title">Seleccione el paquete de fotos</h1><p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p><p>Primero elija el tamaño del paquete y después la presentación de las fotos. Ambas presentaciones tienen el mismo precio dentro de cada paquete.</p>${validCatalog ? `<div class="catalog-grid package-tier-grid">${tierCards}</div>${selectedPackageTier ? `<section class="catalog-section"><h2>Presentación de ${escapeHtml(tierLabels[selectedPackageTier])}</h2><div class="catalog-grid">${presentationChoices}</div><button class="btn" type="button" data-back-package-tiers>Elegir otro paquete</button></section>` : ""}` : legacyCatalog ? `<div class="catalog-grid">${legacyCards}</div>` : `<div class="alert alert-error">El catálogo todavía no está completo. Clarisa debe configurar los dos precios y las dos presentaciones para cada nivel de paquete antes de enviar el link.</div>`}<div class="form-group"><label>Dudas sobre el paquete</label><textarea id="catalogClientNotes" class="textarea" placeholder="Si tiene alguna duda sobre este paquete o sobre lo que incluye, escríbala aquí.">${escapeHtml(catalogClientNotes)}</textarea></div>${renderPackageQuantityDialog()}`;
+    return;
+  }
   const title = item.item_type === "DIPLOMA" ? "Seleccione el diseño de diploma" : item.item_type === "FOLDER_OPTION" ? "Seleccione la carpeta" : "Seleccione el paquete de fotos";
   const notesLabel = item.item_type === "PHOTO_PACKAGE" ? "Dudas sobre el paquete" : "Comentario para Clarisa";
   const notesPlaceholder = item.item_type === "PHOTO_PACKAGE"
@@ -158,7 +184,7 @@ function renderCatalogSelection() {
     <p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p>
     <div class="catalog-grid">${catalogOptions.length ? catalogOptions.map((option) => `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(catalogFileUrl(option))}" type="button"><span><img src="${escapeHtml(catalogFileUrl(option))}" alt="${escapeHtml(option.name)}"></span></button><div><h3>${escapeHtml(option.name)}</h3>${option.price != null ? `<p class="muted">${formatMoney(option.price)}</p>` : ""}${option.description ? `<p>${escapeHtml(option.description)}</p>` : ""}</div><button class="btn btn-primary" data-select-catalog="${option.table}:${option.id}">Elegir esta opción</button></article>`).join("") : `<div class="empty-state">No hay opciones disponibles para este catálogo.</div>`}</div>
     <div class="form-group"><label>${notesLabel}</label><textarea id="catalogClientNotes" class="textarea" placeholder="${notesPlaceholder}"></textarea></div>
-    ${item.item_type === "PHOTO_PACKAGE" ? renderPackageQuantityDialog() : ""}`;
+    `;
 }
 
 function renderSchoolCatalog() {
@@ -227,8 +253,8 @@ function renderPackageQuantityDialog() {
   return `<div id="packageQuantityDialog" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content compact-modal">
       <div class="page-header"><h2>Opciones del paquete</h2><button class="btn" data-cancel-package-selection type="button">Cerrar</button></div>
-      <div class="form-group"><label>Formato de la foto</label><select id="catalogPhotoFormat" class="select"><option value="">Seleccione</option><option value="GROUP">Foto grupal</option><option value="INDIVIDUAL">Foto individual</option></select></div>
-      <p class="muted">Seleccione el formato y cuántos paquetes necesita para este grupo.</p>
+      <p id="packageSelectionSummary" class="muted"></p>
+      <p class="muted">Seleccione cuántos paquetes necesita para este grupo.</p>
       <div class="form-group"><label>Cantidad</label><select id="catalogPackageQuantity" class="select">${quantityOptions}</select></div>
       <div class="actions"><button class="btn btn-primary" data-confirm-package-selection type="button">Continuar</button><button class="btn" data-cancel-package-selection type="button">Cancelar</button></div>
     </div>
@@ -251,7 +277,8 @@ async function saveCatalogSelection(optionTable, optionId, packageQuantity = nul
     showToast(data?.message || error?.message || "No se pudo guardar la selección.", "error");
     return;
   }
-  const photoFormatLabel = data.photo_format === "GROUP" ? "Foto grupal" : data.photo_format === "INDIVIDUAL" ? "Foto individual" : "";
+  const selectedOption = selectedCatalogOption(optionId);
+  const photoFormatLabel = selectedOption?.photo_presentation === "BASTIDOR" ? "Foto del alumno en bastidor" : selectedOption?.photo_presentation === "GROUP_INDIVIDUAL" ? "Foto grupal e individual" : data.photo_format === "GROUP" ? "Foto grupal" : data.photo_format === "INDIVIDUAL" ? "Foto individual" : "";
   const selectedPackageImage = optionTable === "package_images"
     ? `<div class="catalog-preview-large"><span><img src="${escapeHtml(catalogFileUrl({ table: optionTable, id: optionId }))}" alt="${escapeHtml(data.selected_name || "Paquete seleccionado")}"></span></div>`
     : "";
@@ -282,7 +309,13 @@ async function load() {
       }
     }
     if (["DIPLOMA", "PHOTO_PACKAGE", "FOLDER_OPTION"].includes(data.print_item?.item_type) && (!data.print_item?.selected_file_id || data.print_item?.item_type === "PHOTO_PACKAGE")) {
-      const catalogResult = await supabase.rpc("get_public_catalog_by_print_item_token", { token: itemToken });
+      const catalogRpc = data.print_item?.item_type === "PHOTO_PACKAGE" ? "get_public_school_package_options_by_token" : "get_public_catalog_by_print_item_token";
+      const catalogResult = await supabase.rpc(catalogRpc, { token: itemToken });
+      if (catalogResult.error && data.print_item?.item_type === "PHOTO_PACKAGE") {
+        console.error(catalogResult.error);
+        content.innerHTML = `<div class="alert alert-error">No se pudo cargar el catálogo de paquetes. Falta ejecutar en Supabase la migración <code>sql/school-package-presentation-options.sql</code>.</div>`;
+        return;
+      }
       if (!catalogResult.error) catalogOptions = catalogResult.data || [];
     }
     renderPrintItemApproval();
@@ -307,6 +340,10 @@ document.addEventListener("click", (event) => {
   if (openButton) openInNewTab(openButton.dataset.openUrl);
 });
 
+document.addEventListener("input", (event) => {
+  if (event.target.id === "catalogClientNotes") catalogClientNotes = event.target.value;
+});
+
 document.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-select-school-catalog]");
   if (button && schoolCatalog) {
@@ -325,12 +362,26 @@ document.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("click", async (event) => {
-  if (!event.target.dataset.selectCatalog) return;
-  const [optionTable, optionId] = event.target.dataset.selectCatalog.split(":");
+  const tierButton = event.target.closest("[data-select-package-tier]");
+  if (tierButton) {
+    selectedPackageTier = tierButton.dataset.selectPackageTier;
+    renderCatalogSelection();
+    return;
+  }
+  if (event.target.closest("[data-back-package-tiers]")) {
+    selectedPackageTier = null;
+    renderCatalogSelection();
+    return;
+  }
+  const selectionButton = event.target.closest("[data-select-catalog]");
+  if (!selectionButton) return;
+  const [optionTable, optionId] = selectionButton.dataset.selectCatalog.split(":");
   if (optionTable === "package_images") {
     pendingCatalogSelection = { optionTable, optionId };
     document.querySelector("#catalogPackageQuantity").value = "1";
-    document.querySelector("#catalogPhotoFormat").value = "";
+    const option = selectedCatalogOption(optionId);
+    const formatLabel = option?.photo_presentation === "BASTIDOR" ? "Foto del alumno en bastidor" : "Foto grupal e individual";
+    document.querySelector("#packageSelectionSummary").textContent = `${option?.name || "Paquete"} · ${formatLabel} · ${formatMoney(option?.price || 0)}`;
     document.querySelector("#packageQuantityDialog").classList.remove("hidden");
     return;
   }
@@ -347,12 +398,11 @@ document.addEventListener("click", async (event) => {
   }
   if (event.target.dataset.confirmPackageSelection === undefined || !pendingCatalogSelection) return;
   const packageQuantity = Number(document.querySelector("#catalogPackageQuantity")?.value || 0);
-  const photoFormat = document.querySelector("#catalogPhotoFormat")?.value || "";
-  if (!["GROUP", "INDIVIDUAL"].includes(photoFormat)) return showToast("Seleccione foto grupal o individual.", "error");
   const option = selectedCatalogOption(pendingCatalogSelection.optionId);
   const optionName = option?.name || "este paquete";
-  const photoFormatLabel = photoFormat === "GROUP" ? "Foto grupal" : "Foto individual";
-  const confirmed = confirm(`¿Confirmar "${optionName}", ${photoFormatLabel} y ${packageQuantity} paquete${packageQuantity === 1 ? "" : "s"}?`);
+  const photoFormat = option?.photo_presentation === "BASTIDOR" ? "INDIVIDUAL" : "GROUP";
+  const photoFormatLabel = option?.photo_presentation === "BASTIDOR" ? "Foto del alumno en bastidor" : "Foto grupal e individual";
+  const confirmed = confirm(`¿Confirmar ${option?.package_tier === "SMALL" ? "paquete chico" : "paquete grande"}, ${photoFormatLabel} y ${packageQuantity} paquete${packageQuantity === 1 ? "" : "s"}? Precio por paquete: ${formatMoney(option?.price || 0)}.`);
   if (!confirmed) return;
   const selection = pendingCatalogSelection;
   pendingCatalogSelection = null;
