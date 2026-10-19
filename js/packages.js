@@ -122,8 +122,15 @@ async function load() {
   const { data, error } = await supabase.from("packages").select("*").order("created_at", { ascending: false });
   if (error) throw error;
   packages = data || [];
-  packageImages = await getPackageImages();
+  packageImages = [];
   render();
+  try {
+    packageImages = await getPackageImages();
+    render();
+  } catch (error) {
+    console.error("No se pudieron cargar las imágenes del catálogo:", error);
+    showToast("Los paquetes cargaron, pero no sus imágenes. Puede administrarlos y volver a intentar cargar las fotos.", "error");
+  }
 }
 
 async function hydrateCatalogThumbs() {
