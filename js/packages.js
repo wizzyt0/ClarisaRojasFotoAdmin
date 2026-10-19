@@ -2,7 +2,7 @@ import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { getCatalogFileUrl, getPackageImages, uploadPackageImage } from "./catalog.js";
 import { PACKAGE_TYPES } from "./constants.js";
-import { bindFileDropzone, escapeHtml, formToObject, showToast } from "./utils.js?v=20261018-package-classification";
+import { bindFileDropzone, escapeHtml, formToObject, showToast } from "./utils.js?v=20261019-package-labels";
 import { formatMoney } from "./formatters.js";
 import { PACKAGE_LEVELS } from "./package-levels.js";
 
@@ -13,6 +13,9 @@ let editingPackage = null;
 const modal = document.querySelector("#packageModal");
 const form = document.querySelector("#packageForm");
 const options = (selected = "") => Object.entries(PACKAGE_TYPES).map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${label}</option>`).join("");
+const schoolCatalogTypes = ["SCHOOL_GRADUATION", "SCHOOL_MEMORY"];
+const packageTierLabels = { SMALL: "Paquete 1", LARGE: "Paquete 2" };
+const packagePresentationLabels = { BASTIDOR: "Foto individual", GROUP_INDIVIDUAL: "Foto grupal" };
 const packageSections = [
   { type: "SCHOOL_GRADUATION", title: "Graduaciones escolares", description: "Solo se mostrarán a los grupos de trabajos de graduación." },
   { type: "SCHOOL_MEMORY", title: "Fotografía de recuerdo", description: "Solo se mostrarán a los grupos de trabajos de fotografía de recuerdo." },
@@ -20,6 +23,20 @@ const packageSections = [
   { type: "PHOTO_SESSION", title: "Sesiones particulares", description: "Catálogo reservado para trabajos particulares." },
   { type: "GENERAL", title: "Sin clasificar", description: "Estos paquetes no se muestran a escuelas. Edítelos y asígneles una categoría para utilizarlos." }
 ];
+
+function isSchoolCatalog(type) {
+  return schoolCatalogTypes.includes(type);
+}
+
+function packageName(tier, presentation) {
+  return [packageTierLabels[tier], packagePresentationLabels[presentation]].filter(Boolean).join(" · ");
+}
+
+function packageDisplayName(item) {
+  return isSchoolCatalog(item.package_type) && item.package_tier && item.photo_presentation
+    ? packageName(item.package_tier, item.photo_presentation)
+    : item.name;
+}
 
 function renderForm(item = {}) {
   form.innerHTML = `
@@ -36,29 +53,34 @@ function renderForm(item = {}) {
     <button class="btn btn-primary" type="submit">Guardar paquete</button>`;
   const updateLevel = () => {
     const graduation = form.package_type.value === "SCHOOL_GRADUATION";
-    const schoolCatalog = ["SCHOOL_GRADUATION", "SCHOOL_MEMORY"].includes(form.package_type.value);
+    const schoolCatalog = isSchoolCatalog(form.package_type.value);
     form.school_level.required = graduation;
     document.querySelector("#packageLevelField").hidden = !graduation;
     document.querySelector("#packageTierField").hidden = !schoolCatalog;
     document.querySelector("#packagePresentationField").hidden = !schoolCatalog;
     form.package_tier.required = schoolCatalog;
     form.photo_presentation.required = schoolCatalog;
+    const nameInput = form.elements.namedItem("name");
+    nameInput.readOnly = schoolCatalog;
+    if (schoolCatalog) {
+      nameInput.value = packageName(form.package_tier.value, form.photo_presentation.value);
+    }
   };
   form.package_type.addEventListener("change", updateLevel);
+  form.package_tier.addEventListener("change", updateLevel);
+  form.photo_presentation.addEventListener("change", updateLevel);
   updateLevel();
 }
 
 function renderPackageCard(item) {
   const images = packageImages.filter((image) => image.package_id === item.id);
-  const tierLabel = { SMALL: "Paquete 1", LARGE: "Paquete 2" }[item.package_tier];
-  const presentationLabel = { BASTIDOR: "Foto individual", GROUP_INDIVIDUAL: "Foto grupal" }[item.photo_presentation];
-  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(item.name)}</h3><p class="muted">${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div>${tierLabel ? `<p><strong>${tierLabel}</strong><br>${escapeHtml(presentationLabel || "Presentación pendiente")}</p>` : ""}<p class="package-description">${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="mini-dropzone package-image-dropzone" tabindex="0" data-package-dropzone="${item.id}"><strong>Subir imagen(es)</strong><span>Arrastre aquí o haga clic</span><input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></div><div class="actions"><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
+  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(packageDisplayName(item))}</h3><p class="muted">${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div><p class="package-description">${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="mini-dropzone package-image-dropzone" tabindex="0" data-package-dropzone="${item.id}"><strong>Subir imagen(es)</strong><span>Arrastre aquí o haga clic</span><input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></div><div class="actions"><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
 }
 
 function render() {
   const search = document.querySelector("#searchInput").value.toLowerCase();
   const active = document.querySelector("#activeFilter").value;
-  const visiblePackages = packages.filter((item) => (!search || item.name.toLowerCase().includes(search)) && (active === "" || String(item.is_active) === active));
+  const visiblePackages = packages.filter((item) => (!search || `${item.name} ${packageDisplayName(item)}`.toLowerCase().includes(search)) && (active === "" || String(item.is_active) === active));
   const sections = packageSections.map((section) => {
     const items = visiblePackages.filter((item) => item.package_type === section.type);
     if (section.type === "SCHOOL_GRADUATION") {
@@ -135,7 +157,10 @@ form.addEventListener("submit", async (event) => {
       return showToast("Solo puede existir un paquete navideño activo. Desactive o edite el paquete actual.", "error");
     }
   }
-  const payload = { name: data.name.trim(), package_type: data.package_type, description: data.description || null, price: Number(data.price), is_active: data.is_active === "true", package_tier: ["SCHOOL_GRADUATION", "SCHOOL_MEMORY"].includes(data.package_type) ? data.package_tier : null, photo_presentation: ["SCHOOL_GRADUATION", "SCHOOL_MEMORY"].includes(data.package_type) ? data.photo_presentation : null };
+  const schoolCatalog = isSchoolCatalog(data.package_type);
+  const generatedName = schoolCatalog ? packageName(data.package_tier, data.photo_presentation) : "";
+  if (schoolCatalog && !generatedName) return showToast("Seleccione el paquete y el formato de foto.", "error");
+  const payload = { name: schoolCatalog ? generatedName : data.name.trim(), package_type: data.package_type, description: data.description || null, price: Number(data.price), is_active: data.is_active === "true", package_tier: schoolCatalog ? data.package_tier : null, photo_presentation: schoolCatalog ? data.photo_presentation : null };
   payload.school_level = data.package_type === "SCHOOL_GRADUATION" ? data.school_level : null;
   if (data.package_type === "SCHOOL_GRADUATION" && !PACKAGE_LEVELS[data.school_level]) return showToast("Seleccione el nivel escolar.", "error");
   const { error } = editingPackage ? await supabase.from("packages").update(payload).eq("id", editingPackage.id) : await supabase.from("packages").insert(payload);
