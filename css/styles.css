@@ -350,6 +350,7 @@ label { font-weight: 650; }
   background: white;
 }
 .catalog-card h3 { margin: 0; font-size: 1.05rem; }
+.package-description { white-space: pre-line; }
 .package-tier-card { text-align: left; color: var(--text); cursor: pointer; }
 .package-tier-card:disabled { opacity: .65; cursor: not-allowed; }
 .package-tier-card.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
