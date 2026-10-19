@@ -264,8 +264,8 @@ las selecciones existentes. No vuelva a ejecutar los SQL antiguos de roles o cat
 Las pruebas se ejecutan con Node 22: `npm ci`, `npm run verify` y `npm test`.
 Utilizan una base PostgreSQL temporal, nunca la base de Supabase en produccion.
 
-Para administrar ofertas de paquetes escalables, cada una con sus presentaciones de foto individual
-y grupal, aplique `sql/package-offers.sql` después de las migraciones anteriores y siga
+Para que la maestra vea dos precios y luego elija entre las presentaciones con sus imágenes,
+aplique `sql/school-package-presentation-options.sql` después de las migraciones anteriores y siga
 [la guía de selección de paquetes](docs/seleccion-paquete-formato.md). Graduación y fotografía de
 recuerdo usan este flujo en todos los grupos escolares; Navidad conserva el paquete único.
 
