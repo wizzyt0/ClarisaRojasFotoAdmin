@@ -1,8 +1,8 @@
 import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
-import { getCatalogFileUrl, getPackageImages, uploadPackageImage } from "./catalog.js";
+import { deletePackageImage, getCatalogFileUrl, getPackageImages, uploadPackageImage } from "./catalog.js";
 import { PACKAGE_TYPES } from "./constants.js";
-import { bindFileDropzone, escapeHtml, formToObject, showToast } from "./utils.js?v=20261019-package-labels";
+import { bindFileDropzone, escapeHtml, formToObject, showToast } from "./utils.js?v=20261019-package-image-delete";
 import { formatMoney } from "./formatters.js";
 import { PACKAGE_LEVELS } from "./package-levels.js";
 
@@ -74,7 +74,7 @@ function renderForm(item = {}) {
 
 function renderPackageCard(item) {
   const images = packageImages.filter((image) => image.package_id === item.id);
-  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(packageDisplayName(item))}</h3><p class="muted">${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div><p class="package-description">${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="mini-dropzone package-image-dropzone" tabindex="0" data-package-dropzone="${item.id}"><strong>Subir imagen(es)</strong><span>Arrastre aquí o haga clic</span><input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></div><div class="actions"><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
+  return `<article class="catalog-card"><div class="catalog-card-header"><div><h3>${escapeHtml(packageDisplayName(item))}</h3><p class="muted">${formatMoney(item.price)}</p></div><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div><p class="package-description">${escapeHtml(item.description || "")}</p><div class="catalog-thumbs">${images.length ? images.map((image) => `<div class="catalog-thumb-wrap"><button class="catalog-thumb" data-open-catalog-file="package_images:${image.id}" type="button" aria-label="Ver ${escapeHtml(image.file_name || "imagen del paquete")}"><span data-catalog-thumb="package_images:${image.id}">IMG</span></button><button class="catalog-thumb-delete" type="button" data-delete-package-image="${image.id}" aria-label="Quitar imagen ${escapeHtml(image.file_name || "del paquete")}" title="Quitar imagen">×</button></div>`).join("") : `<div class="empty-state compact-empty">Sin imágenes</div>`}</div><div class="mini-dropzone package-image-dropzone" tabindex="0" data-package-dropzone="${item.id}"><strong>Subir imagen(es)</strong><span>Arrastre aquí o haga clic</span><input type="file" accept="image/*" multiple hidden data-package-upload="${item.id}"></div><div class="actions"><button class="btn" data-edit="${item.id}">Editar</button><button class="btn btn-danger" data-deactivate="${item.id}">Desactivar</button></div></article>`;
 }
 
 function render() {
@@ -180,6 +180,22 @@ form.addEventListener("submit", async (event) => {
 });
 
 document.addEventListener("click", async (event) => {
+  const deleteImageButton = event.target.closest("[data-delete-package-image]");
+  if (deleteImageButton) {
+    const imageId = deleteImageButton.dataset.deletePackageImage;
+    if (!confirm("¿Quitar esta imagen del paquete? Si ya fue elegida en un trabajo, no se podrá eliminar.")) return;
+    deleteImageButton.disabled = true;
+    try {
+      await deletePackageImage(imageId);
+      showToast("Imagen quitada del paquete.");
+      await load();
+    } catch (error) {
+      console.error(error);
+      showToast(error.message || "No se pudo quitar la imagen.", "error");
+      deleteImageButton.disabled = false;
+    }
+    return;
+  }
   const catalogButton = event.target.closest("[data-open-catalog-file]");
   if (event.target.matches("#newPackageBtn")) openModal();
   if (event.target.dataset.newPackageType) openModal(null, event.target.dataset.newPackageType, event.target.dataset.level);

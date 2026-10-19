@@ -47,6 +47,16 @@ export async function uploadPackageImage(packageId, file) {
   return result;
 }
 
+export async function deletePackageImage(imageId) {
+  const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/catalog/package_images/${imageId}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${await sessionToken()}` }
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(result?.error || "No se pudo eliminar la imagen del paquete.");
+  return result;
+}
+
 export async function uploadDiplomaTemplate(name, schoolLevel, file, canvaUrl = "") {
   const formData = new FormData();
   formData.append("catalog_type", "DIPLOMA");

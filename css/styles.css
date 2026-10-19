@@ -355,6 +355,9 @@ label { font-weight: 650; }
 .package-tier-card:disabled { opacity: .65; cursor: not-allowed; }
 .package-tier-card.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent); }
 .package-tier-price { font-size: 1.35rem; }
+.package-tier-description { margin: 0; color: var(--muted); white-space: pre-line; }
+.package-selected-summary { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.package-selected-summary h2 { margin: 0; }
 .catalog-tier-previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .catalog-tier-preview { display: grid; gap: 6px; min-width: 0; font-size: .85rem; color: var(--muted); }
 .catalog-tier-preview img { display: block; width: 100%; height: 130px; object-fit: contain; border: 1px solid var(--border); border-radius: 6px; background: white; }
@@ -363,6 +366,10 @@ label { font-weight: 650; }
 .diploma-catalog-card .actions { justify-content: flex-end; }
 .catalog-card-header { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
 .catalog-thumbs { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(82px, 1fr)); }
+.catalog-thumb-wrap { position: relative; min-width: 0; }
+.catalog-thumb-delete { position: absolute; top: 4px; right: 4px; z-index: 1; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 1px solid white; border-radius: 50%; background: #b42318; color: white; font: inherit; font-size: 20px; line-height: 1; cursor: pointer; box-shadow: 0 1px 4px #0003; }
+.catalog-thumb-delete:hover { background: #8f1b13; }
+.catalog-thumb-delete:disabled { opacity: .65; cursor: wait; }
 .catalog-thumb, .catalog-preview-large {
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -418,6 +425,7 @@ html[data-staff-role="editor"] [data-owner-only] { display: none !important; }
   .nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .main { padding: 18px; }
   .page-header { align-items: stretch; flex-direction: column; }
+  .package-selected-summary { flex-direction: column; }
   .filters { grid-template-columns: 1fr; }
   .package-category-header { align-items: stretch; flex-direction: column; }
   .group-workflow-header { flex-direction: column; }
