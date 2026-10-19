@@ -284,7 +284,7 @@ async function saveCatalogSelection(optionTable, optionId, packageQuantity = nul
   const selectedOption = selectedCatalogOption(optionId);
   const photoFormatLabel = selectedOption?.photo_presentation === "BASTIDOR" ? "Foto individual" : selectedOption?.photo_presentation === "GROUP_INDIVIDUAL" ? "Foto grupal" : data.photo_format === "GROUP" ? "Foto grupal" : data.photo_format === "INDIVIDUAL" ? "Foto individual" : "";
   const selectedPackageImage = optionTable === "package_images"
-    ? `<div class="catalog-preview-large"><span><img src="${escapeHtml(catalogFileUrl({ table: optionTable, id: optionId }))}" alt="${escapeHtml(data.selected_name || "Paquete seleccionado")}"></span></div>`
+    ? `<div class="selected-package-preview"><img src="${escapeHtml(catalogFileUrl({ table: optionTable, id: optionId }))}" alt="${escapeHtml(data.selected_name || "Paquete seleccionado")}"></div>`
     : "";
   content.innerHTML = `<div class="alert alert-success"><h1>Selección guardada.</h1><p>Gracias. Clarisa recibirá su selección para continuar con el pedido.</p>${selectedPackageImage}<p><strong>Selección:</strong> ${escapeHtml(data.selected_name || "")}${photoFormatLabel ? ` · ${photoFormatLabel}` : ""}</p>${data.package_quantity ? `<p><strong>Cantidad:</strong> ${data.package_quantity}<br><strong>Total:</strong> ${formatMoney(data.price || 0)}</p>` : ""}</div>`;
 }
