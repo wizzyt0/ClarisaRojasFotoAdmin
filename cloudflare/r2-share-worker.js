@@ -498,7 +498,7 @@ async function renderDownload(request, env, token) {
 async function streamFile(env, file, forceDownload) {
   const object = await env.PHOTO_BUCKET.get(file.r2_key);
   if (!object) return jsonError("Archivo no encontrado en R2.", 404);
-  const headers = new Headers();
+  const headers = new Headers(corsHeaders());
   object.writeHttpMetadata(headers);
   headers.set("etag", object.httpEtag);
   headers.set("cache-control", "private, max-age=300");
