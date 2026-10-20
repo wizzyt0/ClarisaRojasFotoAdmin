@@ -3,6 +3,7 @@ import { supabase } from "./supabase.js";
 import { escapeHtml, showToast } from "./utils.js";
 import { formatMoney, formatDate } from "./formatters.js";
 import { getCatalogFileUrl } from "./catalog.js";
+import { PACKAGE_LEVELS } from "./package-levels.js";
 
 const user = await requireAuth(["owner"]);
 if (!user) throw new Error("Acceso solo para administradores.");
@@ -28,6 +29,7 @@ const currency = (value) => formatMoney(Number(value || 0));
 const dateToday = new Date().toISOString().slice(0, 10);
 const statusLabels = { DRAFT: "Borrador", SENT: "Enviado", RECEIVED: "Recibido", CANCELLED: "Cancelado" };
 const orderTypeLabels = { FOLDER: "Carpetas por diseño", MATERIAL: "Materiales" };
+const packageTypeLabels = { SCHOOL_GRADUATION: "Graduación", SCHOOL_MEMORY: "Fotografía del recuerdo", SCHOOL_CHRISTMAS: "Navideña", PHOTO_SESSION: "Sesión", GENERAL: "General" };
 
 function setOptions(select, rows, label, emptyLabel = "Seleccione") {
   if (!select) return;
@@ -94,6 +96,11 @@ function populateSelects() {
 function folderName(id) { return folders.find((folder) => folder.id === id)?.name || "Diseño de carpeta eliminado"; }
 function jobName(id) { const job = jobs.find((item) => item.id === id); return job ? `${job.title} · ${job.clients?.name || "Cliente"}` : "Trabajo eliminado"; }
 function packageIsActive(pkg) { return pkg.is_active === true || pkg.is_active === "true" || pkg.is_active === 1 || pkg.is_active === "1"; }
+function packageDescription(pkg) {
+  const level = PACKAGE_LEVELS[pkg.school_level];
+  const type = packageTypeLabels[pkg.package_type] || "Otro tipo";
+  return level ? `${level} · ${type}` : `${type} · Sin nivel escolar`;
+}
 function render() {
   const filter = document.querySelector("#orderStatusFilter").value;
   renderOrders(orders.filter((order) => !filter || order.status === filter));
@@ -152,7 +159,7 @@ function renderCostItems() {
     const packageCheckboxes = availablePackages.map((pkg) => {
       const rule = itemRules.find((entry) => entry.package_id === pkg.id);
       const isActive = packageIsActive(pkg);
-      return `<label class="material-package-option ${isActive ? "" : "is-inactive"}"><span class="material-package-choice"><input type="checkbox" name="package_ids" value="${escapeHtml(pkg.id)}" ${rule ? "checked" : ""}><strong>${escapeHtml(pkg.name)}</strong>${isActive ? "" : '<span class="badge">Inactivo</span>'}</span><span class="material-package-quantity"><input class="input" type="number" name="units_${escapeHtml(pkg.id)}" min="0.001" step="0.001" value="${rule ? Number(rule.units_per_package) : 1}" aria-label="Cantidad de ${escapeHtml(pkg.name)}" ${rule ? "" : "disabled"}><span>${escapeHtml(item.unit)} por paquete</span></span></label>`;
+      return `<label class="material-package-option ${isActive ? "" : "is-inactive"}"><span class="material-package-choice"><input type="checkbox" name="package_ids" value="${escapeHtml(pkg.id)}" ${rule ? "checked" : ""}><span class="material-package-name"><strong>${escapeHtml(pkg.name)}</strong><span class="material-package-classification">${escapeHtml(packageDescription(pkg))}</span></span>${isActive ? "" : '<span class="badge">Inactivo</span>'}</span><span class="material-package-quantity"><input class="input" type="number" name="units_${escapeHtml(pkg.id)}" min="0.001" step="0.001" value="${rule ? Number(rule.units_per_package) : 1}" aria-label="Cantidad de ${escapeHtml(pkg.name)}" ${rule ? "" : "disabled"}><span>${escapeHtml(item.unit)} por paquete</span></span></label>`;
     }).join("");
     return `<details class="cost-item-card ${item.is_active ? "" : "is-inactive"}" data-cost-row="${item.id}" data-cost-search="${escapeHtml(`${item.name} ${item.unit} ${item.purchase_unit}`.toLocaleLowerCase())}">
     <summary class="cost-item-summary"><strong>${escapeHtml(item.name)}</strong><span>${currency(item.unit_cost)} por ${escapeHtml(item.purchase_unit)}</span><span>${itemRules.length} ${itemRules.length === 1 ? "paquete" : "paquetes"}</span><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></summary>
