@@ -19,6 +19,8 @@ let orderLines = [];
 let allocations = [];
 let expenses = [];
 let deposits = [];
+let materialsLoadError = null;
+let recipesLoadError = null;
 const folderPreviewPromises = new Map();
 const jobParam = new URLSearchParams(location.search).get("job_id");
 const currency = (value) => formatMoney(Number(value || 0));
@@ -45,30 +47,42 @@ async function loadData() {
     supabase.from("deposits").select("job_id,amount")
   ]);
   const labels = ["trabajos", "catálogo de carpetas", "paquetes", "costos", "recetas", "pedidos", "gastos", "abonos"];
-  results.forEach((result, index) => { if (result.error) throw new Error(`No se pudieron cargar ${labels[index]}: ${result.error.message}`); });
+  const loadErrors = results.flatMap((result, index) => result.error ? [`${labels[index]}: ${result.error.message}`] : []);
   [jobs, folders, packages, costItems, recipes, orders, expenses, deposits] = results.map((result) => result.data || []);
+  const materialsError = results[3].error || results[4].error;
+  materialsLoadError = materialsError;
+  recipesLoadError = results[4].error;
+  const materialsErrorNode = document.querySelector("#costItemsLoadError");
+  if (materialsErrorNode) {
+    materialsErrorNode.hidden = !materialsError;
+    materialsErrorNode.textContent = materialsError
+      ? `No se pudieron cargar los materiales o sus paquetes: ${materialsError.message}`
+      : "";
+  }
   const orderIds = orders.map((order) => order.id);
   if (orderIds.length) {
     const linesResult = await supabase.from("purchase_order_lines").select("*").in("purchase_order_id", orderIds);
-    if (linesResult.error) throw linesResult.error;
-    orderLines = linesResult.data || [];
+    if (linesResult.error) { loadErrors.push(`líneas de pedidos: ${linesResult.error.message}`); orderLines = []; }
+    else orderLines = linesResult.data || [];
     const lineIds = orderLines.map((line) => line.id);
     if (lineIds.length) {
       const allocationResult = await supabase.from("purchase_order_allocations").select("*").in("purchase_order_line_id", lineIds);
-      if (allocationResult.error) throw allocationResult.error;
-      allocations = allocationResult.data || [];
+      if (allocationResult.error) { loadErrors.push(`detalle de pedidos: ${allocationResult.error.message}`); allocations = []; }
+      else allocations = allocationResult.data || [];
     } else allocations = [];
   } else { orderLines = []; allocations = []; }
   populateSelects();
   render();
+  if (loadErrors.length) {
+    console.error("Algunos datos de pedidos y finanzas no cargaron:", loadErrors);
+    showToast(`Algunos datos no cargaron: ${loadErrors.join(" · ")}`, "error");
+  }
 }
 
 function populateSelects() {
   setOptions(document.querySelector("#orderJob"), jobs.filter((job) => job.job_type === "SCHOOL_GRADUATION"), (job) => `${job.title} · ${job.clients?.name || "Escuela"}`);
   setOptions(document.querySelector("#expenseJob"), jobs, (job) => `${job.title} · ${job.clients?.name || "Cliente"}`, "Gasto general");
   setOptions(document.querySelector("#folderCostTemplate"), folders.filter((folder) => folder.is_active), (folder) => folder.name, "Sin diseño relacionado");
-  setOptions(document.querySelector("#recipePackage"), packages.filter((item) => item.is_active), (item) => `${item.name} · ${currency(item.price)}`);
-  setOptions(document.querySelector("#recipeCostItem"), costItems.filter((item) => item.is_active), (item) => `${item.name} (${item.unit})`);
   setOptions(document.querySelector("#expenseCostItem"), costItems.filter((item) => item.is_active), (item) => item.name, "Otro gasto");
   setOptions(document.querySelector("#financeJobFilter"), jobs, (job) => `${job.title} · ${job.clients?.name || "Cliente"}`, "Todos los trabajos");
   if (jobParam && jobs.some((job) => job.id === jobParam)) document.querySelector("#orderJob").value = jobParam;
@@ -81,7 +95,6 @@ function render() {
   const filter = document.querySelector("#orderStatusFilter").value;
   renderOrders(orders.filter((order) => !filter || order.status === filter));
   renderCostItems();
-  renderRecipes();
   renderExpenses();
 }
 
@@ -125,20 +138,26 @@ function hydrateFolderPreviews() {
 
 function renderCostItems() {
   const categories = [["MATERIAL", "Material"], ["PRINTING", "Impresión"], ["PRODUCT", "Producto"], ["OTHER", "Otro"]];
-  document.querySelector("#costItemsList").innerHTML = costItems.map((item) => `<article class="cost-item-card ${item.is_active ? "" : "is-inactive"}" data-cost-row="${item.id}">
+  const count = document.querySelector("#costItemCount");
+  if (count) count.textContent = `${costItems.length} ${costItems.length === 1 ? "material" : "materiales"}`;
+  document.querySelector("#costItemsList").innerHTML = costItems.map((item) => {
+    const itemRules = recipes.filter((rule) => rule.cost_item_id === item.id);
+    const packageOptions = packages.filter((pkg) => pkg.is_active).map((pkg) => `<option value="${escapeHtml(pkg.id)}">${escapeHtml(pkg.name)} · ${currency(pkg.price)}</option>`).join("");
+    const ruleRows = itemRules.map((rule) => {
+      const pkg = packages.find((entry) => entry.id === rule.package_id);
+      return `<li><span><strong>${escapeHtml(pkg?.name || "Paquete eliminado")}</strong><span class="muted">${Number(rule.units_per_package)} ${escapeHtml(item.unit)} por paquete</span></span><button class="btn btn-danger" type="button" data-delete-material-rule="${rule.id}">Quitar</button></li>`;
+    }).join("");
+    return `<article class="cost-item-card ${item.is_active ? "" : "is-inactive"}" data-cost-row="${item.id}">
     <div class="cost-item-card-head"><label class="form-group"><span>Nombre</span><input class="input" data-cost-field="name" value="${escapeHtml(item.name)}"></label><label class="form-group"><span>Unidad de consumo</span><input class="input" data-cost-field="unit" value="${escapeHtml(item.unit)}"></label><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div>
     <div class="cost-item-edit-grid"><label class="form-group"><span>Unidad de compra</span><input class="input" data-cost-field="purchase_unit" value="${escapeHtml(item.purchase_unit)}"></label><label class="form-group"><span>Unidades que rinde</span><input class="input" data-cost-field="units_per_purchase" type="number" min="0.001" step="0.001" value="${Number(item.units_per_purchase)}"></label><label class="form-group"><span>Costo de compra</span><input class="input" data-cost-field="unit_cost" type="number" min="0" step="0.01" value="${Number(item.unit_cost)}"></label></div>
     <details class="advanced-cost-fields"><summary>Datos opcionales</summary><div class="cost-item-edit-grid"><label class="form-group"><span>Existencia (unidades de consumo)</span><input class="input" data-cost-field="stock_quantity" type="number" min="0" step="0.001" value="${Number(item.stock_quantity)}"></label><label class="form-group"><span>Proveedor</span><input class="input" data-cost-field="supplier" value="${escapeHtml(item.supplier || "")}"></label><label class="form-group"><span>Categoría</span><select class="select" data-cost-field="category">${categories.map(([value, label]) => `<option value="${value}" ${item.category === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="form-group"><span>Diseño de carpeta (solo carpetas)</span><select class="select" data-cost-field="folder_template_id"><option value="">No aplica</option>${folders.map((folder) => `<option value="${folder.id}" ${item.folder_template_id === folder.id ? "selected" : ""}>${escapeHtml(folder.name)}</option>`).join("")}</select></label></div></details>
-    <div class="actions cost-item-actions"><button class="btn btn-primary" data-save-cost="${item.id}">Guardar cambios</button>${item.is_active ? `<button class="btn" data-toggle-cost="${item.id}" data-active="false">Desactivar</button>` : `<button class="btn" data-toggle-cost="${item.id}" data-active="true">Activar</button>`}</div>
-  </article>`).join("") || '<div class="empty-state">Todavía no hay insumos registrados. Agrega solo los que quieras costear.</div>';
-}
-
-function renderRecipes() {
-  document.querySelector("#recipesList").innerHTML = `<table><thead><tr><th>Paquete</th><th>Material</th><th>Consumo por paquete</th><th></th></tr></thead><tbody>${recipes.map((rule) => {
-    const pkg = packages.find((item) => item.id === rule.package_id);
-    const item = costItems.find((cost) => cost.id === rule.cost_item_id);
-    return `<tr><td>${escapeHtml(pkg?.name || "Paquete eliminado")}</td><td>${escapeHtml(item?.name || "Insumo eliminado")}</td><td>${Number(rule.units_per_package)} ${escapeHtml(item?.unit || "unidades")}</td><td><button class="btn btn-danger" data-delete-recipe="${rule.id}">Quitar</button></td></tr>`;
-  }).join("") || '<tr><td colspan="4">Aún no hay recetas configuradas.</td></tr>'}</tbody></table>`;
+    <details class="material-package-usage"><summary>Paquetes que incluyen este material <span class="badge">${itemRules.length}</span></summary>
+      ${itemRules.length ? `<ul class="material-rule-list">${ruleRows}</ul>` : `<p class="muted">Aún no está agregado a ningún paquete.</p>`}
+      ${recipesLoadError ? `<p class="muted">No se puede editar esta asignación hasta que se carguen las reglas de paquetes.</p>` : packages.some((pkg) => pkg.is_active) ? `<form class="material-rule-form" data-material-rule-form="${item.id}"><label class="form-group"><span>Paquete</span><select class="select" name="package_id" required><option value="">Selecciona un paquete</option>${packageOptions}</select></label><label class="form-group"><span>Cuántas ${escapeHtml(item.unit)} incluye cada paquete</span><input class="input" name="units_per_package" type="number" min="0.001" step="0.001" placeholder="Ejemplo: 1" required></label><button class="btn" type="submit">Agregar al paquete</button></form>` : `<p class="muted">No hay paquetes activos disponibles.</p>`}
+    </details>
+    <div class="actions cost-item-actions"><button class="btn btn-primary" type="button" data-save-cost="${item.id}">Guardar cambios</button>${item.is_active ? `<button class="btn" type="button" data-toggle-cost="${item.id}" data-active="false">Desactivar</button>` : `<button class="btn" type="button" data-toggle-cost="${item.id}" data-active="true">Activar</button>`}</div>
+  </article>`;
+  }).join("") || (materialsLoadError ? '<div class="empty-state">No se pudieron mostrar los materiales. Revisa el aviso de carga que aparece arriba.</div>' : '<div class="empty-state">Todavía no hay materiales registrados. Usa “Agregar insumo o costo” para crear el catálogo; aparecerán aquí.</div>');
 }
 
 function renderExpenses() {
@@ -249,6 +268,14 @@ document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListe
 }));
 document.querySelector("#orderStatusFilter").addEventListener("change", render);
 document.querySelector("#financeJobFilter").addEventListener("change", renderExpenses);
+document.addEventListener("change", (event) => {
+  const packageSelect = event.target.closest('.material-rule-form select[name="package_id"]');
+  if (!packageSelect) return;
+  const form = packageSelect.closest(".material-rule-form");
+  const existing = recipes.find((rule) => rule.package_id === packageSelect.value && rule.cost_item_id === form.dataset.materialRuleForm);
+  form.elements.units_per_package.value = existing ? Number(existing.units_per_package) : "";
+  form.querySelector('button[type="submit"]').textContent = existing ? "Actualizar cantidad" : "Agregar al paquete";
+});
 document.querySelector("#costItemForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -258,15 +285,20 @@ document.querySelector("#costItemForm").addEventListener("submit", async (event)
   form.reset(); form.units_per_purchase.value = "1"; form.unit_cost.value = "0"; form.stock_quantity.value = "0";
   showToast("Costo guardado."); await loadData();
 });
-document.querySelector("#recipeForm").addEventListener("submit", async (event) => {
+document.addEventListener("submit", async (event) => {
+  const recipeForm = event.target.closest("[data-material-rule-form]");
+  if (!recipeForm) return;
   event.preventDefault();
-  const values = Object.fromEntries(new FormData(event.currentTarget));
-  const existing = recipes.find((item) => item.package_id === values.package_id && item.cost_item_id === values.cost_item_id);
+  const values = Object.fromEntries(new FormData(recipeForm));
+  const costItemId = recipeForm.dataset.materialRuleForm;
+  const unitsPerPackage = Number(values.units_per_package);
+  if (!values.package_id || !Number.isFinite(unitsPerPackage) || unitsPerPackage <= 0) return showToast("Selecciona un paquete e indica una cantidad mayor que cero.", "error");
+  const existing = recipes.find((item) => item.package_id === values.package_id && item.cost_item_id === costItemId);
   const result = existing
-    ? await supabase.from("package_material_rules").update({ units_per_package: Number(values.units_per_package) }).eq("id", existing.id)
-    : await supabase.from("package_material_rules").insert({ ...values, units_per_package: Number(values.units_per_package) });
+    ? await supabase.from("package_material_rules").update({ units_per_package: unitsPerPackage }).eq("id", existing.id)
+    : await supabase.from("package_material_rules").insert({ package_id: values.package_id, cost_item_id: costItemId, units_per_package: unitsPerPackage });
   if (result.error) return showToast(result.error.message, "error");
-  showToast("Receta guardada."); await loadData();
+  showToast(existing ? "Cantidad del material actualizada para ese paquete." : "Material agregado al paquete."); await loadData();
 });
 document.querySelector("#expenseForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -304,8 +336,8 @@ document.addEventListener("click", async (event) => {
       if (result.error) throw result.error;
       await loadData();
     }
-    if (button.dataset.deleteRecipe && confirm("¿Quitar esta regla de materiales?")) {
-      const result = await supabase.from("package_material_rules").delete().eq("id", button.dataset.deleteRecipe);
+    if (button.dataset.deleteMaterialRule && confirm("¿Quitar este material del paquete?")) {
+      const result = await supabase.from("package_material_rules").delete().eq("id", button.dataset.deleteMaterialRule);
       if (result.error) throw result.error;
       await loadData();
     }
