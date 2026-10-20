@@ -147,7 +147,9 @@ function renderCostItems() {
       const pkg = packages.find((entry) => entry.id === rule.package_id);
       return `<li><span><strong>${escapeHtml(pkg?.name || "Paquete eliminado")}</strong><span class="muted">${Number(rule.units_per_package)} ${escapeHtml(item.unit)} por paquete</span></span><button class="btn btn-danger" type="button" data-delete-material-rule="${rule.id}">Quitar</button></li>`;
     }).join("");
-    return `<article class="cost-item-card ${item.is_active ? "" : "is-inactive"}" data-cost-row="${item.id}">
+    return `<details class="cost-item-card ${item.is_active ? "" : "is-inactive"}" data-cost-row="${item.id}" data-cost-search="${escapeHtml(`${item.name} ${item.unit} ${item.purchase_unit}`.toLocaleLowerCase())}">
+    <summary class="cost-item-summary"><strong>${escapeHtml(item.name)}</strong><span>${currency(item.unit_cost)} por ${escapeHtml(item.purchase_unit)}</span><span>${itemRules.length} ${itemRules.length === 1 ? "paquete" : "paquetes"}</span><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></summary>
+    <div class="cost-item-content">
     <div class="cost-item-card-head"><label class="form-group"><span>Nombre</span><input class="input" data-cost-field="name" value="${escapeHtml(item.name)}"></label><label class="form-group"><span>Unidad de consumo</span><input class="input" data-cost-field="unit" value="${escapeHtml(item.unit)}"></label><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div>
     <div class="cost-item-edit-grid"><label class="form-group"><span>Unidad de compra</span><input class="input" data-cost-field="purchase_unit" value="${escapeHtml(item.purchase_unit)}"></label><label class="form-group"><span>Unidades que rinde</span><input class="input" data-cost-field="units_per_purchase" type="number" min="0.001" step="0.001" value="${Number(item.units_per_purchase)}"></label><label class="form-group"><span>Costo de compra</span><input class="input" data-cost-field="unit_cost" type="number" min="0" step="0.01" value="${Number(item.unit_cost)}"></label></div>
     <details class="advanced-cost-fields"><summary>Datos opcionales</summary><div class="cost-item-edit-grid"><label class="form-group"><span>Existencia (unidades de consumo)</span><input class="input" data-cost-field="stock_quantity" type="number" min="0" step="0.001" value="${Number(item.stock_quantity)}"></label><label class="form-group"><span>Proveedor</span><input class="input" data-cost-field="supplier" value="${escapeHtml(item.supplier || "")}"></label><label class="form-group"><span>Categoría</span><select class="select" data-cost-field="category">${categories.map(([value, label]) => `<option value="${value}" ${item.category === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="form-group"><span>Diseño de carpeta (solo carpetas)</span><select class="select" data-cost-field="folder_template_id"><option value="">No aplica</option>${folders.map((folder) => `<option value="${folder.id}" ${item.folder_template_id === folder.id ? "selected" : ""}>${escapeHtml(folder.name)}</option>`).join("")}</select></label></div></details>
@@ -156,8 +158,25 @@ function renderCostItems() {
       ${recipesLoadError ? `<p class="muted">No se puede editar esta asignación hasta que se carguen las reglas de paquetes.</p>` : packages.some((pkg) => pkg.is_active) ? `<form class="material-rule-form" data-material-rule-form="${item.id}"><label class="form-group"><span>Paquete</span><select class="select" name="package_id" required><option value="">Selecciona un paquete</option>${packageOptions}</select></label><label class="form-group"><span>Cuántas ${escapeHtml(item.unit)} incluye cada paquete</span><input class="input" name="units_per_package" type="number" min="0.001" step="0.001" placeholder="Ejemplo: 1" required></label><button class="btn" type="submit">Agregar al paquete</button></form>` : `<p class="muted">No hay paquetes activos disponibles.</p>`}
     </details>
     <div class="actions cost-item-actions"><button class="btn btn-primary" type="button" data-save-cost="${item.id}">Guardar cambios</button>${item.is_active ? `<button class="btn" type="button" data-toggle-cost="${item.id}" data-active="false">Desactivar</button>` : `<button class="btn" type="button" data-toggle-cost="${item.id}" data-active="true">Activar</button>`}</div>
-  </article>`;
+    </div></details>`;
   }).join("") || (materialsLoadError ? '<div class="empty-state">No se pudieron mostrar los materiales. Revisa el aviso de carga que aparece arriba.</div>' : '<div class="empty-state">Todavía no hay materiales registrados. Usa “Agregar insumo o costo” para crear el catálogo; aparecerán aquí.</div>');
+  filterCostItems();
+}
+
+function filterCostItems() {
+  const input = document.querySelector("#costItemSearch");
+  if (!input) return;
+  const normalize = (value) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase();
+  const query = normalize(input.value.trim());
+  let visible = 0;
+  document.querySelectorAll("#costItemsList [data-cost-row]").forEach((row) => {
+    row.hidden = !normalize(row.dataset.costSearch || "").includes(query);
+    if (!row.hidden) visible += 1;
+  });
+  const count = document.querySelector("#costItemCount");
+  if (count) count.textContent = `${visible}${query ? ` de ${costItems.length}` : ""} ${costItems.length === 1 ? "material" : "materiales"}`;
+  const noResults = document.querySelector("#costItemNoResults");
+  if (noResults) noResults.hidden = !query || visible > 0;
 }
 
 function renderExpenses() {
@@ -268,6 +287,7 @@ document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListe
 }));
 document.querySelector("#orderStatusFilter").addEventListener("change", render);
 document.querySelector("#financeJobFilter").addEventListener("change", renderExpenses);
+document.querySelector("#costItemSearch").addEventListener("input", filterCostItems);
 document.addEventListener("change", (event) => {
   const packageSelect = event.target.closest('.material-rule-form select[name="package_id"]');
   if (!packageSelect) return;

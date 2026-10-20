@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pedidos y finanzas | Clarisa Rojas Fotografia</title>
   <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/admin-purchasing.css?v=20261019-material-flow">
+  <link rel="stylesheet" href="css/admin-purchasing.css?v=20261019-compact-materials">
 </head>
 <body>
   <div class="app-shell">
@@ -52,9 +52,11 @@
             <div class="photo-cost-example"><strong>Ejemplo: Foto de agradecimiento 6x8</strong><span>Unidad de consumo: foto · Unidad de compra: impresión individual · Rendimiento: 1 · Costo: escribe lo que te cobra la imprenta (por ejemplo, $8 si ese es tu precio).</span><span>Al guardarla, asígnala aquí mismo a cada paquete e indica cuántas fotos incluye.</span></div>
             <button class="btn btn-primary" type="submit">Guardar costo</button>
           </form></details>
-          <div class="page-header material-list-heading"><div><h3>Materiales registrados</h3><p class="muted">Abre cada material para indicar qué paquetes lo incluyen.</p></div><span id="costItemCount" class="badge">0</span></div>
+          <div class="page-header material-list-heading"><div><h3>Materiales registrados</h3><p class="muted">Abre un material para editarlo o asignarlo a paquetes.</p></div><span id="costItemCount" class="badge">0</span></div>
+          <label class="material-search"><span class="sr-only">Buscar materiales</span><input id="costItemSearch" class="input" type="search" placeholder="Buscar material por nombre" autocomplete="off"></label>
           <div id="costItemsLoadError" class="alert alert-error" hidden></div>
           <div id="costItemsList" class="cost-item-list"></div>
+          <div id="costItemNoResults" class="empty-state" hidden>No hay materiales que coincidan con la búsqueda.</div>
         </section>
       </section>
       <section data-panel="expenses" class="purchase-panel" hidden>
@@ -71,6 +73,6 @@
       </section>
     </section></main>
   </div>
-  <script type="module" src="js/purchasing.js?v=20261019-material-flow"></script>
+  <script type="module" src="js/purchasing.js?v=20261019-compact-materials"></script>
 </body>
 </html>
