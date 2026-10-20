@@ -2,6 +2,7 @@ import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { escapeHtml, showToast } from "./utils.js";
 import { formatMoney, formatDate } from "./formatters.js";
+import { getCatalogFileUrl } from "./catalog.js";
 
 const user = await requireAuth(["owner"]);
 if (!user) throw new Error("Acceso solo para administradores.");
@@ -18,6 +19,7 @@ let orderLines = [];
 let allocations = [];
 let expenses = [];
 let deposits = [];
+const folderPreviewPromises = new Map();
 const jobParam = new URLSearchParams(location.search).get("job_id");
 const currency = (value) => formatMoney(Number(value || 0));
 const dateToday = new Date().toISOString().slice(0, 10);
@@ -92,9 +94,33 @@ function renderOrders(rows) {
     return `<article class="purchase-order"><div class="purchase-order-head"><div><h3>${escapeHtml(orderTypeLabels[order.order_type] || order.order_type)} · ${escapeHtml(order.supplier)}</h3><div class="purchase-order-meta"><span>${escapeHtml(jobName(order.job_id))}</span><span>${escapeHtml(statusLabels[order.status] || order.status)}</span><span>Creado ${formatDate(order.created_at?.slice(0, 10))}</span><strong>Estimado ${currency(total)}</strong></div></div><div class="purchase-order-actions">${order.status === "DRAFT" ? `<button class="btn btn-primary" data-order-status="SENT" data-order-id="${order.id}">Marcar enviado</button>` : ""}${order.status === "SENT" ? `<button class="btn btn-primary" data-order-status="RECEIVED" data-order-id="${order.id}">Marcar recibido</button>` : ""}${order.status === "DRAFT" ? `<button class="btn" data-order-status="CANCELLED" data-order-id="${order.id}">Cancelar borrador</button>` : ""}<button class="btn" data-record-order-expense="${order.id}">Registrar gasto real</button></div></div>
       <table class="purchase-lines"><thead><tr><th>Artículo</th><th>Cantidad</th><th>Costo unitario estimado</th><th>Importe estimado</th></tr></thead><tbody>${lines.map((line) => {
         const lineAllocations = allocations.filter((item) => item.purchase_order_line_id === line.id);
-        return `<tr><td><strong>${escapeHtml(line.description)}</strong>${lineAllocations.length ? `<ul class="allocation-list">${lineAllocations.map((item) => `<li>${escapeHtml(item.group_name_snapshot)} · ${escapeHtml(item.teacher_name_snapshot || "Sin maestra")}: ${order.status === "DRAFT" ? `<input class="input inline-number" type="number" min="0.001" step="1" value="${Number(item.quantity)}" aria-label="Cantidad para ${escapeHtml(item.group_name_snapshot)}" data-allocation-input="${item.id}"> ${escapeHtml(item.unit)} <button class="btn" data-save-allocation="${item.id}" data-line-id="${line.id}">Guardar cantidad</button>` : `${Number(item.quantity)} ${escapeHtml(item.unit)}`}</li>`).join("")}</ul>` : ""}</td><td>${Number(line.quantity)} ${escapeHtml(line.unit)}</td><td>${currency(line.unit_cost)}</td><td>${currency(Number(line.quantity) * Number(line.unit_cost))}</td></tr>`;
+        const teacherGroups = lineAllocations.map((item) => `<li>${escapeHtml(item.group_name_snapshot)} · ${escapeHtml(item.teacher_name_snapshot || "Sin maestra")}: ${order.status === "DRAFT" ? `<input class="input inline-number" type="number" min="0.001" step="1" value="${Number(item.quantity)}" aria-label="Cantidad para ${escapeHtml(item.group_name_snapshot)}" data-allocation-input="${item.id}"> ${escapeHtml(item.unit)} <button class="btn" data-save-allocation="${item.id}" data-line-id="${line.id}">Guardar cantidad</button>` : `${Number(item.quantity)} ${escapeHtml(item.unit)}`}</li>`).join("");
+        const preview = line.folder_template_id ? `<a class="folder-order-preview-link" data-folder-preview-link="${line.folder_template_id}" target="_blank" rel="noopener" aria-label="Abrir preview de ${escapeHtml(line.description)}"><img class="folder-order-preview" data-folder-preview="${line.folder_template_id}" alt="Preview: ${escapeHtml(line.description)}"><span class="folder-order-preview-fallback" hidden>Preview no disponible</span></a>` : "";
+        return `<tr><td><div class="folder-order-design">${preview}<div><strong>${escapeHtml(line.description)}</strong><p class="muted">Total consolidado: ${Number(line.quantity)} ${escapeHtml(line.unit)} · ${lineAllocations.length} grupo(s)</p>${lineAllocations.length ? `<strong class="allocation-heading">Solicitado por</strong><ul class="allocation-list">${teacherGroups}</ul>` : ""}</div></div></td><td>${Number(line.quantity)} ${escapeHtml(line.unit)}</td><td>${currency(line.unit_cost)}</td><td>${currency(Number(line.quantity) * Number(line.unit_cost))}</td></tr>`;
       }).join("") || '<tr><td colspan="4">El pedido aún no tiene renglones.</td></tr>'}</tbody></table>${order.notes ? `<p class="muted">${escapeHtml(order.notes)}</p>` : ""}</article>`;
   }).join("");
+  hydrateFolderPreviews();
+}
+
+function hydrateFolderPreviews() {
+  document.querySelectorAll("[data-folder-preview]").forEach(async (image) => {
+    const folderId = image.dataset.folderPreview;
+    try {
+      if (!folderPreviewPromises.has(folderId)) folderPreviewPromises.set(folderId, getCatalogFileUrl("folder_templates", folderId));
+      const url = await folderPreviewPromises.get(folderId);
+      if (!image.isConnected) return;
+      image.addEventListener("error", () => {
+        image.hidden = true;
+        image.parentElement.querySelector(".folder-order-preview-fallback").hidden = false;
+      }, { once: true });
+      image.src = url;
+      image.closest("[data-folder-preview-link]").href = url;
+    } catch (error) {
+      image.hidden = true;
+      image.parentElement.querySelector(".folder-order-preview-fallback").hidden = false;
+      console.warn("No se pudo cargar el preview de carpeta para el pedido", folderId, error);
+    }
+  });
 }
 
 function renderCostItems() {
