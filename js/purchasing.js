@@ -142,10 +142,11 @@ function renderCostItems() {
   if (count) count.textContent = `${costItems.length} ${costItems.length === 1 ? "material" : "materiales"}`;
   document.querySelector("#costItemsList").innerHTML = costItems.map((item) => {
     const itemRules = recipes.filter((rule) => rule.cost_item_id === item.id);
-    const packageOptions = packages.filter((pkg) => pkg.is_active).map((pkg) => `<option value="${escapeHtml(pkg.id)}">${escapeHtml(pkg.name)} · ${currency(pkg.price)}</option>`).join("");
-    const ruleRows = itemRules.map((rule) => {
-      const pkg = packages.find((entry) => entry.id === rule.package_id);
-      return `<li><span><strong>${escapeHtml(pkg?.name || "Paquete eliminado")}</strong><span class="muted">${Number(rule.units_per_package)} ${escapeHtml(item.unit)} por paquete</span></span><button class="btn btn-danger" type="button" data-delete-material-rule="${rule.id}">Quitar</button></li>`;
+    const assignedIds = new Set(itemRules.map((rule) => rule.package_id));
+    const availablePackages = packages.filter((pkg) => pkg.is_active || assignedIds.has(pkg.id));
+    const packageCheckboxes = availablePackages.map((pkg) => {
+      const rule = itemRules.find((entry) => entry.package_id === pkg.id);
+      return `<label class="material-package-option ${pkg.is_active ? "" : "is-inactive"}"><span class="material-package-choice"><input type="checkbox" name="package_ids" value="${escapeHtml(pkg.id)}" ${rule ? "checked" : ""}><strong>${escapeHtml(pkg.name)}</strong>${pkg.is_active ? "" : '<span class="badge">Inactivo</span>'}</span><span class="material-package-quantity"><input class="input" type="number" name="units_${escapeHtml(pkg.id)}" min="0.001" step="0.001" value="${rule ? Number(rule.units_per_package) : 1}" aria-label="Cantidad de ${escapeHtml(pkg.name)}" ${rule ? "" : "disabled"}><span>${escapeHtml(item.unit)} por paquete</span></span></label>`;
     }).join("");
     return `<details class="cost-item-card ${item.is_active ? "" : "is-inactive"}" data-cost-row="${item.id}" data-cost-search="${escapeHtml(`${item.name} ${item.unit} ${item.purchase_unit}`.toLocaleLowerCase())}">
     <summary class="cost-item-summary"><strong>${escapeHtml(item.name)}</strong><span>${currency(item.unit_cost)} por ${escapeHtml(item.purchase_unit)}</span><span>${itemRules.length} ${itemRules.length === 1 ? "paquete" : "paquetes"}</span><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></summary>
@@ -153,10 +154,9 @@ function renderCostItems() {
     <div class="cost-item-card-head"><label class="form-group"><span>Nombre</span><input class="input" data-cost-field="name" value="${escapeHtml(item.name)}"></label><label class="form-group"><span>Unidad de consumo</span><input class="input" data-cost-field="unit" value="${escapeHtml(item.unit)}"></label><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div>
     <div class="cost-item-edit-grid"><label class="form-group"><span>Unidad de compra</span><input class="input" data-cost-field="purchase_unit" value="${escapeHtml(item.purchase_unit)}"></label><label class="form-group"><span>Unidades que rinde</span><input class="input" data-cost-field="units_per_purchase" type="number" min="0.001" step="0.001" value="${Number(item.units_per_purchase)}"></label><label class="form-group"><span>Costo de compra</span><input class="input" data-cost-field="unit_cost" type="number" min="0" step="0.01" value="${Number(item.unit_cost)}"></label></div>
     <details class="advanced-cost-fields"><summary>Datos opcionales</summary><div class="cost-item-edit-grid"><label class="form-group"><span>Existencia (unidades de consumo)</span><input class="input" data-cost-field="stock_quantity" type="number" min="0" step="0.001" value="${Number(item.stock_quantity)}"></label><label class="form-group"><span>Proveedor</span><input class="input" data-cost-field="supplier" value="${escapeHtml(item.supplier || "")}"></label><label class="form-group"><span>Categoría</span><select class="select" data-cost-field="category">${categories.map(([value, label]) => `<option value="${value}" ${item.category === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="form-group"><span>Diseño de carpeta (solo carpetas)</span><select class="select" data-cost-field="folder_template_id"><option value="">No aplica</option>${folders.map((folder) => `<option value="${folder.id}" ${item.folder_template_id === folder.id ? "selected" : ""}>${escapeHtml(folder.name)}</option>`).join("")}</select></label></div></details>
-    <details class="material-package-usage"><summary>Paquetes que incluyen este material <span class="badge">${itemRules.length}</span></summary>
-      ${itemRules.length ? `<ul class="material-rule-list">${ruleRows}</ul>` : `<p class="muted">Aún no está agregado a ningún paquete.</p>`}
-      ${recipesLoadError ? `<p class="muted">No se puede editar esta asignación hasta que se carguen las reglas de paquetes.</p>` : packages.some((pkg) => pkg.is_active) ? `<form class="material-rule-form" data-material-rule-form="${item.id}"><label class="form-group"><span>Paquete</span><select class="select" name="package_id" required><option value="">Selecciona un paquete</option>${packageOptions}</select></label><label class="form-group"><span>Cuántas ${escapeHtml(item.unit)} incluye cada paquete</span><input class="input" name="units_per_package" type="number" min="0.001" step="0.001" placeholder="Ejemplo: 1" required></label><button class="btn" type="submit">Agregar al paquete</button></form>` : `<p class="muted">No hay paquetes activos disponibles.</p>`}
-    </details>
+    <section class="material-package-usage"><div class="material-package-heading"><div><h4>¿En qué paquetes se usa?</h4><p class="muted">Marca los paquetes que incluyen este material y define cuántas ${escapeHtml(item.unit)} lleva cada uno.</p></div><span class="badge">${itemRules.length} seleccionados</span></div>
+      ${recipesLoadError ? `<p class="muted">No se puede editar esta asignación hasta que se carguen las reglas de paquetes.</p>` : availablePackages.length ? `<form class="material-rule-form" data-material-rule-form="${item.id}"><div class="material-package-options">${packageCheckboxes}</div><button class="btn btn-primary" type="submit">Guardar paquetes seleccionados</button></form>` : `<p class="muted">No hay paquetes disponibles.</p>`}
+    </section>
     <div class="actions cost-item-actions"><button class="btn btn-primary" type="button" data-save-cost="${item.id}">Guardar cambios</button>${item.is_active ? `<button class="btn" type="button" data-toggle-cost="${item.id}" data-active="false">Desactivar</button>` : `<button class="btn" type="button" data-toggle-cost="${item.id}" data-active="true">Activar</button>`}</div>
     </div></details>`;
   }).join("") || (materialsLoadError ? '<div class="empty-state">No se pudieron mostrar los materiales. Revisa el aviso de carga que aparece arriba.</div>' : '<div class="empty-state">Todavía no hay materiales registrados. Usa “Agregar insumo o costo” para crear el catálogo; aparecerán aquí.</div>');
@@ -289,12 +289,9 @@ document.querySelector("#orderStatusFilter").addEventListener("change", render);
 document.querySelector("#financeJobFilter").addEventListener("change", renderExpenses);
 document.querySelector("#costItemSearch").addEventListener("input", filterCostItems);
 document.addEventListener("change", (event) => {
-  const packageSelect = event.target.closest('.material-rule-form select[name="package_id"]');
-  if (!packageSelect) return;
-  const form = packageSelect.closest(".material-rule-form");
-  const existing = recipes.find((rule) => rule.package_id === packageSelect.value && rule.cost_item_id === form.dataset.materialRuleForm);
-  form.elements.units_per_package.value = existing ? Number(existing.units_per_package) : "";
-  form.querySelector('button[type="submit"]').textContent = existing ? "Actualizar cantidad" : "Agregar al paquete";
+  const checkbox = event.target.closest('.material-package-option input[name="package_ids"]');
+  if (!checkbox) return;
+  checkbox.closest(".material-package-option").querySelector('input[type="number"]').disabled = !checkbox.checked;
 });
 document.querySelector("#costItemForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -309,16 +306,38 @@ document.addEventListener("submit", async (event) => {
   const recipeForm = event.target.closest("[data-material-rule-form]");
   if (!recipeForm) return;
   event.preventDefault();
-  const values = Object.fromEntries(new FormData(recipeForm));
+  const formData = new FormData(recipeForm);
   const costItemId = recipeForm.dataset.materialRuleForm;
-  const unitsPerPackage = Number(values.units_per_package);
-  if (!values.package_id || !Number.isFinite(unitsPerPackage) || unitsPerPackage <= 0) return showToast("Selecciona un paquete e indica una cantidad mayor que cero.", "error");
-  const existing = recipes.find((item) => item.package_id === values.package_id && item.cost_item_id === costItemId);
-  const result = existing
-    ? await supabase.from("package_material_rules").update({ units_per_package: unitsPerPackage }).eq("id", existing.id)
-    : await supabase.from("package_material_rules").insert({ package_id: values.package_id, cost_item_id: costItemId, units_per_package: unitsPerPackage });
-  if (result.error) return showToast(result.error.message, "error");
-  showToast(existing ? "Cantidad del material actualizada para ese paquete." : "Material agregado al paquete."); await loadData();
+  const selectedIds = new Set(formData.getAll("package_ids"));
+  if (!selectedIds.size && !confirm("No hay paquetes marcados. ¿Quieres quitar este material de todos los paquetes?")) return;
+  const updates = Array.from(selectedIds, (packageId) => ({
+    packageId,
+    quantity: Number(formData.get(`units_${packageId}`)),
+    existing: recipes.find((rule) => rule.package_id === packageId && rule.cost_item_id === costItemId)
+  }));
+  if (updates.some((item) => !Number.isFinite(item.quantity) || item.quantity <= 0)) return showToast("Cada paquete marcado debe tener una cantidad mayor que cero.", "error");
+  const removals = recipes.filter((rule) => rule.cost_item_id === costItemId && !selectedIds.has(rule.package_id));
+  const submitButton = recipeForm.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  try {
+    for (const item of updates) {
+      const result = item.existing
+        ? await supabase.from("package_material_rules").update({ units_per_package: item.quantity }).eq("id", item.existing.id)
+        : await supabase.from("package_material_rules").insert({ package_id: item.packageId, cost_item_id: costItemId, units_per_package: item.quantity });
+      if (result.error) throw result.error;
+    }
+    for (const rule of removals) {
+      const result = await supabase.from("package_material_rules").delete().eq("id", rule.id);
+      if (result.error) throw result.error;
+    }
+    showToast("Paquetes y cantidades del material guardados.");
+    await loadData();
+  } catch (error) {
+    await loadData();
+    showToast(`No se completó toda la actualización: ${error.message}`, "error");
+  } finally {
+    submitButton.disabled = false;
+  }
 });
 document.querySelector("#expenseForm").addEventListener("submit", async (event) => {
   event.preventDefault();
