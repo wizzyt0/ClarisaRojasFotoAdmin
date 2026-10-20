@@ -14,6 +14,7 @@ let folders = [];
 let packages = [];
 let costItems = [];
 let recipes = [];
+let packagesLoadError = null;
 let orders = [];
 let orderLines = [];
 let allocations = [];
@@ -49,7 +50,8 @@ async function loadData() {
   const labels = ["trabajos", "catálogo de carpetas", "paquetes", "costos", "recetas", "pedidos", "gastos", "abonos"];
   const loadErrors = results.flatMap((result, index) => result.error ? [`${labels[index]}: ${result.error.message}`] : []);
   [jobs, folders, packages, costItems, recipes, orders, expenses, deposits] = results.map((result) => result.data || []);
-  const materialsError = results[3].error || results[4].error;
+  packagesLoadError = results[2].error;
+  const materialsError = results[2].error || results[3].error || results[4].error;
   materialsLoadError = materialsError;
   recipesLoadError = results[4].error;
   const materialsErrorNode = document.querySelector("#costItemsLoadError");
@@ -91,6 +93,7 @@ function populateSelects() {
 
 function folderName(id) { return folders.find((folder) => folder.id === id)?.name || "Diseño de carpeta eliminado"; }
 function jobName(id) { const job = jobs.find((item) => item.id === id); return job ? `${job.title} · ${job.clients?.name || "Cliente"}` : "Trabajo eliminado"; }
+function packageIsActive(pkg) { return pkg.is_active === true || pkg.is_active === "true" || pkg.is_active === 1 || pkg.is_active === "1"; }
 function render() {
   const filter = document.querySelector("#orderStatusFilter").value;
   renderOrders(orders.filter((order) => !filter || order.status === filter));
@@ -143,10 +146,13 @@ function renderCostItems() {
   document.querySelector("#costItemsList").innerHTML = costItems.map((item) => {
     const itemRules = recipes.filter((rule) => rule.cost_item_id === item.id);
     const assignedIds = new Set(itemRules.map((rule) => rule.package_id));
-    const availablePackages = packages.filter((pkg) => pkg.is_active || assignedIds.has(pkg.id));
+    const activePackages = packages.filter(packageIsActive);
+    const availablePackages = (activePackages.length ? packages.filter((pkg) => packageIsActive(pkg) || assignedIds.has(pkg.id)) : packages)
+      .sort((a, b) => Number(packageIsActive(b)) - Number(packageIsActive(a)) || a.name.localeCompare(b.name, "es"));
     const packageCheckboxes = availablePackages.map((pkg) => {
       const rule = itemRules.find((entry) => entry.package_id === pkg.id);
-      return `<label class="material-package-option ${pkg.is_active ? "" : "is-inactive"}"><span class="material-package-choice"><input type="checkbox" name="package_ids" value="${escapeHtml(pkg.id)}" ${rule ? "checked" : ""}><strong>${escapeHtml(pkg.name)}</strong>${pkg.is_active ? "" : '<span class="badge">Inactivo</span>'}</span><span class="material-package-quantity"><input class="input" type="number" name="units_${escapeHtml(pkg.id)}" min="0.001" step="0.001" value="${rule ? Number(rule.units_per_package) : 1}" aria-label="Cantidad de ${escapeHtml(pkg.name)}" ${rule ? "" : "disabled"}><span>${escapeHtml(item.unit)} por paquete</span></span></label>`;
+      const isActive = packageIsActive(pkg);
+      return `<label class="material-package-option ${isActive ? "" : "is-inactive"}"><span class="material-package-choice"><input type="checkbox" name="package_ids" value="${escapeHtml(pkg.id)}" ${rule ? "checked" : ""}><strong>${escapeHtml(pkg.name)}</strong>${isActive ? "" : '<span class="badge">Inactivo</span>'}</span><span class="material-package-quantity"><input class="input" type="number" name="units_${escapeHtml(pkg.id)}" min="0.001" step="0.001" value="${rule ? Number(rule.units_per_package) : 1}" aria-label="Cantidad de ${escapeHtml(pkg.name)}" ${rule ? "" : "disabled"}><span>${escapeHtml(item.unit)} por paquete</span></span></label>`;
     }).join("");
     return `<details class="cost-item-card ${item.is_active ? "" : "is-inactive"}" data-cost-row="${item.id}" data-cost-search="${escapeHtml(`${item.name} ${item.unit} ${item.purchase_unit}`.toLocaleLowerCase())}">
     <summary class="cost-item-summary"><strong>${escapeHtml(item.name)}</strong><span>${currency(item.unit_cost)} por ${escapeHtml(item.purchase_unit)}</span><span>${itemRules.length} ${itemRules.length === 1 ? "paquete" : "paquetes"}</span><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></summary>
@@ -155,7 +161,7 @@ function renderCostItems() {
     <div class="cost-item-edit-grid"><label class="form-group"><span>Unidad de compra</span><input class="input" data-cost-field="purchase_unit" value="${escapeHtml(item.purchase_unit)}"></label><label class="form-group"><span>Unidades que rinde</span><input class="input" data-cost-field="units_per_purchase" type="number" min="0.001" step="0.001" value="${Number(item.units_per_purchase)}"></label><label class="form-group"><span>Costo de compra</span><input class="input" data-cost-field="unit_cost" type="number" min="0" step="0.01" value="${Number(item.unit_cost)}"></label></div>
     <details class="advanced-cost-fields"><summary>Datos opcionales</summary><div class="cost-item-edit-grid"><label class="form-group"><span>Existencia (unidades de consumo)</span><input class="input" data-cost-field="stock_quantity" type="number" min="0" step="0.001" value="${Number(item.stock_quantity)}"></label><label class="form-group"><span>Proveedor</span><input class="input" data-cost-field="supplier" value="${escapeHtml(item.supplier || "")}"></label><label class="form-group"><span>Categoría</span><select class="select" data-cost-field="category">${categories.map(([value, label]) => `<option value="${value}" ${item.category === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="form-group"><span>Diseño de carpeta (solo carpetas)</span><select class="select" data-cost-field="folder_template_id"><option value="">No aplica</option>${folders.map((folder) => `<option value="${folder.id}" ${item.folder_template_id === folder.id ? "selected" : ""}>${escapeHtml(folder.name)}</option>`).join("")}</select></label></div></details>
     <section class="material-package-usage"><div class="material-package-heading"><div><h4>¿En qué paquetes se usa?</h4><p class="muted">Marca los paquetes que incluyen este material y define cuántas ${escapeHtml(item.unit)} lleva cada uno.</p></div><span class="badge">${itemRules.length} seleccionados</span></div>
-      ${recipesLoadError ? `<p class="muted">No se puede editar esta asignación hasta que se carguen las reglas de paquetes.</p>` : availablePackages.length ? `<form class="material-rule-form" data-material-rule-form="${item.id}"><div class="material-package-options">${packageCheckboxes}</div><button class="btn btn-primary" type="submit">Guardar paquetes seleccionados</button></form>` : `<p class="muted">No hay paquetes disponibles.</p>`}
+      ${packagesLoadError ? `<p class="muted">No se pudo consultar el catálogo de paquetes: ${escapeHtml(packagesLoadError.message)}</p>` : recipesLoadError ? `<p class="muted">No se puede editar esta asignación hasta que se carguen las reglas de paquetes.</p>` : availablePackages.length ? `<form class="material-rule-form" data-material-rule-form="${item.id}"><div class="material-package-options">${packageCheckboxes}</div><button class="btn btn-primary" type="submit">Guardar paquetes seleccionados</button></form>` : `<p class="muted">No hay paquetes registrados. Crea los paquetes primero en la sección Paquetes.</p>`}
     </section>
     <div class="actions cost-item-actions"><button class="btn btn-primary" type="button" data-save-cost="${item.id}">Guardar cambios</button>${item.is_active ? `<button class="btn" type="button" data-toggle-cost="${item.id}" data-active="false">Desactivar</button>` : `<button class="btn" type="button" data-toggle-cost="${item.id}" data-active="true">Activar</button>`}</div>
     </div></details>`;
