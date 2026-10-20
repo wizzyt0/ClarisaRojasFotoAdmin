@@ -86,7 +86,6 @@ async function loadData() {
 function populateSelects() {
   setOptions(document.querySelector("#orderJob"), jobs.filter((job) => job.job_type === "SCHOOL_GRADUATION"), (job) => `${job.title} · ${job.clients?.name || "Escuela"}`);
   setOptions(document.querySelector("#expenseJob"), jobs, (job) => `${job.title} · ${job.clients?.name || "Cliente"}`, "Gasto general");
-  setOptions(document.querySelector("#folderCostTemplate"), folders.filter((folder) => folder.is_active), (folder) => folder.name, "Sin diseño relacionado");
   setOptions(document.querySelector("#expenseCostItem"), costItems.filter((item) => item.is_active), (item) => item.name, "Otro gasto");
   setOptions(document.querySelector("#financeJobFilter"), jobs, (job) => `${job.title} · ${job.clients?.name || "Cliente"}`, "Todos los trabajos");
   if (jobParam && jobs.some((job) => job.id === jobParam)) document.querySelector("#orderJob").value = jobParam;
@@ -96,6 +95,10 @@ function populateSelects() {
 function folderName(id) { return folders.find((folder) => folder.id === id)?.name || "Diseño de carpeta eliminado"; }
 function jobName(id) { const job = jobs.find((item) => item.id === id); return job ? `${job.title} · ${job.clients?.name || "Cliente"}` : "Trabajo eliminado"; }
 function packageIsActive(pkg) { return pkg.is_active === true || pkg.is_active === "true" || pkg.is_active === 1 || pkg.is_active === "1"; }
+function folderCostItem() {
+  const candidates = costItems.filter((item) => item.is_active && item.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase().includes("carpeta"));
+  return candidates.find((item) => !item.folder_template_id) || candidates[0] || null;
+}
 function packageDescription(pkg) {
   const level = PACKAGE_LEVELS[pkg.school_level];
   const type = packageTypeLabels[pkg.package_type] || "Otro tipo";
@@ -166,7 +169,7 @@ function renderCostItems() {
     <div class="cost-item-content">
     <div class="cost-item-card-head"><label class="form-group"><span>Nombre</span><input class="input" data-cost-field="name" value="${escapeHtml(item.name)}"></label><label class="form-group"><span>Unidad de consumo</span><input class="input" data-cost-field="unit" value="${escapeHtml(item.unit)}"></label><span class="badge">${item.is_active ? "Activo" : "Inactivo"}</span></div>
     <div class="cost-item-edit-grid"><label class="form-group"><span>Unidad de compra</span><input class="input" data-cost-field="purchase_unit" value="${escapeHtml(item.purchase_unit)}"></label><label class="form-group"><span>Unidades que rinde</span><input class="input" data-cost-field="units_per_purchase" type="number" min="0.001" step="0.001" value="${Number(item.units_per_purchase)}"></label><label class="form-group"><span>Costo de compra</span><input class="input" data-cost-field="unit_cost" type="number" min="0" step="0.01" value="${Number(item.unit_cost)}"></label></div>
-    <details class="advanced-cost-fields"><summary>Datos opcionales</summary><div class="cost-item-edit-grid"><label class="form-group"><span>Existencia (unidades de consumo)</span><input class="input" data-cost-field="stock_quantity" type="number" min="0" step="0.001" value="${Number(item.stock_quantity)}"></label><label class="form-group"><span>Proveedor</span><input class="input" data-cost-field="supplier" value="${escapeHtml(item.supplier || "")}"></label><label class="form-group"><span>Categoría</span><select class="select" data-cost-field="category">${categories.map(([value, label]) => `<option value="${value}" ${item.category === value ? "selected" : ""}>${label}</option>`).join("")}</select></label><label class="form-group"><span>Diseño de carpeta (solo carpetas)</span><select class="select" data-cost-field="folder_template_id"><option value="">No aplica</option>${folders.map((folder) => `<option value="${folder.id}" ${item.folder_template_id === folder.id ? "selected" : ""}>${escapeHtml(folder.name)}</option>`).join("")}</select></label></div></details>
+    <details class="advanced-cost-fields"><summary>Datos opcionales</summary><div class="cost-item-edit-grid"><label class="form-group"><span>Existencia (unidades de consumo)</span><input class="input" data-cost-field="stock_quantity" type="number" min="0" step="0.001" value="${Number(item.stock_quantity)}"></label><label class="form-group"><span>Proveedor</span><input class="input" data-cost-field="supplier" value="${escapeHtml(item.supplier || "")}"></label><label class="form-group"><span>Categoría</span><select class="select" data-cost-field="category">${categories.map(([value, label]) => `<option value="${value}" ${item.category === value ? "selected" : ""}>${label}</option>`).join("")}</select></label></div></details>
     <section class="material-package-usage"><div class="material-package-heading"><div><h4>¿En qué paquetes se usa?</h4><p class="muted">Marca los paquetes que incluyen este material y define cuántas ${escapeHtml(item.unit)} lleva cada uno.</p></div><span class="badge">${itemRules.length} seleccionados</span></div>
       ${packagesLoadError ? `<p class="muted">No se pudo consultar el catálogo de paquetes: ${escapeHtml(packagesLoadError.message)}</p>` : recipesLoadError ? `<p class="muted">No se puede editar esta asignación hasta que se carguen las reglas de paquetes.</p>` : availablePackages.length ? `<form class="material-rule-form" data-material-rule-form="${item.id}"><div class="material-package-options">${packageCheckboxes}</div><button class="btn btn-primary" type="submit">Guardar paquetes seleccionados</button></form>` : `<p class="muted">No hay paquetes registrados. Crea los paquetes primero en la sección Paquetes.</p>`}
     </section>
@@ -244,6 +247,7 @@ function assertNoDraft(jobId, type) {
 async function prepareFolderOrder(jobId) {
   assertNoDraft(jobId, "FOLDER");
   const { groups, items } = await selectedJobData(jobId);
+  const cost = folderCostItem();
   const chosen = new Map(items.filter((item) => item.item_type === "FOLDER_OPTION" && item.selected_file_id).map((item) => [item.group_id, item.selected_file_id]));
   const grouped = new Map();
   let missing = 0;
@@ -251,16 +255,15 @@ async function prepareFolderOrder(jobId) {
     const folderId = chosen.get(group.id);
     const quantity = Number(group.package_quantity || 0);
     if (!folderId || quantity <= 0) { if (quantity > 0 && !folderId) missing += 1; continue; }
-    const line = grouped.get(folderId) || { folder_template_id: folderId, description: folderName(folderId), quantity: 0, unit: "carpeta(s)", unit_cost: 0, allocations: [] };
+    const line = grouped.get(folderId) || { folder_template_id: folderId, description: folderName(folderId), quantity: 0, unit: "carpeta(s)", unit_cost: Number(cost?.unit_cost || 0), allocations: [] };
     line.quantity += quantity;
     line.allocations.push({ group, quantity, unit: "carpeta(s)" });
-    const catalogCost = costItems.find((cost) => cost.folder_template_id === folderId);
-    line.unit_cost = Number(catalogCost?.unit_cost || 0);
     grouped.set(folderId, line);
   }
   const lines = Array.from(grouped.values());
   if (!lines.length) throw new Error("Ningún grupo tiene carpeta seleccionada y cantidad de paquetes mayor a cero.");
-  const note = `${missing ? `${missing} grupo(s) con paquetes aún no tienen diseño de carpeta seleccionado. ` : ""}Las cantidades por grupo parten de un folder por paquete; revisa el borrador con Casa del Folder antes de enviarlo.`;
+  if (!cost) throw new Error('No encontré un material activo cuyo nombre contenga "Carpeta". Registra el costo general como "Carpeta de Documentos" en Costos y materiales; el diseño lo toma automáticamente de la elección de cada maestra.');
+  const note = `${missing ? `${missing} grupo(s) con paquetes aún no tienen diseño de carpeta seleccionado. ` : ""}El diseño se toma automáticamente de la selección de cada maestra; el costo por carpeta es general. Las cantidades por grupo parten de una carpeta por paquete; revisa el borrador con Casa del Folder antes de enviarlo.`;
   await createOrder(jobId, "FOLDER", "Casa del Folder", lines, note);
   return `${lines.length} diseño(s), ${lines.reduce((sum, line) => sum + line.quantity, 0)} carpetas. ${note}`;
 }
@@ -378,7 +381,6 @@ document.addEventListener("click", async (event) => {
       const row = document.querySelector(`[data-cost-row="${button.dataset.saveCost}"]`);
       const data = Object.fromEntries(Array.from(row.querySelectorAll("[data-cost-field]")).map((input) => [input.dataset.costField, input.value]));
       for (const key of ["units_per_purchase", "unit_cost", "stock_quantity"]) data[key] = Number(data[key]);
-      data.folder_template_id = data.folder_template_id || null;
       const result = await supabase.from("cost_items").update(data).eq("id", button.dataset.saveCost);
       if (result.error) throw result.error;
       showToast("Costo actualizado."); await loadData();

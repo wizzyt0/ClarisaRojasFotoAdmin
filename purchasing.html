@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pedidos y finanzas | Clarisa Rojas Fotografia</title>
   <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/admin-purchasing.css?v=20261019-package-level-labels">
+  <link rel="stylesheet" href="css/admin-purchasing.css?v=20261019-folder-cost-simplified">
 </head>
 <body>
   <div class="app-shell">
@@ -43,13 +43,12 @@
               <label class="form-group"><span>Rendimiento por compra</span><input class="input" name="units_per_purchase" type="number" min="0.001" step="0.001" value="1" required><small>Cuántas unidades de consumo obtienes.</small></label>
               <label class="form-group"><span>Costo de compra</span><input class="input" name="unit_cost" type="number" min="0" step="0.01" value="0" required><small>Precio de una unidad de compra.</small></label>
             </div>
-            <details class="advanced-cost-fields"><summary>Datos opcionales: inventario, proveedor y diseño</summary><div class="cost-entry-grid">
+            <details class="advanced-cost-fields"><summary>Datos opcionales: inventario y proveedor</summary><div class="cost-entry-grid">
               <label class="form-group"><span>Existencia actual</span><input class="input" name="stock_quantity" type="number" min="0" step="0.001" value="0"><small>En unidades de consumo; si no llevas inventario, déjalo en 0.</small></label>
               <label class="form-group"><span>Proveedor</span><input class="input" name="supplier" placeholder="Imprenta o proveedor"></label>
-              <label class="form-group"><span>Diseño de carpeta (solo carpetas)</span><select class="select" name="folder_template_id" id="folderCostTemplate"><option value="">No aplica</option></select></label>
               <input type="hidden" name="category" value="MATERIAL">
             </div></details>
-            <div class="photo-cost-example"><strong>Ejemplo: Foto de agradecimiento 6x8</strong><span>Unidad de consumo: foto · Unidad de compra: impresión individual · Rendimiento: 1 · Costo: escribe lo que te cobra la imprenta (por ejemplo, $8 si ese es tu precio).</span><span>Al guardarla, asígnala aquí mismo a cada paquete e indica cuántas fotos incluye.</span></div>
+            <div class="photo-cost-example"><strong>Ejemplo: Foto de agradecimiento 6x8</strong><span>Unidad de consumo: foto · Unidad de compra: impresión individual · Rendimiento: 1 · Costo: escribe lo que te cobra la imprenta (por ejemplo, $8 si ese es tu precio).</span><span>Al guardarla, asígnala aquí mismo a cada paquete e indica cuántas fotos incluye. Para carpetas, registra un solo material llamado “Carpeta de Documentos” con el costo por carpeta; el diseño y la cantidad se toman de las elecciones de las maestras.</span></div>
             <button class="btn btn-primary" type="submit">Guardar costo</button>
           </form></details>
           <div class="page-header material-list-heading"><div><h3>Materiales registrados</h3><p class="muted">Abre un material para editarlo o asignarlo a paquetes.</p></div><span id="costItemCount" class="badge">0</span></div>
@@ -73,6 +72,6 @@
       </section>
     </section></main>
   </div>
-  <script type="module" src="js/purchasing.js?v=20261019-package-level-labels"></script>
+  <script type="module" src="js/purchasing.js?v=20261019-folder-cost-simplified"></script>
 </body>
 </html>
