@@ -96,52 +96,59 @@ async function loadJob() {
     .single();
   if (error) throw error;
   job = data;
-  galleries = await getGalleriesByJob(jobId);
-  deposits = await getDepositsByJob(jobId);
-  r2Files = await getR2FilesByJob(jobId);
-  r2ShareLinks = await getR2ShareLinksByJob(jobId);
-  schoolGroups = job.job_type === "SCHOOL_GRADUATION" ? await ensureSchoolGroups() : [];
+  const packagesRequest = supabase.from("packages").select("*").eq("is_active", true).order("name");
+  const [galleryRows, depositRows, fileRows, shareLinkRows, groupRows, packagesResult] = await Promise.all([
+    getGalleriesByJob(jobId),
+    getDepositsByJob(jobId),
+    getR2FilesByJob(jobId),
+    getR2ShareLinksByJob(jobId),
+    job.job_type === "SCHOOL_GRADUATION" ? ensureSchoolGroups() : Promise.resolve([]),
+    packagesRequest
+  ]);
+  if (packagesResult.error) throw packagesResult.error;
+  galleries = galleryRows;
+  deposits = depositRows;
+  r2Files = fileRows;
+  r2ShareLinks = shareLinkRows;
+  schoolGroups = groupRows;
+  packages = packagesResult.data || [];
   try {
     printItems = job.job_type === "SCHOOL_GRADUATION" && !isChristmasJob() ? await ensureGroupPrintItems() : [];
   } catch (error) {
     throw new Error(`No se pudieron cargar las piezas por grupo: ${error.message || "error desconocido"}`);
   }
   if (canManageAssignments) {
-    try {
-      [assignments, editors] = await Promise.all([
-        getAssignmentsByPrintItems(printItems.map((item) => item.id)),
-        getEditors()
-      ]);
-    } catch (error) {
-      console.warn("No se pudieron cargar las asignaciones de editor.", error);
-      assignments = [];
-      editors = [];
-      showToast(`Las piezas cargaron, pero no las asignaciones de editor: ${error.message || "error desconocido"}`, "error");
-    }
     diplomaCanvaLinks = new Map();
     diplomaCanvaLoadFailed = false;
     const diplomaIds = [...new Set(printItems
       .filter((item) => item.item_type === "DIPLOMA" && item.selected_file_id)
       .map((item) => item.selected_file_id))];
-    if (diplomaIds.length) {
-      const { data: diplomaRows, error: diplomaError } = await supabase
-        .from("diploma_templates")
-        .select("id, canva_url");
-      if (diplomaError) {
-        diplomaCanvaLoadFailed = true;
-        console.warn("No se pudieron cargar los links de Canva de los diplomas.", diplomaError);
-      }
-      else {
+    const assignmentRequest = Promise.all([
+      getAssignmentsByPrintItems(printItems.map((item) => item.id)),
+      getEditors()
+    ]).then(([assignmentRows, editorRows]) => {
+      assignments = assignmentRows;
+      editors = editorRows;
+    }).catch((error) => {
+      console.warn("No se pudieron cargar las asignaciones de editor.", error);
+      assignments = [];
+      editors = [];
+      showToast(`Las piezas cargaron, pero no las asignaciones de editor: ${error.message || "error desconocido"}`, "error");
+    });
+    const diplomaRequest = diplomaIds.length
+      ? supabase.from("diploma_templates").select("id, canva_url").then(({ data: diplomaRows, error: diplomaError }) => {
+        if (diplomaError) throw diplomaError;
         const selectedIds = new Set(diplomaIds);
         diplomaCanvaLinks = new Map((diplomaRows || [])
           .filter((row) => selectedIds.has(row.id))
           .map((row) => [row.id, row.canva_url]));
-      }
-    }
+      }).catch((error) => {
+        diplomaCanvaLoadFailed = true;
+        console.warn("No se pudieron cargar los links de Canva de los diplomas.", error);
+      })
+      : Promise.resolve();
+    await Promise.all([assignmentRequest, diplomaRequest]);
   }
-  const { data: packagesData, error: packagesError } = await supabase.from("packages").select("*").eq("is_active", true).order("name");
-  if (packagesError) throw packagesError;
-  packages = packagesData || [];
   render();
   mountJobActivity(jobId);
   await loadLogs();
@@ -153,8 +160,18 @@ async function ensureSchoolGroups() {
 
 async function ensureGroupPrintItems() {
   let items = await getPrintItemsByJob(jobId);
-  for (const group of schoolGroups) {
-    items = await ensureDefaultPrintItems(jobId, group.id);
+  const groupsNeedingItems = schoolGroups.filter((group) => !items.some((item) => item.group_id === group.id));
+  if (groupsNeedingItems.length) {
+    const seededGroups = await Promise.all(groupsNeedingItems.map((group) => ensureDefaultPrintItems(jobId, group.id, items)));
+    const knownIds = new Set(items.map((item) => item.id));
+    for (const groupItems of seededGroups) {
+      for (const item of groupItems) {
+        if (!knownIds.has(item.id)) {
+          knownIds.add(item.id);
+          items.push(item);
+        }
+      }
+    }
   }
   return items;
 }
