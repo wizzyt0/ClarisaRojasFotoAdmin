@@ -323,6 +323,11 @@ function renderPrintItemCard(item) {
   const showCombinedCatalogButton = schoolDesignPiece
     && pendingDesignItem
     && (item.item_type === "DIPLOMA" || !groupDesignItems.some((entry) => entry.item_type === "DIPLOMA"));
+  const canAuthorizeStandardFolder = canManageAssignments
+    && item.item_type === "FOLDER_OPTION"
+    && item.selected_file_id
+    && item.status === "CATALOG_SELECTED"
+    && !item.approved_at;
   const canUpload = !catalogPending && !packagePiece;
   return `<details class="workflow-piece ${packagePiece ? (selection.complete ? "approved" : "missing") : printItemClass(item.status)}" data-disclosure="piece-${item.id}">
     <summary><span class="workflow-step">${step.number}</span><strong>${escapeHtml(step.title)}</strong><span class="badge">${escapeHtml(statusText(item))}</span></summary>
@@ -330,7 +335,7 @@ function renderPrintItemCard(item) {
     ${item.client_notes ? `<div class="review-note"><strong>${item.status === "CHANGES_REQUESTED" ? "Cambio solicitado" : "Observaciones de la maestra"}</strong><p>${escapeHtml(item.client_notes)}</p></div>` : ""}
     ${canUpload ? itemUpload(item, "TEACHER_PREVIEW", item.status === "CHANGES_REQUESTED" ? "Subir corrección" : "Subir preview") : ""}
     </div></div><div class="workflow-piece-toolbar">${renderAssignmentSummary(item)}
-    <div class="actions">${packagePiece && item.group_id ? `<button class="btn" data-edit-group="${item.group_id}">Editar paquete / cantidad</button>` : ""}${showCombinedCatalogButton ? `<button class="btn btn-primary" data-send-school-design-catalog="${pendingDesignItem.id}">Enviar catálogo de diploma y carpeta por WhatsApp</button>` : ""}${schoolDesignPiece && catalogPending ? "" : `<button class="btn btn-primary" data-send-print-item="${item.id}">${packagePiece || catalogPending ? "Enviar catálogo por WhatsApp" : "Enviar revisión por WhatsApp"}</button>`}</div>
+    <div class="actions">${packagePiece && item.group_id ? `<button class="btn" data-edit-group="${item.group_id}">Editar paquete / cantidad</button>` : ""}${showCombinedCatalogButton ? `<button class="btn btn-primary" data-send-school-design-catalog="${pendingDesignItem.id}">Enviar catálogo de diploma y carpeta por WhatsApp</button>` : ""}${canAuthorizeStandardFolder ? `<button class="btn btn-primary" data-authorize-standard-folder="${item.id}" title="Úsalo solo si la carpeta elegida es estándar y no requiere modificaciones">Autorizar carpeta estándar para impresión</button>` : ""}${schoolDesignPiece && catalogPending ? "" : `<button class="btn btn-primary" data-send-print-item="${item.id}">${packagePiece || catalogPending ? "Enviar catálogo por WhatsApp" : "Enviar revisión por WhatsApp"}</button>`}</div>
     </div>${renderPieceFiles(item, files)}${item.item_type === "STUDENT_GALLERY" && item.group_id ? renderGroupGalleries(item.group_id) : ""}</div></details>`;
 }
 
@@ -780,6 +785,39 @@ async function ensurePrintItemToken(item) {
   item.approval_revoked_at = null;
 }
 
+async function authorizeStandardFolder(itemId) {
+  const item = printItems.find((entry) => entry.id === itemId);
+  if (!canManageAssignments || !item || item.item_type !== "FOLDER_OPTION" || !item.selected_file_id
+      || item.status !== "CATALOG_SELECTED" || item.approved_at) {
+    showToast("La carpeta ya cambió de estado. Actualiza el trabajo antes de continuar.", "error");
+    return;
+  }
+  const group = schoolGroups.find((entry) => entry.id === item.group_id);
+  const designName = item.notes || "el diseño elegido por la maestra";
+  const confirmed = confirm(
+    `¿Confirmas que ${designName} es la carpeta estándar, sin modificaciones?\n\n`+
+    `Se autorizará para impresión sin pedir aprobación a ${group?.teacher_name || "la maestra"}. ` +
+    "Si necesita cambios, cancela y continúa con el flujo de revisión."
+  );
+  if (!confirmed) return;
+
+  const { data, error } = await supabase.from("print_items").update({
+    status: "APPROVED_FOR_PRINT",
+    approved_at: new Date().toISOString(),
+    approved_by_name: currentUser.staffName || "Administración",
+    terms_accepted: false
+  })
+    .eq("id", item.id)
+    .eq("status", "CATALOG_SELECTED")
+    .is("approved_at", null)
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("La carpeta cambió de estado en otro dispositivo. Actualiza y verifica su situación.");
+  showToast("Carpeta estándar autorizada y enviada a pendientes de impresión.", "success");
+  await loadJob();
+}
+
 function renderDeposits() {
   const generalDeposits = deposits.filter((deposit) => !deposit.group_id).reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
   const teacherDeposits = deposits.filter((deposit) => deposit.group_id).reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
@@ -1015,6 +1053,7 @@ document.addEventListener("click", async (event) => {
     if (event.target.dataset.sendGalleryWhatsapp) await sendChristmasGalleryWhatsapp(event.target.dataset.sendGalleryWhatsapp);
     if (event.target.dataset.sendSchoolDesignCatalog) await sendPrintItemWhatsapp(event.target.dataset.sendSchoolDesignCatalog);
     if (event.target.dataset.sendPrintItem) await sendPrintItemWhatsapp(event.target.dataset.sendPrintItem);
+    if (event.target.dataset.authorizeStandardFolder) await authorizeStandardFolder(event.target.dataset.authorizeStandardFolder);
     if (catalogButton) {
       const [table, fileId] = catalogButton.dataset.openCatalogFile.split(":");
       openInNewTab(await getCatalogFileUrl(table, fileId));
