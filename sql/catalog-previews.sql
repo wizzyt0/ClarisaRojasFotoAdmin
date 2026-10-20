@@ -55,12 +55,21 @@ drop policy if exists "admin write diploma_templates" on diploma_templates;
 drop policy if exists "admin read folder_templates" on folder_templates;
 drop policy if exists "admin write folder_templates" on folder_templates;
 
-create policy "admin read package_images" on package_images for select to authenticated using (true);
-create policy "admin write package_images" on package_images for all to authenticated using (true) with check (true);
-create policy "admin read diploma_templates" on diploma_templates for select to authenticated using (true);
-create policy "admin write diploma_templates" on diploma_templates for all to authenticated using (true) with check (true);
-create policy "admin read folder_templates" on folder_templates for select to authenticated using (true);
-create policy "admin write folder_templates" on folder_templates for all to authenticated using (true) with check (true);
+create policy "admin read package_images" on package_images for select to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])));
+create policy "admin write package_images" on package_images for all to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])))
+  with check ((select public.has_staff_role(array['owner']::public.staff_role[])));
+create policy "admin read diploma_templates" on diploma_templates for select to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])));
+create policy "admin write diploma_templates" on diploma_templates for all to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])))
+  with check ((select public.has_staff_role(array['owner']::public.staff_role[])));
+create policy "admin read folder_templates" on folder_templates for select to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])));
+create policy "admin write folder_templates" on folder_templates for all to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])))
+  with check ((select public.has_staff_role(array['owner']::public.staff_role[])));
 
 drop function if exists get_public_catalog_by_print_item_token(text);
 drop function if exists select_catalog_option_by_token(text, text, uuid, text);
@@ -196,6 +205,10 @@ begin
 
   if item.id is null then
     return jsonb_build_object('ok', false, 'message', 'El link no existe o expiró.');
+  end if;
+
+  if item.selected_file_id is not null or item.status in ('CATALOG_SELECTED','SENT_FOR_APPROVAL','APPROVED_FOR_PRINT','PRINTING','PRINTED','DELIVERED') then
+    return jsonb_build_object('ok', false, 'message', 'La selección ya está registrada. El enlace permanece disponible solo para consulta; para solicitar un cambio, comuníquese con Clarisa Rojas.');
   end if;
 
   if option_table = 'diploma_templates' and item.item_type = 'DIPLOMA' then

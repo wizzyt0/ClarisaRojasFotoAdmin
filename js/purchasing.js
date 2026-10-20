@@ -117,7 +117,9 @@ function renderOrders(rows) {
   root.innerHTML = rows.map((order) => {
     const lines = orderLines.filter((line) => line.purchase_order_id === order.id);
     const total = lines.reduce((sum, line) => sum + Number(line.quantity) * Number(line.unit_cost), 0);
-    return `<article class="purchase-order"><div class="purchase-order-head"><div><h3>${escapeHtml(orderTypeLabels[order.order_type] || order.order_type)} · ${escapeHtml(order.supplier)}</h3><div class="purchase-order-meta"><span>${escapeHtml(jobName(order.job_id))}</span><span>${escapeHtml(statusLabels[order.status] || order.status)}</span><span>Creado ${formatDate(order.created_at?.slice(0, 10))}</span><strong>Estimado ${currency(total)}</strong></div></div><div class="purchase-order-actions">${order.status === "DRAFT" ? `<button class="btn btn-primary" data-order-status="SENT" data-order-id="${order.id}">Marcar enviado</button>` : ""}${order.status === "SENT" ? `<button class="btn btn-primary" data-order-status="RECEIVED" data-order-id="${order.id}">Marcar recibido</button>` : ""}${order.status === "DRAFT" ? `<button class="btn" data-order-status="CANCELLED" data-order-id="${order.id}">Cancelar borrador</button>` : ""}<button class="btn" data-record-order-expense="${order.id}">Registrar gasto real</button></div></div>
+    const currentFolderCost = order.order_type === "FOLDER" ? folderCostItem() : null;
+    const staleFolderEstimate = order.status === "DRAFT" && currentFolderCost && lines.some((line) => Number(line.unit_cost) !== Number(currentFolderCost.unit_cost) || line.cost_item_id !== currentFolderCost.id);
+    return `<article class="purchase-order"><div class="purchase-order-head"><div><h3>${escapeHtml(orderTypeLabels[order.order_type] || order.order_type)} · ${escapeHtml(order.supplier)}</h3><div class="purchase-order-meta"><span>${escapeHtml(jobName(order.job_id))}</span><span>${escapeHtml(statusLabels[order.status] || order.status)}</span><span>Creado ${formatDate(order.created_at?.slice(0, 10))}</span><strong>Estimado ${currency(total)}</strong></div></div><div class="purchase-order-actions">${staleFolderEstimate ? `<button class="btn" data-reprice-order="${order.id}">Actualizar estimación</button>` : ""}${order.status === "DRAFT" ? `<button class="btn btn-primary" data-order-status="SENT" data-order-id="${order.id}">Marcar enviado</button>` : ""}${order.status === "SENT" ? `<button class="btn btn-primary" data-order-status="RECEIVED" data-order-id="${order.id}">Marcar recibido</button>` : ""}${order.status === "DRAFT" ? `<button class="btn" data-order-status="CANCELLED" data-order-id="${order.id}">Cancelar borrador</button>` : ""}<button class="btn" data-record-order-expense="${order.id}">Registrar gasto real</button></div></div>${staleFolderEstimate ? `<p class="alert alert-warning">El costo guardado en este borrador no coincide con el catálogo actual (${currency(currentFolderCost.unit_cost)} por carpeta). Actualiza la estimación antes de marcarlo enviado.</p>` : ""}
       <table class="purchase-lines"><thead><tr><th>Artículo</th><th>Cantidad</th><th>Costo unitario estimado</th><th>Importe estimado</th></tr></thead><tbody>${lines.map((line) => {
         const lineAllocations = allocations.filter((item) => item.purchase_order_line_id === line.id);
         const teacherGroups = lineAllocations.map((item) => `<li>${escapeHtml(item.group_name_snapshot)} · ${escapeHtml(item.teacher_name_snapshot || "Sin maestra")}: ${order.status === "DRAFT" ? `<input class="input inline-number" type="number" min="0.001" step="1" value="${Number(item.quantity)}" aria-label="Cantidad para ${escapeHtml(item.group_name_snapshot)}" data-allocation-input="${item.id}"> ${escapeHtml(item.unit)} <button class="btn" data-save-allocation="${item.id}" data-line-id="${line.id}">Guardar cantidad</button>` : `${Number(item.quantity)} ${escapeHtml(item.unit)}`}</li>`).join("");
@@ -255,7 +257,7 @@ async function prepareFolderOrder(jobId) {
     const folderId = chosen.get(group.id);
     const quantity = Number(group.package_quantity || 0);
     if (!folderId || quantity <= 0) { if (quantity > 0 && !folderId) missing += 1; continue; }
-    const line = grouped.get(folderId) || { folder_template_id: folderId, description: folderName(folderId), quantity: 0, unit: "carpeta(s)", unit_cost: Number(cost?.unit_cost || 0), allocations: [] };
+    const line = grouped.get(folderId) || { cost_item_id: cost?.id || null, folder_template_id: folderId, description: folderName(folderId), quantity: 0, unit: "carpeta(s)", unit_cost: Number(cost?.unit_cost || 0), allocations: [] };
     line.quantity += quantity;
     line.allocations.push({ group, quantity, unit: "carpeta(s)" });
     grouped.set(folderId, line);
@@ -402,6 +404,20 @@ document.addEventListener("click", async (event) => {
       if (update.status === "RECEIVED") update.received_at = new Date().toISOString();
       const result = await supabase.from("purchase_orders").update(update).eq("id", button.dataset.orderId);
       if (result.error) throw result.error;
+      await loadData();
+    }
+    if (button.dataset.repriceOrder) {
+      const orderId = button.dataset.repriceOrder;
+      const order = orders.find((item) => item.id === orderId);
+      const cost = folderCostItem();
+      const lineIds = orderLines.filter((line) => line.purchase_order_id === orderId).map((line) => line.id);
+      if (!order || order.status !== "DRAFT" || order.order_type !== "FOLDER" || !cost || !lineIds.length) {
+        throw new Error("Solo se pueden actualizar borradores de carpetas con un costo general activo.");
+      }
+      if (!confirm(`Actualizar el costo estimado de las carpetas a ${currency(cost.unit_cost)} por unidad? Los pedidos enviados o recibidos no se modifican.`)) return;
+      const result = await supabase.from("purchase_order_lines").update({ cost_item_id: cost.id, unit_cost: Number(cost.unit_cost) }).in("id", lineIds);
+      if (result.error) throw result.error;
+      showToast("Estimación del borrador actualizada.");
       await loadData();
     }
     if (button.dataset.saveAllocation) {

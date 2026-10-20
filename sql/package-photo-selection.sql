@@ -71,6 +71,9 @@ begin
   if item.id is null then
     return jsonb_build_object('ok', false, 'message', 'El link no existe o expiró.');
   end if;
+  if item.selected_file_id is not null or item.status = 'CATALOG_SELECTED' then
+    return jsonb_build_object('ok', false, 'message', 'La selección ya está registrada. El enlace permanece disponible solo para consulta; para solicitar un cambio, comuníquese con Clarisa Rojas.');
+  end if;
   if item.approved_at is not null or item.status in ('APPROVED_FOR_PRINT', 'PRINTING', 'PRINTED', 'DELIVERED') then
     return jsonb_build_object('ok', false, 'message', 'Esta pieza ya fue autorizada y no puede cambiarse desde este catálogo.');
   end if;
@@ -139,34 +142,6 @@ $$;
 revoke all on function public.select_package_option_by_token(text, uuid, text, integer, text) from public;
 grant execute on function public.select_package_option_by_token(text, uuid, text, integer, text)
   to anon, authenticated;
-
-create or replace function public.sync_group_photo_format_to_print_item()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-begin
-  update public.print_items pi
-  set notes = 'Paquete seleccionado: ' || p.name || case new.photo_format
-    when 'GROUP' then ' · Foto grupal'
-    when 'INDIVIDUAL' then ' · Foto individual'
-    else ''
-  end
-  from public.packages p
-  where pi.group_id = new.id
-    and pi.item_type = 'PHOTO_PACKAGE'
-    and pi.selected_package_id = p.id
-    and new.selected_package_id = p.id;
-  return null;
-end;
-$$;
-
-revoke all on function public.sync_group_photo_format_to_print_item() from public, anon, authenticated;
-drop trigger if exists school_group_photo_format_sync on public.school_groups;
-create trigger school_group_photo_format_sync
-  after update of photo_format on public.school_groups
-  for each row execute function public.sync_group_photo_format_to_print_item();
 
 create or replace function public.record_group_photo_format_activity()
 returns trigger

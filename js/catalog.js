@@ -1,5 +1,6 @@
 import { supabase } from "./supabase.js";
 import { APP_CONFIG } from "./config.js";
+import { getAuthorizedR2ObjectUrl } from "./r2-files.js";
 
 async function sessionToken() {
   const { data } = await supabase.auth.getSession();
@@ -91,7 +92,9 @@ export async function uploadFolderTemplate(name, schoolLevel, file) {
 }
 
 export async function getCatalogFileUrl(table, fileId) {
-  return `${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/catalog/${table}/${fileId}?auth=${encodeURIComponent(await sessionToken())}`;
+  const allowedTables = new Set(["package_images", "diploma_templates", "folder_templates"]);
+  if (!allowedTables.has(table)) throw new Error("Catálogo inválido.");
+  return getAuthorizedR2ObjectUrl(`/admin/catalog/${table}/${encodeURIComponent(fileId)}`);
 }
 
 export async function updateDiplomaTemplate(templateId, payload, table = "diploma_templates") {

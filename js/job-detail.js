@@ -6,10 +6,10 @@ import { getCatalogFileUrl } from "./catalog.js";
 import { createDeposit, deleteDeposit, getDepositsByJob } from "./deposits.js";
 import { createGallery, deactivateGallery, getGalleriesByJob } from "./galleries.js";
 import { ensureDefaultPrintItems, getPrintItemsByJob, getPrintItemStatusLabel, getPrintItemTypeLabel, updatePrintItem } from "./print-items.js";
-import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, getAdminFileUrl, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink, uploadR2File } from "./r2-files.js";
+import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, downloadAdminFile, getAdminFileUrl, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink, uploadR2File } from "./r2-files.js";
 import { createSchoolGroup, deleteSchoolGroup, getSchoolGroupsByJob, updateSchoolGroup } from "./school-groups.js";
 import { buildWhatsAppUrl, generateAndLogWhatsAppMessage } from "./whatsapp.js";
-import { calculateTotals, copyToClipboard, escapeHtml, formToObject, generateToken, getQueryParam, openInNewTab, showToast, today } from "./utils.js";
+import { calculateTotals, copyToClipboard, escapeHtml, formToObject, generateToken, getTokenExpirationDate, getQueryParam, openInNewTab, showToast, today } from "./utils.js";
 import { formatDate, formatDateTime, formatMoney } from "./formatters.js";
 import { ASSIGNMENT_STATUSES, getAssignmentsByPrintItems, getEditors, saveAssignment } from "./work-assignments.js";
 import { packageMatchesSchool } from "./package-levels.js";
@@ -687,6 +687,7 @@ async function sendPrintItemWhatsapp(itemId) {
     const catalogItem = isSchoolDesignCatalog
       ? printItems.find((entry) => entry.group_id === item.group_id && entry.item_type === "DIPLOMA") || item
       : item;
+    await ensurePrintItemToken(catalogItem);
     const catalogName = isSchoolDesignCatalog ? "diplomas y carpetas" : "paquetes de fotos";
     const followUpText = item.item_type === "PHOTO_PACKAGE"
       ? "Primero elegirá Paquete 1 o Paquete 2 y después foto individual o grupal. Al final indicará la cantidad. El formato no genera costo adicional."
@@ -708,6 +709,7 @@ ${followUpText}
 Muchas gracias.
 Clarisa Rojas Fotografia`;
   } else {
+    await ensurePrintItemToken(item);
     message = `Hola ${contactName} 👋
 
 Ya está lista la revisión de: ${item.title}
@@ -745,6 +747,22 @@ Clarisa Rojas Fotografia`;
   openInNewTab(waMeUrl);
 }
 
+async function ensurePrintItemToken(item) {
+  const expiresAt = Date.parse(item.approval_token_expires_at || "");
+  if (item.approval_token && !item.approval_revoked_at && expiresAt > Date.now()) return;
+
+  const token = generateToken(48);
+  const expiration = getTokenExpirationDate();
+  const { error } = await supabase
+    .from("print_items")
+    .update({ approval_token: token, approval_token_expires_at: expiration, approval_revoked_at: null })
+    .eq("id", item.id);
+  if (error) throw error;
+  item.approval_token = token;
+  item.approval_token_expires_at = expiration;
+  item.approval_revoked_at = null;
+}
+
 function renderDeposits() {
   const generalDeposits = deposits.filter((deposit) => !deposit.group_id).reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
   const teacherDeposits = deposits.filter((deposit) => deposit.group_id).reduce((sum, deposit) => sum + Number(deposit.amount || 0), 0);
@@ -760,6 +778,7 @@ function renderApproval() {
     <p><strong>Link público:</strong><br><a href="${approvalUrl()}" target="_blank" rel="noopener">${approvalUrl()}</a></p>
     <p><strong>Estado:</strong><br>${job.approved_at ? "Aprobado" : "Pendiente"}</p>
     <p><strong>Fecha:</strong><br>${formatDateTime(job.approved_at)}</p>
+    <p><strong>Link válido hasta:</strong><br>${formatDateTime(job.approval_token_expires_at)}</p>
     <p><strong>Nombre:</strong><br>${escapeHtml(job.approval_name)}</p>
     <p><strong>Condiciones aceptadas:</strong><br>${job.approval_terms_accepted ? "Sí" : "No"}</p>
     <p><strong>Token revocado:</strong><br>${job.approval_revoked_at ? "Sí" : "No"}</p>
@@ -1011,7 +1030,7 @@ document.addEventListener("click", async (event) => {
       await offerWhatsappAfterGalleryReady(nextStatus);
     }
     if (event.target.matches("#regenerateTokenBtn") && confirm("¿Regenerar el token de aprobación?")) {
-      await supabase.from("jobs").update({ approval_token: generateToken(48), approval_revoked_at: null }).eq("id", jobId);
+      await supabase.from("jobs").update({ approval_token: generateToken(48), approval_token_expires_at: getTokenExpirationDate(), approval_revoked_at: null }).eq("id", jobId);
       showToast("Token regenerado.");
       loadJob();
     }
@@ -1044,7 +1063,7 @@ document.addEventListener("click", async (event) => {
       openInNewTab(await getAdminFileUrl(previewButton.dataset.previewR2File));
     }
     if (event.target.dataset.openR2File) {
-      openInNewTab(await getAdminFileUrl(event.target.dataset.openR2File, true));
+      await downloadAdminFile(event.target.dataset.openR2File);
     }
     if (event.target.dataset.revokeR2Link && confirm("¿Revocar este link?")) {
       await revokeR2ShareLink(event.target.dataset.revokeR2Link);

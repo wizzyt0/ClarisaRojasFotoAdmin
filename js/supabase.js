@@ -24,7 +24,7 @@ function missingConfigResult() {
 async function getClient() {
   if (!hasSupabaseConfig) return null;
   if (!clientPromise) {
-    clientPromise = import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm")
+    clientPromise = import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/+esm")
       .then(({ createClient }) => createClient(SUPABASE_URL, SUPABASE_ANON_KEY));
   }
   return clientPromise;

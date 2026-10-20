@@ -11,6 +11,29 @@ export const R2_LINK_TYPES = {
   PRINT_DOWNLOAD: "Descarga imprenta"
 };
 
+const authorizedFileUrls = new Map();
+window.addEventListener("pagehide", () => {
+  authorizedFileUrls.forEach((entry) => URL.revokeObjectURL(entry));
+  authorizedFileUrls.clear();
+});
+
+export async function getAuthorizedR2ObjectUrl(path) {
+  if (authorizedFileUrls.has(path)) return authorizedFileUrls.get(path);
+  const { data: sessionData } = await supabase.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if (!accessToken) throw new Error("Debe iniciar sesión para ver archivos.");
+  const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}${path}`, {
+    headers: { authorization: `Bearer ${accessToken}` }
+  });
+  if (!response.ok) {
+    const result = await response.json().catch(() => null);
+    throw new Error(result?.error || "No se pudo cargar el archivo.");
+  }
+  const objectUrl = URL.createObjectURL(await response.blob());
+  authorizedFileUrls.set(path, objectUrl);
+  return objectUrl;
+}
+
 export async function getR2FilesByJob(jobId) {
   const { data, error } = await supabase
     .from("job_files")
@@ -101,11 +124,29 @@ export async function deleteR2File(fileId) {
 }
 
 export async function getAdminFileUrl(fileId, download = false) {
+  if (download) return downloadAdminFile(fileId);
+  return getAuthorizedR2ObjectUrl(`/admin/files/${encodeURIComponent(fileId)}`);
+}
+
+export async function downloadAdminFile(fileId) {
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData?.session?.access_token;
-  if (!accessToken) throw new Error("Debe iniciar sesión para ver archivos.");
-
-  const params = new URLSearchParams({ auth: accessToken });
-  if (download) params.set("download", "1");
-  return `${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/files/${fileId}?${params.toString()}`;
+  if (!accessToken) throw new Error("Debe iniciar sesión para descargar archivos.");
+  const response = await fetch(`${APP_CONFIG.r2WorkerUrl.replace(/\/$/, "")}/admin/files/${encodeURIComponent(fileId)}?download=1`, {
+    headers: { authorization: `Bearer ${accessToken}` }
+  });
+  if (!response.ok) {
+    const result = await response.json().catch(() => null);
+    throw new Error(result?.error || "No se pudo descargar el archivo.");
+  }
+  const disposition = response.headers.get("content-disposition") || "";
+  const fileName = disposition.match(/filename="?([^";]+)"?/i)?.[1] || `archivo-${fileId}`;
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = fileName;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
 }

@@ -110,13 +110,19 @@ export function initLoginPage() {
     button.disabled = true;
     const email = form.email.value.trim();
     const password = form.password.value;
-    const { error } = await login(email, password);
-    button.disabled = false;
-    if (error) {
-      showToast("No se pudo iniciar sesión. Revise el correo y la contraseña.", "error");
+    try {
+      const { error } = await login(email, password);
+      if (error) {
+        showToast("No se pudo iniciar sesión. Revise el correo y la contraseña.", "error");
+        console.error(error);
+        return;
+      }
+      window.location.href = "dashboard.html";
+    } catch (error) {
       console.error(error);
-      return;
+      showToast("No se pudo conectar para iniciar sesión. Revise su conexión e inténtelo de nuevo.", "error");
+    } finally {
+      button.disabled = false;
     }
-    window.location.href = "dashboard.html";
   });
 }

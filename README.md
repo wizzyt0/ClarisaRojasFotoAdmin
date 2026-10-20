@@ -26,17 +26,9 @@ Aplicación web interna para administrar un negocio de fotografía. Es simple, e
 
 No usa Next.js, React, Vue, Angular, backend Node tradicional, pagos online, WhatsApp Business API, Google Photos API, dashboard de clientes ni cuentas para clientes.
 
-## Modo local sin login
+## Autenticación y permisos
 
-Por ahora la app está configurada para probar localmente sin login. En `js/auth.js` existe:
-
-```js
-export const AUTH_ENABLED = false;
-```
-
-Con ese valor, `index.html` redirige a `dashboard.html` y las páginas internas no piden sesión.
-
-Importante: `sql/policies.sql` también incluye políticas `local anon` para poder leer y escribir con la anon key durante pruebas locales. Antes de publicar en internet, cambie `AUTH_ENABLED` a `true` y elimine esas políticas `local anon` en Supabase.
+La aplicación requiere iniciar sesión (`AUTH_ENABLED = true`). Los roles se guardan en `staff_roles`: los propietarios acceden al panel administrativo y los editores solo a sus tareas asignadas. No habilite políticas de lectura o escritura anónima en las tablas operativas.
 
 ## Configurar Supabase
 
@@ -44,8 +36,10 @@ Importante: `sql/policies.sql` también incluye políticas `local anon` para pod
 2. Abra el SQL Editor.
 3. Ejecute `sql/schema.sql`.
 4. Ejecute `sql/policies.sql`.
-5. Opcionalmente ejecute `sql/seed.sql` para datos demo.
-6. Para usar login más adelante, en Authentication cree un usuario administrador con correo y contraseña.
+5. Cree en Supabase Auth las cuentas de los propietarios que usarán el panel.
+6. Ejecute `sql/staff-roles-rbac.sql` para asignar roles y restringir tablas operativas.
+7. Ejecute `sql/security-hardening-admin-only.sql` para retirar cualquier política anterior permisiva y aplicar acceso por rol.
+8. Opcionalmente ejecute `sql/seed.sql` para datos demo en un proyecto de pruebas.
 
 No use la service role key en el frontend. Solo use la URL del proyecto y la anon key.
 
@@ -145,7 +139,7 @@ La app puede registrar archivos guardados en un bucket privado de Cloudflare R2 
 - Descarga para imprenta: `https://clarisa-r2-share.mudjkdriver.workers.dev/download?token=...`
 
 Ejecute `sql/r2-storage-links.sql` en Supabase para crear las tablas `job_files` y `file_share_links`.
-Ejecute también `sql/print-items-workflow.sql` para las aprobaciones por pieza y `sql/catalog-previews.sql` para los catálogos de paquetes y diplomas.
+Ejecute también `sql/print-items-workflow.sql` para las aprobaciones por pieza y `sql/catalog-previews.sql` para los catálogos de paquetes y diplomas. Después de `staff-roles-rbac.sql` y `print-items-workflow.sql`, ejecute `sql/token-link-read-only-locks.sql`: conserva los links de maestras para consulta, bloquea en servidor cambios a selecciones o aprobaciones ya confirmadas y configura una expiración de ocho meses. Los links existentes sin fecha reciben ocho meses desde que se aplica la migración; los que ya tienen una fecha conservan esa fecha. Al generar o reenviar un link vencido, se crea un token nuevo con ocho meses de vigencia.
 
 El frontend nunca guarda llaves secretas de Cloudflare R2. La entrega de archivos se hace con un Cloudflare Worker en `cloudflare/r2-share-worker.js`.
 

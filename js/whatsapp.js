@@ -1,7 +1,7 @@
 import { supabase } from "./supabase.js";
 import { APP_CONFIG } from "./config.js";
 import { formatMoney } from "./formatters.js";
-import { generateToken, normalizePhone } from "./utils.js";
+import { generateToken, getTokenExpirationDate, normalizePhone } from "./utils.js";
 
 export function buildWhatsAppUrl(phone, message) {
   const normalized = normalizePhone(phone);
@@ -76,11 +76,16 @@ export async function generateAndLogWhatsAppMessage(jobId, phone) {
     .single();
   if (error) throw error;
 
-  if (!job.approval_token) {
+  if (!job.approval_token || job.approval_revoked_at || !job.approval_token_expires_at || new Date(job.approval_token_expires_at).getTime() <= Date.now()) {
     job.approval_token = generateToken(48);
+    job.approval_token_expires_at = getTokenExpirationDate();
     const { error: tokenError } = await supabase
       .from("jobs")
-      .update({ approval_token: job.approval_token, approval_revoked_at: null })
+      .update({
+        approval_token: job.approval_token,
+        approval_token_expires_at: job.approval_token_expires_at,
+        approval_revoked_at: null
+      })
       .eq("id", job.id);
     if (tokenError) throw tokenError;
   }

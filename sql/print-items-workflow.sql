@@ -6,7 +6,7 @@ create table if not exists print_items (
   title text not null,
   status text not null default 'PENDING' check (status in ('PENDING','READY_FOR_REVIEW','CATALOG_SELECTED','SENT_FOR_APPROVAL','APPROVED_FOR_PRINT','PRINTING','PRINTED','DELIVERED','CHANGES_REQUESTED','CANCELLED')),
   approval_token text not null unique default encode(gen_random_bytes(32), 'hex'),
-  approval_token_expires_at timestamptz,
+  approval_token_expires_at timestamptz default (now() + interval '8 months'),
   approval_revoked_at timestamptz,
   sent_at timestamptz,
   approved_at timestamptz,
@@ -79,10 +79,16 @@ drop policy if exists "admin write school_groups" on school_groups;
 drop policy if exists "admin read print_items" on print_items;
 drop policy if exists "admin write print_items" on print_items;
 
-create policy "admin read school_groups" on school_groups for select to authenticated using (true);
-create policy "admin write school_groups" on school_groups for all to authenticated using (true) with check (true);
-create policy "admin read print_items" on print_items for select to authenticated using (true);
-create policy "admin write print_items" on print_items for all to authenticated using (true) with check (true);
+create policy "admin read school_groups" on school_groups for select to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])));
+create policy "admin write school_groups" on school_groups for all to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])))
+  with check ((select public.has_staff_role(array['owner']::public.staff_role[])));
+create policy "admin read print_items" on print_items for select to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])));
+create policy "admin write print_items" on print_items for all to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])))
+  with check ((select public.has_staff_role(array['owner']::public.staff_role[])));
 
 drop function if exists get_public_print_item_by_token(text);
 drop function if exists approve_print_item_by_token(text, text);
@@ -199,6 +205,8 @@ begin
     changes_requested_at = null
   where approval_token = approve_print_item_by_token.token
     and approval_revoked_at is null
+    and status = 'SENT_FOR_APPROVAL'
+    and approved_at is null
     and (approval_token_expires_at is null or approval_token_expires_at > now())
   returning * into approved_item;
 
@@ -227,6 +235,8 @@ begin
     status = 'CHANGES_REQUESTED'
   where approval_token = request_print_item_changes_by_token.token
     and approval_revoked_at is null
+    and status = 'SENT_FOR_APPROVAL'
+    and approved_at is null
     and (approval_token_expires_at is null or approval_token_expires_at > now())
   returning * into changed_item;
 

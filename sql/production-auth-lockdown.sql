@@ -1,50 +1,23 @@
-drop policy if exists "local anon read clients" on clients;
-drop policy if exists "local anon write clients" on clients;
-drop policy if exists "local anon read school_profiles" on school_profiles;
-drop policy if exists "local anon write school_profiles" on school_profiles;
-drop policy if exists "local anon read packages" on packages;
-drop policy if exists "local anon write packages" on packages;
-drop policy if exists "local anon read jobs" on jobs;
-drop policy if exists "local anon write jobs" on jobs;
-drop policy if exists "local anon read galleries" on galleries;
-drop policy if exists "local anon write galleries" on galleries;
-drop policy if exists "local anon read approvals" on approvals;
-drop policy if exists "local anon write approvals" on approvals;
-drop policy if exists "local anon read deposits" on deposits;
-drop policy if exists "local anon write deposits" on deposits;
-drop policy if exists "local anon read message_logs" on message_logs;
-drop policy if exists "local anon write message_logs" on message_logs;
-
-drop policy if exists "admin read clients" on clients;
-drop policy if exists "admin write clients" on clients;
-drop policy if exists "admin read school_profiles" on school_profiles;
-drop policy if exists "admin write school_profiles" on school_profiles;
-drop policy if exists "admin read packages" on packages;
-drop policy if exists "admin write packages" on packages;
-drop policy if exists "admin read jobs" on jobs;
-drop policy if exists "admin write jobs" on jobs;
-drop policy if exists "admin read galleries" on galleries;
-drop policy if exists "admin write galleries" on galleries;
-drop policy if exists "admin read approvals" on approvals;
-drop policy if exists "admin write approvals" on approvals;
-drop policy if exists "admin read deposits" on deposits;
-drop policy if exists "admin write deposits" on deposits;
-drop policy if exists "admin read message_logs" on message_logs;
-drop policy if exists "admin write message_logs" on message_logs;
-
-create policy "admin read clients" on clients for select to authenticated using (true);
-create policy "admin write clients" on clients for all to authenticated using (true) with check (true);
-create policy "admin read school_profiles" on school_profiles for select to authenticated using (true);
-create policy "admin write school_profiles" on school_profiles for all to authenticated using (true) with check (true);
-create policy "admin read packages" on packages for select to authenticated using (true);
-create policy "admin write packages" on packages for all to authenticated using (true) with check (true);
-create policy "admin read jobs" on jobs for select to authenticated using (true);
-create policy "admin write jobs" on jobs for all to authenticated using (true) with check (true);
-create policy "admin read galleries" on galleries for select to authenticated using (true);
-create policy "admin write galleries" on galleries for all to authenticated using (true) with check (true);
-create policy "admin read approvals" on approvals for select to authenticated using (true);
-create policy "admin write approvals" on approvals for all to authenticated using (true) with check (true);
-create policy "admin read deposits" on deposits for select to authenticated using (true);
-create policy "admin write deposits" on deposits for all to authenticated using (true) with check (true);
-create policy "admin read message_logs" on message_logs for select to authenticated using (true);
-create policy "admin write message_logs" on message_logs for all to authenticated using (true) with check (true);
+-- Deprecated name retained for installations whose checklist already references
+-- this file. Run after staff-roles-rbac.sql; all access remains owner-only.
+begin;
+do $$
+declare table_name text; policy_row record;
+begin
+  foreach table_name in array array[
+    'approvals', 'clients', 'deposits', 'diploma_templates', 'file_share_links',
+    'folder_templates', 'galleries', 'job_files', 'jobs', 'message_logs',
+    'package_images', 'packages', 'print_items', 'school_groups', 'school_profiles'
+  ] loop
+    execute format('alter table public.%I enable row level security', table_name);
+    for policy_row in select policyname from pg_policies where schemaname = 'public' and tablename = table_name loop
+      execute format('drop policy if exists %I on public.%I', policy_row.policyname, table_name);
+    end loop;
+    execute format(
+      'create policy %I on public.%I for all to authenticated using ((select public.has_staff_role(array[''owner'']::public.staff_role[]))) with check ((select public.has_staff_role(array[''owner'']::public.staff_role[])))',
+      'owners can manage ' || table_name, table_name
+    );
+  end loop;
+end;
+$$;
+commit;

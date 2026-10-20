@@ -119,6 +119,9 @@ begin
       or target_item.status in ('APPROVED_FOR_PRINT','PRINTING','PRINTED','DELIVERED') then
     return jsonb_build_object('ok', false, 'message', 'La pieza ya no está disponible para selección.');
   end if;
+  if target_item.selected_file_id is not null then
+    return jsonb_build_object('ok', false, 'message', 'Esta selección ya quedó registrada. El enlace es solo informativo; para solicitar un cambio, comuníquese con Clarisa Rojas.');
+  end if;
   select sp.school_level into school_level_value
   from public.jobs j join public.clients c on c.id = j.client_id
   left join public.school_profiles sp on sp.client_id = c.id

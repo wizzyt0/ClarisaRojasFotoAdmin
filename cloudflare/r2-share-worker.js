@@ -330,7 +330,7 @@ async function handleAdminGetCatalogFile(request, env, table, fileId) {
   if (!allowedTables.has(table)) return jsonError("Catálogo inválido.", 400);
 
   const url = new URL(request.url);
-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || url.searchParams.get("auth") || "";
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
   const authorizedRequest = new Request(request, {
     headers: new Headers({ authorization: `Bearer ${token}` })
   });
@@ -404,9 +404,9 @@ async function handlePublicCatalogFile(request, env, table, fileId) {
 
   const items = await supabaseFetch(
     env,
-    `print_items?select=id&approval_token=eq.${encodeURIComponent(token)}&approval_revoked_at=is.null&limit=1`
+    `print_items?select=id,approval_token_expires_at&approval_token=eq.${encodeURIComponent(token)}&approval_revoked_at=is.null&limit=1`
   );
-  if (!items.length) return jsonError("Link no disponible.", 404);
+  if (!items.length || (items[0].approval_token_expires_at && new Date(items[0].approval_token_expires_at).getTime() <= Date.now())) return jsonError("Link no disponible.", 404);
 
   const files = await supabaseFetch(
     env,
@@ -424,10 +424,10 @@ async function handlePublicPrintItemFile(request, env, fileId) {
 
   const items = await supabaseFetch(
     env,
-    `print_items?select=id&approval_token=eq.${encodeURIComponent(token)}&approval_revoked_at=is.null&limit=1`
+    `print_items?select=id,approval_token_expires_at&approval_token=eq.${encodeURIComponent(token)}&approval_revoked_at=is.null&limit=1`
   );
   const item = items[0];
-  if (!item) return jsonError("Link no disponible.", 404);
+  if (!item || (item.approval_token_expires_at && new Date(item.approval_token_expires_at).getTime() <= Date.now())) return jsonError("Link no disponible.", 404);
 
   const files = await supabaseFetch(
     env,
@@ -440,7 +440,7 @@ async function handlePublicPrintItemFile(request, env, fileId) {
 
 async function handleAdminGetFile(request, env, fileId) {
   const url = new URL(request.url);
-  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || url.searchParams.get("auth") || "";
+  const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") || "";
   const authorizedRequest = new Request(request, {
     headers: new Headers({ authorization: `Bearer ${token}` })
   });

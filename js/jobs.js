@@ -1,7 +1,7 @@
 import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { JOB_STATUSES, SCHOOL_EVENT_TYPES, getJobStatusLabel, getJobTypeLabel, getSchoolEventTypeLabel } from "./constants.js";
-import { escapeHtml, formToObject, generateToken, getQueryParam, showToast, openInNewTab } from "./utils.js";
+import { escapeHtml, formToObject, generateToken, getTokenExpirationDate, getQueryParam, showToast, openInNewTab } from "./utils.js";
 import { generateAndLogWhatsAppMessage } from "./whatsapp.js";
 import { formatDate, formatMoney } from "./formatters.js";
 
@@ -149,7 +149,10 @@ form.addEventListener("submit", async (event) => {
     package_quantity: Number(editingJob?.package_quantity || 0),
     notes: data.notes || null
   };
-  if (!editingJob) payload.approval_token = generateToken(48);
+  if (!editingJob) {
+    payload.approval_token = generateToken(48);
+    payload.approval_token_expires_at = getTokenExpirationDate();
+  }
   const result = editingJob
     ? await supabase.from("jobs").update(payload).eq("id", currentJobId).select().single()
     : await supabase.from("jobs").insert(payload).select().single();

@@ -115,7 +115,7 @@ create trigger print_item_assignment_status after update of status on public.pri
 
 -- Existing data stays exclusively with owners. Editors read only their task rows.
 do $$
-declare table_name text;
+declare table_name text; policy_row record;
 begin
   foreach table_name in array array[
     'approvals', 'clients', 'deposits', 'diploma_templates',
@@ -124,12 +124,9 @@ begin
     'school_groups', 'school_profiles'
   ] loop
     execute format('alter table public.%I enable row level security', table_name);
-    execute format('drop policy if exists %I on public.%I', 'admin read ' || table_name, table_name);
-    execute format('drop policy if exists %I on public.%I', 'admin write ' || table_name, table_name);
-    execute format('drop policy if exists %I on public.%I', 'owners can manage ' || table_name, table_name);
-    execute format('drop policy if exists %I on public.%I', 'editors can read ' || table_name, table_name);
-    execute format('drop policy if exists %I on public.%I', 'editors can add ' || table_name, table_name);
-    execute format('drop policy if exists %I on public.%I', 'editors can update ' || table_name, table_name);
+    for policy_row in select policyname from pg_policies where schemaname = 'public' and tablename = table_name loop
+      execute format('drop policy if exists %I on public.%I', policy_row.policyname, table_name);
+    end loop;
     execute format(
       'create policy %I on public.%I for all to authenticated using ((select public.has_staff_role(array[''owner'']::public.staff_role[]))) with check ((select public.has_staff_role(array[''owner'']::public.staff_role[])))',
       'owners can manage ' || table_name, table_name

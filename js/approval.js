@@ -21,13 +21,18 @@ function galleryButton(gallery) {
 
 function render() {
   const { job, client, package: pkg, school_profile: school, galleries, financial } = approvalData;
-  if (job.approved_at) {
-    content.innerHTML = `<h1>Este trabajo ya fue autorizado para impresión.</h1><p class="muted">Fecha de aprobación: ${new Date(job.approved_at).toLocaleString("es-DO")}</p>`;
-    return;
-  }
   const galleryHtml = job.job_type === "SCHOOL_GRADUATION"
     ? Object.keys(GALLERY_TYPES).map((type) => galleries.filter((gallery) => gallery.gallery_type === type).map((gallery) => `<p><strong>${getGalleryTypeLabel(type)}</strong><br>${galleryButton(gallery)}</p>`).join("")).join("")
     : galleries.map((gallery) => `<p><strong>Galería</strong><br>${galleryButton(gallery)}</p>`).join("");
+  if (job.approved_at) {
+    content.innerHTML = `<h1 class="approval-title">${escapeHtml(job.job_type === "SCHOOL_GRADUATION" ? (school?.school_name || client.name) : client.name)}</h1>
+      <p class="muted">${escapeHtml(job.title)}</p>
+      <div class="alert alert-success"><strong>Este enlace es de consulta.</strong><br>El trabajo ya fue autorizado y no puede modificarse desde aquí.${job.approval_name ? `<br><strong>Autorizó:</strong> ${escapeHtml(job.approval_name)}` : ""}<br><strong>Fecha:</strong> ${new Date(job.approved_at).toLocaleString("es-MX")}</div>
+      <h2>Resumen financiero</h2><div class="grid"><p><strong>Total:</strong><br>${formatMoney(financial.price)}</p><p><strong>Abonado:</strong><br>${formatMoney(financial.total_deposited)}</p><p><strong>Pendiente:</strong><br>${formatMoney(financial.remaining_balance)}</p><p><strong>Fecha del último abono:</strong><br>${financial.last_deposit_date ? formatDate(financial.last_deposit_date) : "Sin abonos registrados"}</p></div>
+      <h2>Galerías</h2>${galleryHtml || `<div class="empty-state">No hay galerías activas registradas.</div>`}
+      <p class="muted">Para consultar o solicitar un cambio, comuníquese directamente con Clarisa Rojas.</p>`;
+    return;
+  }
   content.innerHTML = `
     <h1 class="approval-title">${escapeHtml(job.job_type === "SCHOOL_GRADUATION" ? (school?.school_name || client.name) : client.name)}</h1>
     <p class="muted">Revise cuidadosamente antes de aprobar.</p>
@@ -65,12 +70,12 @@ function printItemTypeLabel(type) {
 
 function renderPrintItemApproval() {
   const { print_item: item, job, client, school_profile: school, school_group: group, preview_files: previewFiles = [] } = printItemData;
-  if (item.approved_at) {
-    content.innerHTML = `<h1>Esta pieza ya fue aprobada para impresión.</h1><p class="muted">Fecha de aprobación: ${new Date(item.approved_at).toLocaleString("es-MX")}</p>`;
-    return;
-  }
   if (item.status === "CATALOG_SELECTED" && item.item_type === "PHOTO_PACKAGE") {
     renderSavedPackageSelection();
+    return;
+  }
+  if (item.approved_at || ["APPROVED_FOR_PRINT", "PRINTING", "PRINTED", "DELIVERED"].includes(item.status)) {
+    renderReadOnlyPrintItem();
     return;
   }
   const needsCatalogSelection = ["DIPLOMA", "PHOTO_PACKAGE", "FOLDER_OPTION"].includes(item.item_type) && !item.selected_file_id;
@@ -103,6 +108,32 @@ function renderPrintItemApproval() {
     </div>`;
 }
 
+function renderReadOnlyPrintItem() {
+  const { print_item: item, job, client, school_profile: school, school_group: group, preview_files: previewFiles = [] } = printItemData;
+  const teacherName = group?.teacher_name || school?.contact_name || school?.teacher_name || school?.principal_name || client.name;
+  const schoolName = school?.school_name || client.name;
+  const selected = catalogOptions.find((option) => option.id === item.selected_file_id);
+  const selectedPreview = selected
+    ? `<article class="catalog-card"><button class="catalog-preview-large" data-open-url="${escapeHtml(catalogFileUrl(selected))}" type="button"><span><img src="${escapeHtml(catalogFileUrl(selected))}" alt="${escapeHtml(selected.name)}"></span></button><h3>${escapeHtml(selected.name)}</h3></article>`
+    : "";
+  const statusLabel = { APPROVED_FOR_PRINT: "Aprobada para impresión", PRINTING: "En impresión", PRINTED: "Impresa", DELIVERED: "Entregada" }[item.status] || "Aprobada";
+  const selectedPackageDetails = item.item_type === "PHOTO_PACKAGE" && group ? `<p><strong>Paquete:</strong> ${escapeHtml(selected?.package_tier === "SMALL" ? "Paquete 1" : selected?.package_tier === "LARGE" ? "Paquete 2" : selected?.name || "Seleccionado")}<br><strong>Formato:</strong> ${group.photo_format === "GROUP" ? "Foto grupal" : group.photo_format === "INDIVIDUAL" ? "Foto individual" : "No indicado"}<br><strong>Cantidad:</strong> ${Number(group.package_quantity || 0)} paquete(s)</p>` : "";
+  const groupSummary = group ? `<h2>Resumen del grupo</h2><div class="grid">
+      <p><strong>Precio por paquete:</strong><br>${formatMoney(group.unit_package_price || 0)}</p>
+      <p><strong>Total del grupo:</strong><br>${formatMoney(group.price || 0)}</p>
+      <p><strong>Abonado:</strong><br>${formatMoney(group.total_deposited || 0)}</p>
+      <p><strong>Fecha del último abono:</strong><br>${group.last_deposit_date ? formatDate(group.last_deposit_date) : "Sin abonos registrados"}</p>
+      <p><strong>Pendiente:</strong><br>${formatMoney(group.remaining_balance || 0)}</p>
+    </div>` : "";
+  content.innerHTML = `<h1 class="approval-title">${escapeHtml(statusLabel)}: ${escapeHtml(item.title)}</h1>
+    <p class="muted"><strong>Maestra:</strong> ${escapeHtml(teacherName)} · <strong>Escuela:</strong> ${escapeHtml(schoolName)} · <strong>Grupo:</strong> ${escapeHtml(group?.group_name || school?.grade_or_class || "No indicado")}</p>
+    <div class="alert alert-success"><strong>Este enlace es de consulta.</strong><br>La selección ya quedó registrada y no se puede modificar desde aquí.${item.approved_by_name ? `<br><strong>Confirmó:</strong> ${escapeHtml(item.approved_by_name)}` : ""}${item.approved_at ? `<br><strong>Fecha:</strong> ${new Date(item.approved_at).toLocaleString("es-MX")}` : ""}</div>
+    ${selectedPackageDetails}${selectedPreview ? `<h2>${item.item_type === "PHOTO_PACKAGE" ? "Imagen del paquete elegido" : "Diseño seleccionado"}</h2><div class="catalog-grid">${selectedPreview}</div>` : ""}
+    ${previewFiles.length ? `<h2>Diseño enviado a revisión</h2>${renderPrintItemPreviewFiles(previewFiles)}` : ""}
+    ${item.client_notes ? `<div class="alert"><strong>Observaciones registradas:</strong><br>${escapeHtml(item.client_notes)}</div>` : ""}
+    ${groupSummary}<p class="muted">Para solicitar cualquier cambio, comuníquese directamente con Clarisa Rojas.</p>`;
+}
+
 function renderSavedPackageSelection() {
   const { print_item: item, job, client, school_group: group } = printItemData;
   const option = catalogOptions.find((entry) => entry.id === item.selected_file_id);
@@ -115,7 +146,7 @@ function renderSavedPackageSelection() {
   const packageTier = option?.package_tier === "SMALL" ? "Paquete 1" : option?.package_tier === "LARGE" ? "Paquete 2" : "";
   content.innerHTML = `<h1 class="approval-title">Su selección está registrada</h1>
     <p class="muted">${escapeHtml(client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p>
-    <div class="alert alert-success"><strong>Esta es la opción que eligió:</strong>
+    <div class="alert alert-success"><strong>Esta es la opción que eligió:</strong>${printItemData.print_item?.approved_at ? `<br><strong>Autorizó:</strong> ${escapeHtml(printItemData.print_item.approved_by_name || "Maestra")}` : ""}
       ${imageUrl ? `<div class="catalog-preview-large"><span><img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(option.name)}"></span></div>` : ""}
       <p><strong>Paquete:</strong> ${escapeHtml(packageTier ? `${packageTier} · ${option?.name || ""}` : option?.name || "Selección guardada")}</p>
       <p><strong>Formato:</strong> ${photoFormat}<br><strong>Cantidad:</strong> ${Number(group?.package_quantity || 0)} paquete(s)</p>
@@ -127,7 +158,7 @@ function renderSavedPackageSelection() {
       <p><strong>Fecha del último abono:</strong><br>${group?.last_deposit_date ? formatDate(group.last_deposit_date) : "Sin abonos registrados"}</p>
       <p><strong>Pendiente del grupo:</strong><br>${formatMoney(remaining)}</p>
     </div>
-    <p class="muted">Gracias. Clarisa recibió su selección y continuará con el pedido.</p>
+    <p class="muted">${printItemData.print_item?.approved_at ? "La pieza ya está autorizada para impresión." : "Gracias. Clarisa recibió su selección y continuará con el pedido."}</p>
     <div class="alert"><strong>¿Requiere algún cambio?</strong><br>Comuníquese directamente con Clarisa Rojas.</div>`;
 }
 
@@ -206,9 +237,16 @@ function renderSchoolCatalog() {
     return `<article class="catalog-card"><div class="catalog-preview-large"><span><img src="${escapeHtml(url)}" alt="${escapeHtml(selected.name)}"></span></div><h3>${escapeHtml(title)}: ${escapeHtml(selected.name)}</h3></article>`;
   };
   const hasSelection = Boolean(schoolCatalog.diploma_selected_id || schoolCatalog.folder_selected_id);
+  const groupSummary = group ? `<h2>Resumen del grupo</h2><div class="grid">
+    <p><strong>Precio por paquete:</strong><br>${formatMoney(group.unit_package_price || 0)}</p>
+    <p><strong>Total del grupo:</strong><br>${formatMoney(group.price || 0)}</p>
+    <p><strong>Abonado:</strong><br>${formatMoney(group.total_deposited || 0)}</p>
+    <p><strong>Fecha del último abono:</strong><br>${group.last_deposit_date ? formatDate(group.last_deposit_date) : "Sin abonos registrados"}</p>
+    <p><strong>Pendiente:</strong><br>${formatMoney(group.remaining_balance || 0)}</p>
+  </div>` : "";
   const selectedCards = `${selectedSummary("Diploma elegido", schoolCatalog.diploma_options, schoolCatalog.diploma_selected_id)}${selectedSummary("Carpeta elegida", schoolCatalog.folder_options, schoolCatalog.folder_selected_id)}`;
   const pendingCatalogs = `${!schoolCatalog.diploma_selected_id ? catalogSection("DIPLOMA", "Elija un diploma", schoolCatalog.diploma_options, null) : ""}${!schoolCatalog.folder_selected_id ? catalogSection("FOLDER", "Elija una carpeta", schoolCatalog.folder_options, null) : ""}`;
-  content.innerHTML = `<h1 class="approval-title">Elija diploma y carpeta</h1><p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p><p>Las opciones corresponden a ${escapeHtml({ KINDER: "preescolar", PRIMARY: "primaria", SECONDARY: "secundaria" }[schoolCatalog.school_level] || "su nivel escolar")}.</p>${hasSelection ? `<section class="catalog-section"><h2>${bothSelected ? "Sus diseños elegidos" : "Selección guardada"}</h2><div class="catalog-grid">${selectedCards}</div>${bothSelected ? `<div class="alert alert-success"><strong>Sus elecciones de diploma y carpeta quedaron registradas.</strong></div><div class="alert"><strong>¿Requiere algún cambio?</strong><br>Comuníquese directamente con Clarisa Rojas.</div>` : `<p class="muted">Su elección está guardada. Ahora puede elegir la opción pendiente.</p>`}</section>` : ""}${pendingCatalogs}${renderSchoolCatalogConfirmDialog()}`;
+  content.innerHTML = `<h1 class="approval-title">Elija diploma y carpeta</h1><p class="muted">${escapeHtml(school?.school_name || client.name)} · ${escapeHtml(group?.group_name || "")} · ${escapeHtml(job.title)}</p><p>Las opciones corresponden a ${escapeHtml({ KINDER: "preescolar", PRIMARY: "primaria", SECONDARY: "secundaria" }[schoolCatalog.school_level] || "su nivel escolar")}.</p>${hasSelection ? `<section class="catalog-section"><h2>${bothSelected ? "Sus diseños elegidos" : "Selección guardada"}</h2><div class="catalog-grid">${selectedCards}</div>${bothSelected ? `<div class="alert alert-success"><strong>Sus elecciones de diploma y carpeta quedaron registradas.</strong></div><div class="alert"><strong>¿Requiere algún cambio?</strong><br>Comuníquese directamente con Clarisa Rojas.</div>` : `<p class="muted">Su elección está guardada. Ahora puede elegir la opción pendiente.</p>`}</section>` : ""}${groupSummary}${pendingCatalogs}${renderSchoolCatalogConfirmDialog()}`;
 }
 
 function renderSchoolCatalogConfirmDialog() {
@@ -312,7 +350,7 @@ async function load() {
         return;
       }
     }
-    if (["DIPLOMA", "PHOTO_PACKAGE", "FOLDER_OPTION"].includes(data.print_item?.item_type) && (!data.print_item?.selected_file_id || data.print_item?.item_type === "PHOTO_PACKAGE")) {
+    if (["DIPLOMA", "PHOTO_PACKAGE", "FOLDER_OPTION"].includes(data.print_item?.item_type)) {
       const catalogRpc = data.print_item?.item_type === "PHOTO_PACKAGE" ? "get_public_school_package_options_by_token" : "get_public_catalog_by_print_item_token";
       const catalogResult = await supabase.rpc(catalogRpc, { token: itemToken });
       if (catalogResult.error && data.print_item?.item_type === "PHOTO_PACKAGE") {

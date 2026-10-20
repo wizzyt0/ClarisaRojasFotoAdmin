@@ -68,7 +68,7 @@ create table jobs (
   package_quantity integer not null default 0 check (package_quantity >= 0),
   notes text,
   approval_token text unique not null,
-  approval_token_expires_at timestamptz,
+  approval_token_expires_at timestamptz default (now() + interval '8 months'),
   approval_revoked_at timestamptz,
   approved_at timestamptz,
   approval_name text,

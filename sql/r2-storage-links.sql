@@ -44,7 +44,13 @@ drop policy if exists "admin write job_files" on job_files;
 drop policy if exists "admin read file_share_links" on file_share_links;
 drop policy if exists "admin write file_share_links" on file_share_links;
 
-create policy "admin read job_files" on job_files for select to authenticated using (true);
-create policy "admin write job_files" on job_files for all to authenticated using (true) with check (true);
-create policy "admin read file_share_links" on file_share_links for select to authenticated using (true);
-create policy "admin write file_share_links" on file_share_links for all to authenticated using (true) with check (true);
+create policy "admin read job_files" on job_files for select to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])));
+create policy "admin write job_files" on job_files for all to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])))
+  with check ((select public.has_staff_role(array['owner']::public.staff_role[])));
+create policy "admin read file_share_links" on file_share_links for select to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])));
+create policy "admin write file_share_links" on file_share_links for all to authenticated
+  using ((select public.has_staff_role(array['owner']::public.staff_role[])))
+  with check ((select public.has_staff_role(array['owner']::public.staff_role[])));

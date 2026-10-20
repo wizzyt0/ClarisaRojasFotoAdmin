@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aprobados para impresión | Clarisa Rojas Fotografía</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/print-approvals.css?v=20261020-school-blocks">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">Clarisa Rojas Fotografía</div>
+      <nav class="nav">
+        <a href="dashboard.html">Dashboard</a>
+        <a href="clients.html">Clientes</a>
+        <a href="jobs.html">Trabajos</a>
+        <a href="packages.html" data-owner-only>Paquetes</a>
+        <a href="diplomas.html" data-owner-only>Diplomas y carpetas</a>
+        <a class="active" href="print-approvals.html" data-owner-only>Aprobados para impresión</a>
+        <a href="purchasing.html" data-owner-only>Pedidos y finanzas</a>
+        <a href="follow-ups.html">Seguimiento escuelas</a>
+        <button data-logout type="button">Cerrar sesión</button>
+      </nav>
+    </aside>
+    <main class="main">
+      <section class="container print-page">
+        <header class="page-header print-page-header">
+          <div><p class="eyebrow">Producción escolar</p><h1 class="page-title">Aprobados para impresión</h1><p class="muted">Piezas confirmadas por la maestra, organizadas por escuela.</p></div>
+          <a class="btn" href="purchasing.html" data-owner-only>Pedidos y finanzas</a>
+        </header>
+        <div id="printLoadError" class="alert alert-error" role="alert" hidden></div>
+        <section id="printMetrics" class="print-metrics" aria-label="Resumen de producción"></section>
+        <nav id="printTabs" class="print-tabs" aria-label="Etapas de impresión"></nav>
+        <div class="print-toolbar">
+          <label class="print-search"><span class="sr-only">Buscar escuela, maestra o grupo</span><input id="printSearch" class="input" type="search" placeholder="Buscar escuela, maestra o grupo"></label>
+          <div class="print-filters"><label><span class="sr-only">Filtrar por tipo de pieza</span><select id="printPieceFilter" class="select"><option value="">Todas las piezas</option></select></label><label><span class="sr-only">Filtrar por nivel</span><select id="printLevelFilter" class="select"><option value="">Todos los niveles</option></select></label></div>
+        </div>
+        <div id="printSchools" class="print-schools" aria-live="polite"></div>
+        <p class="print-workflow-note">Una pieza solo puede avanzar a la siguiente etapa. Las piezas impresas o entregadas no se pueden volver a marcar como pendientes desde este módulo.</p>
+      </section>
+    </main>
+  </div>
+  <script type="module" src="js/print-approvals.js?v=20261020-school-blocks"></script>
+</body>
+</html>

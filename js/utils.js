@@ -46,6 +46,15 @@ export function generateToken(length = 40) {
   return Array.from(bytes, (byte) => chars[byte % chars.length]).join("");
 }
 
+export function getTokenExpirationDate(months = 8) {
+  const date = new Date();
+  const day = date.getDate();
+  date.setDate(1);
+  date.setMonth(date.getMonth() + months);
+  date.setDate(Math.min(day, new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()));
+  return date.toISOString();
+}
+
 export function getQueryParam(name) {
   return new URLSearchParams(window.location.search).get(name);
 }

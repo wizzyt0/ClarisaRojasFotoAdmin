@@ -1,7 +1,6 @@
 import { requireAuth } from "./auth.js";
 import { supabase } from "./supabase.js";
 import { formatMoney, formatDate } from "./formatters.js";
-import { getJobStatusLabel } from "./constants.js";
 import { escapeHtml } from "./utils.js";
 
 await requireAuth();
@@ -13,10 +12,11 @@ const list = (items, empty = "No hay datos.") => {
 };
 
 async function loadDashboard() {
-  const [{ data: clients }, { data: jobs }, { data: followUps }] = await Promise.all([
+  const [{ data: clients }, { data: jobs }, { data: followUps }, { data: printItems }] = await Promise.all([
     supabase.from("clients").select("*"),
     supabase.from("jobs").select("*, clients(name, is_active), packages(name), deposits(amount)").order("created_at", { ascending: false }),
-    supabase.from("school_profiles").select("*, clients(name, phone, is_active)").order("next_follow_up_date")
+    supabase.from("school_profiles").select("*, clients(name, phone, is_active)").order("next_follow_up_date"),
+    supabase.from("print_items").select("id, job_id, title, status, approved_at, updated_at").order("updated_at", { ascending: false })
   ]);
 
   const allClients = (clients || []).filter((client) => client.is_active);
@@ -32,6 +32,11 @@ async function loadDashboard() {
   const now = new Date();
   const thisMonth = now.toISOString().slice(0, 7);
   const followThisMonth = activeFollowUps.filter((item) => item.next_follow_up_date?.startsWith(thisMonth));
+  const allPrintItems = printItems || [];
+  const waitingApproval = allPrintItems.filter((item) => item.status === "SENT_FOR_APPROVAL");
+  const approvedForPrint = allPrintItems.filter((item) => item.status === "APPROVED_FOR_PRINT");
+  const inPrinting = allPrintItems.filter((item) => item.status === "PRINTING");
+  const deliveredItems = allPrintItems.filter((item) => item.status === "DELIVERED");
 
   document.querySelector("#metrics").innerHTML = [
     metric("Total clientes", allClients.length),
@@ -40,18 +45,21 @@ async function loadDashboard() {
     metric("Total trabajos", allJobs.length),
     metric("Sesiones activas", allJobs.filter((j) => j.job_type === "PHOTO_SESSION" && j.status !== "DELIVERED").length),
     metric("Graduaciones activas", allJobs.filter((j) => j.job_type === "SCHOOL_GRADUATION" && j.status !== "DELIVERED").length),
-    metric("Esperando aprobación", allJobs.filter((j) => j.status === "WAITING_APPROVAL").length),
-    metric("Aprobados para imprimir", allJobs.filter((j) => j.status === "APPROVED_FOR_PRINT").length),
-    metric("En impresión", allJobs.filter((j) => j.status === "PRINTING").length),
-    metric("Entregados", allJobs.filter((j) => j.status === "DELIVERED").length),
+    metric("Piezas esperando aprobación", waitingApproval.length),
+    metric("Piezas aprobadas para imprimir", approvedForPrint.length),
+    metric("Piezas en impresión", inPrinting.length),
+    metric("Piezas entregadas", deliveredItems.length),
     metric("Total abonado", formatMoney(totalDeposited)),
     metric("Total pendiente", formatMoney(Math.max(totalPending, 0))),
     metric("Escuelas para contactar este mes", followThisMonth.length)
   ].join("");
 
   document.querySelector("#upcomingDeliveries").innerHTML = list(allJobs.filter((j) => j.delivery_date).slice(0, 6).map((j) => `<a href="job-detail.html?id=${j.id}">${escapeHtml(j.title)}</a><br><span class="muted">${formatDate(j.delivery_date)}</span>`));
-  document.querySelector("#waitingApproval").innerHTML = list(allJobs.filter((j) => j.status === "WAITING_APPROVAL").map((j) => `<a href="job-detail.html?id=${j.id}">${escapeHtml(j.title)}</a>`));
-  document.querySelector("#recentApproved").innerHTML = list(allJobs.filter((j) => j.approved_at).slice(0, 6).map((j) => `<a href="job-detail.html?id=${j.id}">${escapeHtml(j.title)}</a><br><span class="badge badge-status">${getJobStatusLabel(j.status)}</span>`));
+  document.querySelector("#waitingApproval").innerHTML = list(waitingApproval.slice(0, 6).map((item) => {
+    const job = allJobs.find((entry) => entry.id === item.job_id);
+    return `<a href="job-detail.html?id=${item.job_id}">${escapeHtml(item.title || job?.title || "Pieza")}</a>`;
+  }));
+  document.querySelector("#recentApproved").innerHTML = list(approvedForPrint.slice(0, 6).map((item) => `<a href="job-detail.html?id=${item.job_id}">${escapeHtml(item.title || "Pieza aprobada")}</a><br><span class="badge badge-status">Aprobada para impresión</span>`));
   document.querySelector("#nearFollowUps").innerHTML = list(activeFollowUps.slice(0, 6).map((f) => `${escapeHtml(f.school_name)}<br><span class="muted">${formatDate(f.next_follow_up_date)}</span>`));
 }
 

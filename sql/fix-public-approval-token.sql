@@ -56,7 +56,8 @@ begin
     'financial', jsonb_build_object(
       'price', j.price,
       'total_deposited', coalesce((select sum(amount) from deposits where job_id = j.id), 0),
-      'remaining_balance', greatest(j.price - coalesce((select sum(amount) from deposits where job_id = j.id), 0), 0)
+      'remaining_balance', greatest(j.price - coalesce((select sum(amount) from deposits where job_id = j.id), 0), 0),
+      'last_deposit_date', (select max(deposit_date) from deposits where job_id = j.id)
     )
   )
   into result
@@ -91,6 +92,8 @@ begin
     status = 'PRINTING'
   where approval_token = approve_job_by_token.token
     and approval_revoked_at is null
+    and status = 'WAITING_APPROVAL'
+    and approved_at is null
     and (approval_token_expires_at is null or approval_token_expires_at > now())
   returning * into approved_job;
 
