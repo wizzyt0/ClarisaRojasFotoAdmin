@@ -809,7 +809,6 @@ async function authorizeStandardFolder(itemId) {
   })
     .eq("id", item.id)
     .eq("status", "CATALOG_SELECTED")
-    .is("approved_at", null)
     .select("id")
     .maybeSingle();
   if (error) throw error;
