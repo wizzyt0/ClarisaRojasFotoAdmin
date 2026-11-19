@@ -43,6 +43,38 @@ test("the read token cannot write", async () => {
   assert.equal(response.status, 403);
 });
 
+test("a PATCH without credentials is unauthorized", async () => {
+  globalThis.fetch = async () => { throw new Error("unexpected database call"); };
+  const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title: "Cambio" })
+  }), env);
+  assert.equal(response.status, 401);
+});
+
+test("the write token cannot read", async () => {
+  globalThis.fetch = async () => { throw new Error("unexpected database call"); };
+  const response = await handleAssistantApiRequest(request("/v1/health", { auth: `Bearer ${writeToken}` }), env);
+  assert.equal(response.status, 403);
+});
+
+test("GET job details are not intercepted by the write route", async () => {
+  globalThis.fetch = async (url, options) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/auth/v1/token")) {
+      return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    }
+    assert.equal(options.method, undefined);
+    assert.match(parsed.pathname, /\/rest\/v1\/assistant_jobs$/);
+    assert.equal(parsed.searchParams.get("id"), "eq.2cde2ddb-3d5a-49e8-9f09-24e42ba2e818");
+    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Trabajo de prueba" }]);
+  };
+  const response = await handleAssistantApiRequest(request("/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818"), env);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.id, "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818");
+});
+
 test("routine PATCH uses only the allowed columns and assistant session", async () => {
   const calls = [];
   globalThis.fetch = async (url, options) => {
