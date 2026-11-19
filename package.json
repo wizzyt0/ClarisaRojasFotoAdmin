@@ -5,7 +5,9 @@
   "scripts": {
     "verify": "node scripts/verify-project.mjs",
     "test": "node scripts/test-package-flow.mjs",
-    "test:ui": "node scripts/test-job-workflow.cjs"
+    "test:ui": "node scripts/test-job-workflow.cjs",
+    "test:assistant-api": "node --test scripts/test-assistant-api-worker.mjs",
+    "test:assistant-role-guard": "node --test scripts/test-assistant-role-guard.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.14",

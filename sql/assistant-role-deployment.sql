@@ -30,7 +30,7 @@ begin
       'grade_or_class', 'last_contact_date', 'next_follow_up_date',
       'follow_up_status', 'commercial_notes'
     ]
-    when 'jobs' then array['title', 'event_date', 'delivery_date', 'notes']
+    when 'jobs' then array['title', 'notes']
     else array[]::text[]
   end;
 
@@ -115,11 +115,13 @@ select id, job_id, print_item_id, link_type, expires_at, revoked_at, created_at
 from public.file_share_links
 where (select public.has_staff_role(array['assistant']::public.staff_role[]));
 
+-- r2_key is available only to the authenticated assistant view; the API uses
+-- it internally to fetch TEACHER_PREVIEW bytes and never returns it to callers.
 create or replace view public.assistant_job_files
 with (security_barrier = true, security_invoker = false)
 as
 select id, job_id, print_item_id, file_type, file_name, content_type,
-  size_bytes, notes, created_at
+  size_bytes, notes, created_at, r2_key
 from public.job_files
 where file_type = 'TEACHER_PREVIEW'
   and (select public.has_staff_role(array['assistant']::public.staff_role[]));

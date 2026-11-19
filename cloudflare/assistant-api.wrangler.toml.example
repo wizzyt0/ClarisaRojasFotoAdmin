@@ -1,0 +1,22 @@
+name = "clarisa-assistant-api"
+main = "assistant-api-worker.js"
+compatibility_date = "2026-06-27"
+workers_dev = true
+
+[[r2_buckets]]
+binding = "PHOTO_BUCKET"
+bucket_name = "clarisa-fotos"
+
+[vars]
+SUPABASE_URL = "https://yltpibylaybyicbmpvax.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_REPLACE_WITH_PROJECT_KEY"
+
+# Configure these with Cloudflare Secrets; never add their values to this file:
+# wrangler secret put ASSISTANT_API_TOKEN
+# wrangler secret put ASSISTANT_API_WRITE_TOKEN (separate credential; PATCH only)
+# wrangler secret put SUPABASE_ASSISTANT_EMAIL
+# wrangler secret put SUPABASE_ASSISTANT_PASSWORD
+
+# The test account must already have the Supabase role `assistant` and the
+# assistant-role RLS migration must be installed before this Worker can read.
+# Attach api.clarisarojasfoto.com separately after tests and explicit review.

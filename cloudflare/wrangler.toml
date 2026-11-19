@@ -1,0 +1,12 @@
+name = "clarisa-assistant-api"
+main = "assistant-api-worker.js"
+compatibility_date = "2026-11-19"
+workers_dev = true
+
+[[r2_buckets]]
+binding = "PHOTO_BUCKET"
+bucket_name = "clarisa-fotos"
+
+[vars]
+SUPABASE_URL = "https://yltpibylaybyicbmpvax.supabase.co"
+SUPABASE_ANON_KEY = "sb_publishable_DsZwKxlO82UCeiHQn-Pwpg_nN1YtJly"

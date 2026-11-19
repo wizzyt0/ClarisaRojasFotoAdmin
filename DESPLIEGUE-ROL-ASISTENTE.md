@@ -3,7 +3,7 @@
 ## Permisos iniciales
 
 - Puede consultar escuelas, trabajos, grupos, paquetes, diplomas, carpetas, previews, aprobaciones, pedidos y finanzas.
-- Puede corregir datos de contacto y seguimiento, además del título, fechas y notas de trabajos existentes.
+- Puede corregir datos de contacto y seguimiento, además del título y las notas de trabajos existentes. Las fechas del trabajo quedan bloqueadas.
 - Puede ver precios, abonos, costos, gastos, saldos y estados financieros, pero no guardarlos ni modificarlos.
 - No puede crear o eliminar registros, asignar paquetes o cantidades, cambiar estados de producción, aprobar impresión, editar catálogos, gestionar usuarios, renovar/revocar enlaces ni enviar mensajes.
 - Los archivos R2 visibles para este rol son previews; no puede subir, borrar ni descargar originales.
@@ -59,9 +59,14 @@ where lower(u.email) = lower('CORREO-INVITADO');
 ## Prueba de permisos
 
 - Debe cargar trabajos, grupos, catálogos, imágenes preview, Aprobados para impresión y Pedidos y finanzas.
-- Debe permitir editar una nota/fecha de trabajo y datos de contacto/seguimiento de una escuela.
+- Debe permitir editar el título/notas del trabajo y datos de contacto/seguimiento de una escuela.
+- Debe rechazar cambios a `event_date` y `delivery_date`, incluso si se intenta actualizar directamente en Supabase.
 - No deben aparecer controles para borrar, cambiar estado, asignar cantidades, registrar abonos/gastos, mover impresión, subir archivos, gestionar usuarios o enviar WhatsApp.
 - Confirma que las consultas directas de actualización de precio, saldo, abono, estado de impresión y token sean rechazadas por Supabase.
 - Comprueba que una cuenta propietaria y una cuenta editor sigan conservando su comportamiento actual.
+
+## Corrección del trigger de fechas
+
+La migración inicial `sql/assistant-role-deployment.sql` permite editar solo `title` y `notes` en `jobs`. Para una instalación donde ya se aplicó la versión anterior, usa únicamente `sql/assistant-job-date-guard.sql` después de probarlo en un proyecto separado. No vuelvas a ejecutar el script inicial completo solo para aplicar esta corrección.
 
 Para retirar el acceso, actualiza su fila en `staff_roles` a `editor` solo si ese usuario debe seguir trabajando como editor; si no, elimina la fila de `staff_roles` desde una sesión propietaria. No borres su cuenta de autenticación sin necesidad.
