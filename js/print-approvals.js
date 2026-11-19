@@ -1,12 +1,13 @@
-import { requireAuth } from "./auth.js";
+import { requireAuth } from "./auth.js?v=20261119-assistant-role";
 import { supabase } from "./supabase.js";
-import { getAdminFileUrl } from "./r2-files.js";
+import { getAdminFileUrl } from "./r2-files.js?v=20261119-assistant-role";
 import { getCatalogFileUrl } from "./catalog.js";
 import { escapeHtml, showToast } from "./utils.js";
 import { formatDate } from "./formatters.js";
 
-const currentUser = await requireAuth(["owner"]);
-if (!currentUser) throw new Error("Acceso solo para administradores.");
+const currentUser = await requireAuth(["owner", "assistant"]);
+if (!currentUser) throw new Error("Acceso no autorizado.");
+const canManage = currentUser.staffRole === "owner";
 
 const physicalTypes = ["DIPLOMA", "FOLDER_OPTION", "GROUP_PHOTO"];
 const stages = [
@@ -64,13 +65,22 @@ function showLoadError(message) {
 async function loadData() {
   showLoadError("");
   const [jobsResult, groupsResult, itemsResult] = await Promise.all([
-    supabase.from("jobs").select("id,title,job_type,event_type,clients(name,school_profiles(school_name,school_level))").eq("job_type", "SCHOOL_GRADUATION").order("created_at", { ascending: false }),
+    supabase.from(canManage ? "jobs" : "assistant_jobs")
+      .select(canManage ? "id,title,job_type,event_type,clients(name,school_profiles(school_name,school_level))" : "id,client_id,title,job_type,event_type")
+      .eq("job_type", "SCHOOL_GRADUATION").order("created_at", { ascending: false }),
     supabase.from("school_groups").select("id,job_id,group_name,teacher_name,teacher_phone,student_count,package_quantity,photo_format,selected_package_id"),
-    supabase.from("print_items").select("id,job_id,group_id,item_type,title,status,selected_file_id,selected_package_id,approved_at,approved_by_name,updated_at").in("item_type", physicalTypes)
+    supabase.from(canManage ? "print_items" : "assistant_print_items").select("id,job_id,group_id,item_type,title,status,selected_file_id,selected_package_id,approved_at,approved_by_name,updated_at").in("item_type", physicalTypes)
   ]);
   const failed = [jobsResult, groupsResult, itemsResult].find((result) => result.error);
   if (failed) throw failed.error;
   jobs = jobsResult.data || [];
+  if (!canManage && jobs.length) {
+    const clientIds = [...new Set(jobs.map((job) => job.client_id).filter(Boolean))];
+    const clientsResult = await supabase.from("clients").select("id,name,school_profiles(school_name,school_level)").in("id", clientIds);
+    if (clientsResult.error) throw clientsResult.error;
+    const clientsById = new Map((clientsResult.data || []).map((client) => [client.id, client]));
+    jobs = jobs.map((job) => ({ ...job, clients: clientsById.get(job.client_id) }));
+  }
   const jobIds = new Set(jobs.map((job) => job.id));
   groups = (groupsResult.data || []).filter((group) => jobIds.has(group.job_id));
   items = (itemsResult.data || []).filter((item) => jobIds.has(item.job_id) && item.status !== "CANCELLED");
@@ -214,7 +224,7 @@ function renderItem(item) {
     <div><strong class="print-item-title">${escapeHtml(title)}</strong><span class="print-item-detail">${escapeHtml(details || "Sin grupo o maestra registrada")}</span>${selectedName ? `<span class="print-item-detail">Diseño: ${escapeHtml(selectedName)}</span>` : ""}</div>
     <div class="print-item-quantity"><strong>${quantity.amount}</strong><span class="print-item-detail">${escapeHtml(quantity.unit)}</span></div>
     <div class="print-item-state"><span class="badge badge-status ${escapeHtml(item.status)}">${escapeHtml(stateLabels[item.status] || item.status)}</span><span class="print-item-detail">${escapeHtml(statusDetail(item))}</span></div>
-    <div class="print-item-actions">${action ? `<button class="btn btn-primary" type="button" title="${action[1]}" aria-label="${action[1]}" data-advance-item="${item.id}" data-current-status="${item.status}" data-next-status="${action[0]}">${action[1]}</button>` : `<a class="btn" href="job-detail.html?id=${encodeURIComponent(item.job_id)}">Abrir trabajo</a>`}</div>
+    <div class="print-item-actions">${canManage && action ? `<button class="btn btn-primary" type="button" title="${action[1]}" aria-label="${action[1]}" data-advance-item="${item.id}" data-current-status="${item.status}" data-next-status="${action[0]}">${action[1]}</button>` : `<a class="btn" href="job-detail.html?id=${encodeURIComponent(item.job_id)}">Ver trabajo</a>`}</div>
   </article>`;
 }
 
@@ -290,7 +300,9 @@ document.querySelector("#printPieceFilter").addEventListener("change", render);
 document.querySelector("#printLevelFilter").addEventListener("change", render);
 document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-advance-item]");
-  if (button) advanceItem(button);
+  if (!button) return;
+  if (!canManage) return showToast("Este usuario puede consultar el estado, pero no mover piezas de impresión.", "error");
+  advanceItem(button);
 });
 
 try {

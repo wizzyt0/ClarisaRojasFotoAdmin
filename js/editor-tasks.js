@@ -1,4 +1,4 @@
-import { requireAuth } from "./auth.js";
+import { requireAuth } from "./auth.js?v=20261119-assistant-role";
 import { APP_CONFIG } from "./config.js";
 import { getMyAssignments, ASSIGNMENT_STATUSES, updateMyAssignment } from "./work-assignments.js";
 import { escapeHtml, showToast } from "./utils.js";

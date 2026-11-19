@@ -38,9 +38,9 @@ export function getPrintItemStatusLabel(value) {
   return PRINT_ITEM_STATUSES[value] || value || "";
 }
 
-export async function getPrintItemsByJob(jobId) {
+export async function getPrintItemsByJob(jobId, safeAssistantView = false) {
   const { data, error } = await supabase
-    .from("print_items")
+    .from(safeAssistantView ? "assistant_print_items" : "print_items")
     .select("*")
     .eq("job_id", jobId)
     .order("created_at", { ascending: true });

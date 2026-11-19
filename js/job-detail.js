@@ -1,12 +1,12 @@
-import { isOwner, requireAuth } from "./auth.js";
+import { isOwner, requireAuth } from "./auth.js?v=20261119-assistant-role";
 import { supabase } from "./supabase.js";
 import { APP_CONFIG } from "./config.js";
 import { GALLERY_TYPES, JOB_STATUSES, SCHOOL_EVENT_PACKAGE_TYPES, getGalleryTypeLabel, getJobStatusLabel, getJobTypeLabel } from "./constants.js";
 import { getCatalogFileUrl } from "./catalog.js";
 import { createDeposit, deleteDeposit, getDepositsByJob } from "./deposits.js";
 import { createGallery, deactivateGallery, getGalleriesByJob } from "./galleries.js";
-import { ensureDefaultPrintItems, getPrintItemsByJob, getPrintItemStatusLabel, getPrintItemTypeLabel, updatePrintItem } from "./print-items.js";
-import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, downloadAdminFile, getAdminFileUrl, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink, uploadR2File } from "./r2-files.js";
+import { ensureDefaultPrintItems, getPrintItemsByJob, getPrintItemStatusLabel, getPrintItemTypeLabel, updatePrintItem } from "./print-items.js?v=20261119-assistant-role";
+import { R2_FILE_TYPES, R2_LINK_TYPES, createR2File, createR2ShareLink, deleteR2File, downloadAdminFile, getAdminFileUrl, getR2FilesByJob, getR2ShareLinksByJob, revokeR2ShareLink, uploadR2File } from "./r2-files.js?v=20261119-assistant-role";
 import { createSchoolGroup, deleteSchoolGroup, getSchoolGroupsByJob, updateSchoolGroup } from "./school-groups.js";
 import { buildWhatsAppUrl, generateAndLogWhatsAppMessage } from "./whatsapp.js";
 import { calculateTotals, copyToClipboard, escapeHtml, formToObject, generateToken, getTokenExpirationDate, getQueryParam, openInNewTab, showToast, today } from "./utils.js";
@@ -17,6 +17,7 @@ import { mountJobActivity } from "./job-activity.js";
 
 const currentUser = await requireAuth();
 const canManageAssignments = isOwner(currentUser);
+const isReadOnlyAssistant = currentUser?.staffRole === "assistant";
 
 const jobId = getQueryParam("id");
 let job;
@@ -89,31 +90,46 @@ function formatFileSize(bytes) {
 }
 
 async function loadJob() {
-  const { data, error } = await supabase
-    .from("jobs")
-    .select("*, clients(*, school_profiles(*)), packages(*)")
-    .eq("id", jobId)
-    .single();
-  if (error) throw error;
-  job = data;
+  if (isReadOnlyAssistant) {
+    const { data, error } = await supabase.from("assistant_jobs").select("*").eq("id", jobId).single();
+    if (error) throw error;
+    const [clientResult, packageResult] = await Promise.all([
+      supabase.from("clients").select("*,school_profiles(*)").eq("id", data.client_id).single(),
+      data.package_id ? supabase.from("packages").select("*").eq("id", data.package_id).maybeSingle() : Promise.resolve({ data: null, error: null })
+    ]);
+    if (clientResult.error || packageResult.error) throw clientResult.error || packageResult.error;
+    job = { ...data, clients: clientResult.data, packages: packageResult.data };
+  } else {
+    const { data, error } = await supabase
+      .from("jobs")
+      .select("*, clients(*, school_profiles(*)), packages(*)")
+      .eq("id", jobId)
+      .single();
+    if (error) throw error;
+    job = data;
+  }
   const packagesRequest = supabase.from("packages").select("*").eq("is_active", true).order("name");
   const [galleryRows, depositRows, fileRows, shareLinkRows, groupRows, packagesResult] = await Promise.all([
     getGalleriesByJob(jobId),
     getDepositsByJob(jobId),
-    getR2FilesByJob(jobId),
-    getR2ShareLinksByJob(jobId),
+    getR2FilesByJob(jobId, isReadOnlyAssistant),
+    getR2ShareLinksByJob(jobId, isReadOnlyAssistant),
     job.job_type === "SCHOOL_GRADUATION" ? ensureSchoolGroups() : Promise.resolve([]),
     packagesRequest
   ]);
   if (packagesResult.error) throw packagesResult.error;
   galleries = galleryRows;
   deposits = depositRows;
-  r2Files = fileRows;
+  r2Files = isReadOnlyAssistant
+    ? fileRows.filter((file) => file.file_type === "TEACHER_PREVIEW")
+    : fileRows;
   r2ShareLinks = shareLinkRows;
   schoolGroups = groupRows;
   packages = packagesResult.data || [];
   try {
-    printItems = job.job_type === "SCHOOL_GRADUATION" && !isChristmasJob() ? await ensureGroupPrintItems() : [];
+    printItems = job.job_type === "SCHOOL_GRADUATION" && !isChristmasJob()
+      ? isReadOnlyAssistant ? await getPrintItemsByJob(jobId, true) : await ensureGroupPrintItems()
+      : [];
   } catch (error) {
     throw new Error(`No se pudieron cargar las piezas por grupo: ${error.message || "error desconocido"}`);
   }
@@ -150,8 +166,10 @@ async function loadJob() {
     await Promise.all([assignmentRequest, diplomaRequest]);
   }
   render();
-  mountJobActivity(jobId);
-  await loadLogs();
+  if (!isReadOnlyAssistant) {
+    mountJobActivity(jobId);
+    await loadLogs();
+  }
 }
 
 async function ensureSchoolGroups() {
@@ -184,7 +202,7 @@ function render() {
   const packageTotal = schoolGroups.length ? schoolGroups.reduce((sum, group) => sum + Number(group.package_quantity || 0), 0) : Number(job.package_quantity || 0);
   document.querySelector("#jobTitle").textContent = job.title;
   document.querySelector("#summaryCard").innerHTML = `
-    <div class="page-header"><span class="muted">${escapeHtml(job.clients.name)} · ${formatDate(job.event_date)} · Entrega: ${formatDate(job.delivery_date)}</span><div class="actions">${canManageAssignments ? `<a class="btn" href="purchasing.html?job_id=${encodeURIComponent(jobId)}">Pedidos y gastos</a>` : ""}<select id="statusSelect" aria-label="Estado del trabajo" class="select">${Object.entries(JOB_STATUSES).map(([value, label]) => `<option value="${value}" ${value === job.status ? "selected" : ""}>${label}</option>`).join("")}</select><button id="saveStatusBtn" class="btn">Cambiar estado</button></div></div>
+    <div class="page-header"><span class="muted">${escapeHtml(job.clients.name)} · ${formatDate(job.event_date)} · Entrega: ${formatDate(job.delivery_date)}</span><div class="actions">${canManageAssignments ? `<a class="btn" href="purchasing.html?job_id=${encodeURIComponent(jobId)}">Pedidos y gastos</a>` : ""}${isReadOnlyAssistant ? `<span class="badge badge-status">${escapeHtml(getJobStatusLabel(job.status))}</span>` : `<select id="statusSelect" aria-label="Estado del trabajo" class="select">${Object.entries(JOB_STATUSES).map(([value, label]) => `<option value="${value}" ${value === job.status ? "selected" : ""}>${label}</option>`).join("")}</select><button id="saveStatusBtn" class="btn">Cambiar estado</button>`}</div></div>
     <div class="work-finance"><div><span>Paquetes${schoolJob ? ` · ${schoolGroups.length} grupos` : ""}</span><strong>${packageTotal}</strong></div><div><span>Total · MXN</span><strong>${formatMoney(job.price)}</strong></div><div><span>Abonado</span><strong>${formatMoney(totals.totalDeposited)}</strong></div><div><span>Pendiente</span><strong>${formatMoney(totals.remainingBalance)}</strong></div></div>
     ${job.notes ? `<p class="work-notes">${escapeHtml(job.notes)}</p>` : ""}
     ${schoolJob ? "" : renderDeliverablesSummary()}`;
@@ -204,6 +222,14 @@ function render() {
   document.querySelector("#r2Dropzone")?.closest(".card")?.classList.toggle("hidden", isChristmasJob());
   document.querySelector("#whatsappMessage")?.closest(".card")?.classList.toggle("hidden", isChristmasJob());
   document.querySelector("#approvalCard")?.classList.toggle("hidden", isChristmasJob());
+  if (isReadOnlyAssistant) {
+    document.querySelectorAll(".job-workspace button:not([data-preview-r2-file]):not([data-open-catalog-file])").forEach((button) => { button.hidden = true; });
+    document.querySelectorAll(".job-workspace input, .job-workspace select, .job-workspace textarea, .job-workspace .dropzone").forEach((control) => { control.hidden = true; });
+    document.querySelectorAll('.job-workspace a[target="_blank"]').forEach((link) => {
+      if (!link.matches(".file-preview, [data-open-catalog-file]")) link.hidden = true;
+    });
+    document.querySelector("#jobActivity")?.remove();
+  }
   document.querySelectorAll("[data-disclosure]").forEach((node) => {
     if (previous.has(node.dataset.disclosure)) node.open = previous.get(node.dataset.disclosure);
   });
@@ -559,11 +585,11 @@ async function hydrateCatalogThumbs() {
 }
 
 function renderR2ShareLinks() {
-  document.querySelector("#r2ShareLinksList").innerHTML = r2ShareLinks.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Tipo</th><th>Link</th><th>Expira</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>${r2ShareLinks.map((link) => {
-    const url = r2ShareUrl(link);
+  document.querySelector("#r2ShareLinksList").innerHTML = r2ShareLinks.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Tipo</th>${isReadOnlyAssistant ? "" : "<th>Link</th>"}<th>Expira</th><th>Estado</th>${isReadOnlyAssistant ? "" : "<th>Acciones</th>"}</tr></thead><tbody>${r2ShareLinks.map((link) => {
+    const url = isReadOnlyAssistant ? "" : r2ShareUrl(link);
     const expired = new Date(link.expires_at).getTime() <= Date.now();
     const inactive = link.revoked_at || expired;
-    return `<tr><td>${R2_LINK_TYPES[link.link_type] || link.link_type}</td><td><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a></td><td>${formatDateTime(link.expires_at)}</td><td>${link.revoked_at ? "Revocado" : expired ? "Expirado" : "Activo"}</td><td class="actions"><button class="btn" data-copy-r2-link="${escapeHtml(url)}">Copiar</button>${inactive ? "" : `<button class="btn btn-danger" data-revoke-r2-link="${link.id}">Revocar</button>`}</td></tr>`;
+    return `<tr><td>${R2_LINK_TYPES[link.link_type] || link.link_type}</td>${isReadOnlyAssistant ? "" : `<td><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(url)}</a></td>`}<td>${formatDateTime(link.expires_at)}</td><td>${link.revoked_at ? "Revocado" : expired ? "Expirado" : "Activo"}</td>${isReadOnlyAssistant ? "" : `<td class="actions"><button class="btn" data-copy-r2-link="${escapeHtml(url)}">Copiar</button>${inactive ? "" : `<button class="btn btn-danger" data-revoke-r2-link="${link.id}">Revocar</button>`}</td>`}</tr>`;
   }).join("")}</tbody></table></div>` : `<div class="empty-state">No hay links de R2 generados.</div>`;
 }
 
@@ -828,6 +854,10 @@ function renderDeposits() {
 }
 
 function renderApproval() {
+  if (isReadOnlyAssistant) {
+    document.querySelector("#approvalCard").innerHTML = `<h2>Aprobación</h2><div class="grid"><p><strong>Estado:</strong><br>${job.approved_at ? "Aprobado" : "Pendiente"}</p><p><strong>Fecha:</strong><br>${formatDateTime(job.approved_at)}</p><p><strong>Nombre:</strong><br>${escapeHtml(job.approval_name)}</p><p><strong>Condiciones aceptadas:</strong><br>${job.approval_terms_accepted ? "Sí" : "No"}</p></div>`;
+    return;
+  }
   document.querySelector("#approvalCard").innerHTML = `<h2>Aprobación</h2><div class="grid">
     <p><strong>Link público:</strong><br><a href="${approvalUrl()}" target="_blank" rel="noopener">${approvalUrl()}</a></p>
     <p><strong>Estado:</strong><br>${job.approved_at ? "Aprobado" : "Pendiente"}</p>
@@ -1030,6 +1060,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 document.addEventListener("click", async (event) => {
+  if (isReadOnlyAssistant && !event.target.closest("[data-preview-r2-file], [data-open-catalog-file]")) return;
   try {
     const catalogButton = event.target.closest("[data-open-catalog-file]");
     if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");

@@ -2,7 +2,7 @@ import { supabase } from "./supabase.js";
 import { showToast } from "./utils.js";
 
 export const AUTH_ENABLED = true;
-const STAFF_ROLES = new Set(["owner", "editor"]);
+const STAFF_ROLES = new Set(["owner", "editor", "assistant"]);
 let rolePromise = null;
 
 export async function login(email, password) {
@@ -44,10 +44,17 @@ export function isOwner(user) {
   return user?.staffRole === "owner";
 }
 
+export function isAssistant(user) {
+  return user?.staffRole === "assistant";
+}
+
 function applyRoleVisibility(role) {
   document.documentElement.dataset.staffRole = role;
   document.querySelectorAll("[data-owner-only]").forEach((element) => {
     element.hidden = role !== "owner";
+  });
+  document.querySelectorAll("[data-owner-or-assistant]").forEach((element) => {
+    element.hidden = !["owner", "assistant"].includes(role);
   });
 }
 

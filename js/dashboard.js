@@ -1,9 +1,10 @@
-import { requireAuth } from "./auth.js";
+import { requireAuth } from "./auth.js?v=20261119-assistant-role";
 import { supabase } from "./supabase.js";
 import { formatMoney, formatDate } from "./formatters.js";
 import { escapeHtml } from "./utils.js";
 
-await requireAuth();
+const currentUser = await requireAuth();
+const isAssistant = currentUser?.staffRole === "assistant";
 
 const metric = (label, value) => `<article class="card"><div class="muted">${label}</div><div class="metric">${value}</div></article>`;
 const list = (items, empty = "No hay datos.") => {
@@ -12,16 +13,40 @@ const list = (items, empty = "No hay datos.") => {
 };
 
 async function loadDashboard() {
-  const [{ data: clients }, { data: jobs }, { data: followUps }, { data: printItems }] = await Promise.all([
+  const [clientsResult, jobsResult, followUpsResult, printItemsResult, depositsResult] = await Promise.all([
     supabase.from("clients").select("*"),
-    supabase.from("jobs").select("*, clients(name, is_active), packages(name), deposits(amount)").order("created_at", { ascending: false }),
+    supabase.from(isAssistant ? "assistant_jobs" : "jobs")
+      .select(isAssistant ? "*" : "*, clients(name, is_active), packages(name), deposits(amount)")
+      .order("created_at", { ascending: false }),
     supabase.from("school_profiles").select("*, clients(name, phone, is_active)").order("next_follow_up_date"),
-    supabase.from("print_items").select("id, job_id, title, status, approved_at, updated_at").order("updated_at", { ascending: false })
+    supabase.from(isAssistant ? "assistant_print_items" : "print_items")
+      .select("id, job_id, title, status, approved_at, updated_at").order("updated_at", { ascending: false }),
+    isAssistant ? supabase.from("deposits").select("job_id,amount") : Promise.resolve({ data: [], error: null })
   ]);
+  const failed = [clientsResult, jobsResult, followUpsResult, printItemsResult, depositsResult].find((result) => result.error);
+  if (failed) throw failed.error;
+  const clients = clientsResult.data || [];
+  let jobs = jobsResult.data || [];
+  const followUps = followUpsResult.data || [];
+  const printItems = printItemsResult.data || [];
+  if (isAssistant) {
+    const clientsById = new Map(clients.map((client) => [client.id, client]));
+    const depositsByJob = new Map();
+    for (const deposit of depositsResult.data || []) {
+      const rows = depositsByJob.get(deposit.job_id) || [];
+      rows.push(deposit);
+      depositsByJob.set(deposit.job_id, rows);
+    }
+    jobs = jobs.map((job) => ({
+      ...job,
+      clients: clientsById.get(job.client_id),
+      deposits: depositsByJob.get(job.id) || []
+    }));
+  }
 
   const allClients = (clients || []).filter((client) => client.is_active);
   const allJobs = (jobs || []).filter((job) => job.clients?.is_active !== false);
-  const activeFollowUps = (followUps || []).filter((item) => item.clients?.is_active !== false);
+  const activeFollowUps = followUps.filter((item) => item.clients?.is_active !== false);
   const totalDeposited = allJobs.reduce((sum, job) => {
     return sum + (job.deposits || []).reduce((jobSum, item) => jobSum + Number(item.amount || 0), 0);
   }, 0);
@@ -32,7 +57,7 @@ async function loadDashboard() {
   const now = new Date();
   const thisMonth = now.toISOString().slice(0, 7);
   const followThisMonth = activeFollowUps.filter((item) => item.next_follow_up_date?.startsWith(thisMonth));
-  const allPrintItems = printItems || [];
+  const allPrintItems = printItems;
   const waitingApproval = allPrintItems.filter((item) => item.status === "SENT_FOR_APPROVAL");
   const approvedForPrint = allPrintItems.filter((item) => item.status === "APPROVED_FOR_PRINT");
   const inPrinting = allPrintItems.filter((item) => item.status === "PRINTING");

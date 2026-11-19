@@ -1,10 +1,13 @@
-import { requireAuth } from "./auth.js";
+import { requireAuth } from "./auth.js?v=20261119-assistant-role";
 import { supabase } from "./supabase.js";
 import { deleteDiplomaTemplate, getCatalogFileUrl, getDiplomaTemplates, getFolderTemplates, updateDiplomaTemplate, uploadDiplomaTemplate, uploadFolderTemplate } from "./catalog.js";
 import { bindFileDropzone, escapeHtml, showToast } from "./utils.js";
 import { formatDateTime } from "./formatters.js";
 
-await requireAuth(["owner"]);
+const currentUser = await requireAuth(["owner", "assistant"]);
+const canManage = currentUser?.staffRole === "owner";
+document.querySelector("#newDiplomaBtn").hidden = !canManage;
+if (!canManage) document.querySelector("#diplomaModal")?.remove();
 
 let templates = [];
 let folderTemplates = [];
@@ -59,6 +62,9 @@ function renderSection(title, schoolLevel, sourceRows, table, label) {
 }
 
 function renderTemplateCard(template, table, label) {
+  if (!canManage) {
+    return `<article class="catalog-card diploma-catalog-card"><h3>${escapeHtml(template.name)}</h3><p class="muted">${schoolLevelLabel(template.school_level)}</p><button class="catalog-preview-large" data-open-catalog-file="${table}:${template.id}" type="button" aria-label="Ver preview de ${escapeHtml(template.name)}"><span data-catalog-thumb="${table}:${template.id}">${label}</span></button></article>`;
+  }
   const canvaUrl = safeCanvaUrl(template.canva_url);
   if (table === "diploma_templates") {
     const isEditingCanva = editingCanvaId === template.id;
@@ -92,6 +98,7 @@ async function load() {
 }
 
 document.addEventListener("click", async (event) => {
+  if (!canManage && !event.target.closest("[data-open-catalog-file]")) return;
   const openButton = event.target.closest("[data-open-catalog-file]");
   if (event.target.dataset.editCanva) {
     editingCanvaId = event.target.dataset.editCanva;

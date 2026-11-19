@@ -34,9 +34,9 @@ export async function getAuthorizedR2ObjectUrl(path) {
   return objectUrl;
 }
 
-export async function getR2FilesByJob(jobId) {
+export async function getR2FilesByJob(jobId, safeAssistantView = false) {
   const { data, error } = await supabase
-    .from("job_files")
+    .from(safeAssistantView ? "assistant_job_files" : "job_files")
     .select("*")
     .eq("job_id", jobId)
     .order("created_at", { ascending: false });
@@ -44,9 +44,9 @@ export async function getR2FilesByJob(jobId) {
   return data || [];
 }
 
-export async function getR2ShareLinksByJob(jobId) {
+export async function getR2ShareLinksByJob(jobId, safeAssistantView = false) {
   const { data, error } = await supabase
-    .from("file_share_links")
+    .from(safeAssistantView ? "assistant_file_share_links" : "file_share_links")
     .select("*")
     .eq("job_id", jobId)
     .order("created_at", { ascending: false });

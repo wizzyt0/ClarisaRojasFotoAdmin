@@ -8,10 +8,10 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar"><div class="brand">Clarisa Rojas Fotografia</div><nav class="nav"><a href="dashboard.html">Dashboard</a><a class="active" href="clients.html">Clientes</a><a href="jobs.html">Trabajos</a><a href="packages.html" data-owner-only>Paquetes</a><a href="diplomas.html" data-owner-only>Diplomas y carpetas</a><a href="print-approvals.html" data-owner-only>Aprobados para impresión</a><a href="purchasing.html" data-owner-only>Pedidos y finanzas</a><a href="follow-ups.html">Seguimiento escuelas</a><button data-logout type="button">Cerrar sesión</button></nav></aside>
+    <aside class="sidebar"><div class="brand">Clarisa Rojas Fotografia</div><nav class="nav"><a href="dashboard.html">Dashboard</a><a class="active" href="clients.html">Clientes</a><a href="jobs.html">Trabajos</a><a href="packages.html" data-owner-or-assistant>Paquetes</a><a href="diplomas.html" data-owner-or-assistant>Diplomas y carpetas</a><a href="print-approvals.html" data-owner-or-assistant>Aprobados para impresión</a><a href="purchasing.html" data-owner-or-assistant>Pedidos y finanzas</a><a href="follow-ups.html">Seguimiento escuelas</a><button data-logout type="button">Cerrar sesión</button></nav></aside>
     <main class="main">
       <section class="container">
-        <div class="page-header"><h1 class="page-title">Clientes</h1><button id="newClientBtn" class="btn btn-primary" type="button" onclick="window.openClientFormFallback && window.openClientFormFallback()">Nuevo cliente</button></div>
+        <div class="page-header"><h1 class="page-title">Clientes</h1><button id="newClientBtn" class="btn btn-primary" type="button" data-owner-only onclick="window.openClientFormFallback && window.openClientFormFallback()">Nuevo cliente</button></div>
         <div class="card">
           <div class="filters">
             <input id="searchInput" class="input" placeholder="Buscar por nombre, teléfono o correo">
@@ -52,6 +52,6 @@
       }
     });
   </script>
-  <script type="module" src="js/clients.js"></script>
+  <script type="module" src="js/clients.js?v=20261119-assistant-role"></script>
 </body>
 </html>

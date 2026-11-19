@@ -1,12 +1,19 @@
-import { requireAuth } from "./auth.js";
+import { requireAuth } from "./auth.js?v=20261119-assistant-role";
 import { supabase } from "./supabase.js";
 import { escapeHtml, showToast } from "./utils.js";
 import { formatMoney, formatDate } from "./formatters.js";
 import { getCatalogFileUrl } from "./catalog.js";
 import { PACKAGE_LEVELS } from "./package-levels.js";
 
-const user = await requireAuth(["owner"]);
-if (!user) throw new Error("Acceso solo para administradores.");
+const user = await requireAuth(["owner", "assistant"]);
+if (!user) throw new Error("Acceso no autorizado.");
+const canManage = user.staffRole === "owner";
+if (!canManage) {
+  document.querySelector("#createFolderOrder").hidden = true;
+  document.querySelector("#createMaterialOrder").hidden = true;
+  document.querySelector("#costItemForm").closest("details").hidden = true;
+  document.querySelector("#expenseForm").hidden = true;
+}
 
 let jobs = [];
 let groups = [];
@@ -39,8 +46,11 @@ function setOptions(select, rows, label, emptyLabel = "Seleccione") {
 }
 
 async function loadData() {
-  const results = await Promise.all([
-    supabase.from("jobs").select("id,title,event_type,job_type,price,clients(name)").order("created_at", { ascending: false }),
+  const [jobsResult, clientsResult, ...results] = await Promise.all([
+    supabase.from(canManage ? "jobs" : "assistant_jobs")
+      .select(canManage ? "id,title,event_type,job_type,price,clients(name)" : "id,client_id,title,event_type,job_type,price")
+      .order("created_at", { ascending: false }),
+    canManage ? Promise.resolve({ data: [], error: null }) : supabase.from("clients").select("id,name"),
     supabase.from("folder_templates").select("id,name,school_level,is_active").order("name"),
     supabase.from("packages").select("*").order("name"),
     supabase.from("cost_items").select("*").order("name"),
@@ -49,13 +59,21 @@ async function loadData() {
     supabase.from("expenses").select("*").order("expense_date", { ascending: false }),
     supabase.from("deposits").select("job_id,amount")
   ]);
-  const labels = ["trabajos", "catálogo de carpetas", "paquetes", "costos", "recetas", "pedidos", "gastos", "abonos"];
-  const loadErrors = results.flatMap((result, index) => result.error ? [`${labels[index]}: ${result.error.message}`] : []);
-  [jobs, folders, packages, costItems, recipes, orders, expenses, deposits] = results.map((result) => result.data || []);
-  packagesLoadError = results[2].error;
-  const materialsError = results[2].error || results[3].error || results[4].error;
+  const labels = ["catálogo de carpetas", "paquetes", "costos", "recetas", "pedidos", "gastos", "abonos"];
+  const loadErrors = [jobsResult, clientsResult, ...results].flatMap((result, index) => result.error
+    ? [`${["trabajos", "escuelas", ...labels][index]}: ${result.error.message}`]
+    : []);
+  [folders, packages, costItems, recipes, orders, expenses, deposits] = results.map((result) => result.data || []);
+  if (jobsResult.error) jobs = [];
+  else if (canManage) jobs = jobsResult.data || [];
+  else {
+    const clientById = new Map((clientsResult.data || []).map((client) => [client.id, client]));
+    jobs = (jobsResult.data || []).map((job) => ({ ...job, clients: clientById.get(job.client_id) }));
+  }
+  packagesLoadError = results[1].error;
+  const materialsError = results[1].error || results[2].error || results[3].error;
   materialsLoadError = materialsError;
-  recipesLoadError = results[4].error;
+  recipesLoadError = results[3].error;
   const materialsErrorNode = document.querySelector("#costItemsLoadError");
   if (materialsErrorNode) {
     materialsErrorNode.hidden = !materialsError;
@@ -108,6 +126,10 @@ function render() {
   const filter = document.querySelector("#orderStatusFilter").value;
   renderOrders(orders.filter((order) => !filter || order.status === filter));
   renderCostItems();
+  if (!canManage) {
+    document.querySelectorAll("#costItemsList input, #costItemsList select").forEach((field) => { field.disabled = true; });
+    document.querySelectorAll("#costItemsList .cost-item-actions, #costItemsList .material-rule-form button").forEach((button) => button.remove());
+  }
   renderExpenses();
 }
 
@@ -119,10 +141,10 @@ function renderOrders(rows) {
     const total = lines.reduce((sum, line) => sum + Number(line.quantity) * Number(line.unit_cost), 0);
     const currentFolderCost = order.order_type === "FOLDER" ? folderCostItem() : null;
     const staleFolderEstimate = order.status === "DRAFT" && currentFolderCost && lines.some((line) => Number(line.unit_cost) !== Number(currentFolderCost.unit_cost) || line.cost_item_id !== currentFolderCost.id);
-    return `<article class="purchase-order"><div class="purchase-order-head"><div><h3>${escapeHtml(orderTypeLabels[order.order_type] || order.order_type)} · ${escapeHtml(order.supplier)}</h3><div class="purchase-order-meta"><span>${escapeHtml(jobName(order.job_id))}</span><span>${escapeHtml(statusLabels[order.status] || order.status)}</span><span>Creado ${formatDate(order.created_at?.slice(0, 10))}</span><strong>Estimado ${currency(total)}</strong></div></div><div class="purchase-order-actions">${staleFolderEstimate ? `<button class="btn" data-reprice-order="${order.id}">Actualizar estimación</button>` : ""}${order.status === "DRAFT" ? `<button class="btn btn-primary" data-order-status="SENT" data-order-id="${order.id}">Marcar enviado</button>` : ""}${order.status === "SENT" ? `<button class="btn btn-primary" data-order-status="RECEIVED" data-order-id="${order.id}">Marcar recibido</button>` : ""}${order.status === "DRAFT" ? `<button class="btn" data-order-status="CANCELLED" data-order-id="${order.id}">Cancelar borrador</button>` : ""}<button class="btn" data-record-order-expense="${order.id}">Registrar gasto real</button></div></div>${staleFolderEstimate ? `<p class="alert alert-warning">El costo guardado en este borrador no coincide con el catálogo actual (${currency(currentFolderCost.unit_cost)} por carpeta). Actualiza la estimación antes de marcarlo enviado.</p>` : ""}
+    return `<article class="purchase-order"><div class="purchase-order-head"><div><h3>${escapeHtml(orderTypeLabels[order.order_type] || order.order_type)} · ${escapeHtml(order.supplier)}</h3><div class="purchase-order-meta"><span>${escapeHtml(jobName(order.job_id))}</span><span>${escapeHtml(statusLabels[order.status] || order.status)}</span><span>Creado ${formatDate(order.created_at?.slice(0, 10))}</span><strong>Estimado ${currency(total)}</strong></div></div><div class="purchase-order-actions" ${canManage ? "" : "hidden"}>${staleFolderEstimate ? `<button class="btn" data-reprice-order="${order.id}">Actualizar estimación</button>` : ""}${order.status === "DRAFT" ? `<button class="btn btn-primary" data-order-status="SENT" data-order-id="${order.id}">Marcar enviado</button>` : ""}${order.status === "SENT" ? `<button class="btn btn-primary" data-order-status="RECEIVED" data-order-id="${order.id}">Marcar recibido</button>` : ""}${order.status === "DRAFT" ? `<button class="btn" data-order-status="CANCELLED" data-order-id="${order.id}">Cancelar borrador</button>` : ""}<button class="btn" data-record-order-expense="${order.id}">Registrar gasto real</button></div></div>${staleFolderEstimate ? `<p class="alert alert-warning">El costo guardado en este borrador no coincide con el catálogo actual (${currency(currentFolderCost.unit_cost)} por carpeta). Actualiza la estimación antes de marcarlo enviado.</p>` : ""}
       <table class="purchase-lines"><thead><tr><th>Artículo</th><th>Cantidad</th><th>Costo unitario estimado</th><th>Importe estimado</th></tr></thead><tbody>${lines.map((line) => {
         const lineAllocations = allocations.filter((item) => item.purchase_order_line_id === line.id);
-        const teacherGroups = lineAllocations.map((item) => `<li>${escapeHtml(item.group_name_snapshot)} · ${escapeHtml(item.teacher_name_snapshot || "Sin maestra")}: ${order.status === "DRAFT" ? `<input class="input inline-number" type="number" min="0.001" step="1" value="${Number(item.quantity)}" aria-label="Cantidad para ${escapeHtml(item.group_name_snapshot)}" data-allocation-input="${item.id}"> ${escapeHtml(item.unit)} <button class="btn" data-save-allocation="${item.id}" data-line-id="${line.id}">Guardar cantidad</button>` : `${Number(item.quantity)} ${escapeHtml(item.unit)}`}</li>`).join("");
+        const teacherGroups = lineAllocations.map((item) => `<li>${escapeHtml(item.group_name_snapshot)} · ${escapeHtml(item.teacher_name_snapshot || "Sin maestra")}: ${canManage && order.status === "DRAFT" ? `<input class="input inline-number" type="number" min="0.001" step="1" value="${Number(item.quantity)}" aria-label="Cantidad para ${escapeHtml(item.group_name_snapshot)}" data-allocation-input="${item.id}"> ${escapeHtml(item.unit)} <button class="btn" data-save-allocation="${item.id}" data-line-id="${line.id}">Guardar cantidad</button>` : `${Number(item.quantity)} ${escapeHtml(item.unit)}`}</li>`).join("");
         const preview = line.folder_template_id ? `<a class="folder-order-preview-link" data-folder-preview-link="${line.folder_template_id}" target="_blank" rel="noopener" aria-label="Abrir preview de ${escapeHtml(line.description)}"><img class="folder-order-preview" data-folder-preview="${line.folder_template_id}" alt="Preview: ${escapeHtml(line.description)}"><span class="folder-order-preview-fallback" hidden>Preview no disponible</span></a>` : "";
         return `<tr><td><div class="folder-order-design">${preview}<div><strong>${escapeHtml(line.description)}</strong><p class="muted">Total consolidado: ${Number(line.quantity)} ${escapeHtml(line.unit)} · ${lineAllocations.length} grupo(s)</p>${lineAllocations.length ? `<strong class="allocation-heading">Solicitado por</strong><ul class="allocation-list">${teacherGroups}</ul>` : ""}</div></div></td><td>${Number(line.quantity)} ${escapeHtml(line.unit)}</td><td>${currency(line.unit_cost)}</td><td>${currency(Number(line.quantity) * Number(line.unit_cost))}</td></tr>`;
       }).join("") || '<tr><td colspan="4">El pedido aún no tiene renglones.</td></tr>'}</tbody></table>${order.notes ? `<p class="muted">${escapeHtml(order.notes)}</p>` : ""}</article>`;
@@ -207,13 +229,13 @@ function renderExpenses() {
   const received = deposits.filter((deposit) => !selectedJobId || deposit.job_id === selectedJobId).reduce((sum, deposit) => sum + Number(deposit.amount), 0);
   const due = Math.max(0, revenue - received);
   document.querySelector("#expenseSummary").innerHTML = `<div class="finance-metric"><span>Total vendido</span><strong>${currency(revenue)}</strong></div><div class="finance-metric"><span>Abonado</span><strong>${currency(received)}</strong></div><div class="finance-metric"><span>Pendiente de cobro</span><strong>${currency(due)}</strong></div><div class="finance-metric"><span>Gastos reales</span><strong>${currency(total)}</strong></div><div class="finance-metric"><span>Venta menos gastos</span><strong>${currency(revenue - total)}</strong></div><div class="finance-metric"><span>Gastos este mes</span><strong>${currency(monthTotal)}</strong></div>`;
-  document.querySelector("#expensesList").innerHTML = `<table><thead><tr><th>Fecha</th><th>Trabajo</th><th>Proveedor</th><th>Concepto</th><th>Cantidad</th><th>Total pagado</th><th>Referencia</th><th></th></tr></thead><tbody>${jobExpenses.map((expense) => `<tr><td>${formatDate(expense.expense_date)}</td><td>${escapeHtml(expense.job_id ? jobName(expense.job_id) : "General")}</td><td>${escapeHtml(expense.vendor)}</td><td>${escapeHtml(expense.description)}</td><td>${Number(expense.quantity)} ${escapeHtml(expense.unit)}</td><td>${currency(expense.amount)}</td><td>${escapeHtml(expense.reference || "")}</td><td><button class="btn btn-danger" data-delete-expense="${expense.id}">Eliminar</button></td></tr>`).join("") || '<tr><td colspan="8">Sin gastos registrados.</td></tr>'}</tbody></table>`;
+  document.querySelector("#expensesList").innerHTML = `<table><thead><tr><th>Fecha</th><th>Trabajo</th><th>Proveedor</th><th>Concepto</th><th>Cantidad</th><th>Total pagado</th><th>Referencia</th>${canManage ? "<th></th>" : ""}</tr></thead><tbody>${jobExpenses.map((expense) => `<tr><td>${formatDate(expense.expense_date)}</td><td>${escapeHtml(expense.job_id ? jobName(expense.job_id) : "General")}</td><td>${escapeHtml(expense.vendor)}</td><td>${escapeHtml(expense.description)}</td><td>${Number(expense.quantity)} ${escapeHtml(expense.unit)}</td><td>${currency(expense.amount)}</td><td>${escapeHtml(expense.reference || "")}</td>${canManage ? `<td><button class="btn btn-danger" data-delete-expense="${expense.id}">Eliminar</button></td>` : ""}</tr>`).join("") || `<tr><td colspan="${canManage ? 8 : 7}">Sin gastos registrados.</td></tr>`}</tbody></table>`;
 }
 
 async function selectedJobData(jobId) {
   const [groupResult, itemResult] = await Promise.all([
     supabase.from("school_groups").select("id,group_name,teacher_name,selected_package_id,package_quantity").eq("job_id", jobId),
-    supabase.from("print_items").select("id,group_id,item_type,selected_file_id,status").eq("job_id", jobId)
+    supabase.from(canManage ? "print_items" : "assistant_print_items").select("id,group_id,item_type,selected_file_id,status").eq("job_id", jobId)
   ]);
   if (groupResult.error) throw groupResult.error;
   if (itemResult.error) throw itemResult.error;

@@ -1,10 +1,11 @@
-import { requireAuth } from "./auth.js";
+import { requireAuth } from "./auth.js?v=20261119-assistant-role";
 import { supabase } from "./supabase.js";
 import { CLIENT_TYPES, FOLLOW_UP_STATUSES, getClientTypeLabel } from "./constants.js";
 import { escapeHtml, formToObject, showToast } from "./utils.js";
 
 let clients = [];
 let editingClient = null;
+let currentUser = null;
 
 const modal = document.querySelector("#clientModal");
 const form = document.querySelector("#clientForm");
@@ -24,6 +25,30 @@ function schoolLevelOptions(selected = "") {
 }
 
 function renderForm(client = {}, profile = {}) {
+  if (currentUser?.staffRole === "assistant") {
+    form.innerHTML = `
+      <div class="form-grid">
+        <div class="form-group"><label>Nombre / escuela</label><input class="input" name="name" required value="${escapeHtml(client.name)}"></div>
+        <div class="form-group"><label>Teléfono / WhatsApp</label><input class="input" name="phone" required value="${escapeHtml(client.phone)}"></div>
+        <div class="form-group"><label>Correo</label><input class="input" type="email" name="email" value="${escapeHtml(client.email)}"></div>
+      </div>
+      <div class="form-group"><label>Notas</label><textarea class="textarea" name="notes">${escapeHtml(client.notes)}</textarea></div>
+      ${client.client_type === "SCHOOL_GRADUATION" ? `<section class="card"><h3>Contacto y seguimiento escolar</h3><div class="form-grid">
+        <label class="form-group"><span>Nombre de contacto</span><input class="input" name="contact_name" value="${escapeHtml(profile.contact_name)}"></label>
+        <label class="form-group"><span>WhatsApp de contacto</span><input class="input" name="contact_phone" value="${escapeHtml(profile.contact_phone)}"></label>
+        <label class="form-group"><span>Correo de contacto</span><input class="input" type="email" name="contact_email" value="${escapeHtml(profile.contact_email)}"></label>
+        <label class="form-group"><span>Nombre de maestra</span><input class="input" name="teacher_name" value="${escapeHtml(profile.teacher_name)}"></label>
+        <label class="form-group"><span>Teléfono de maestra</span><input class="input" name="teacher_phone" value="${escapeHtml(profile.teacher_phone)}"></label>
+        <label class="form-group"><span>Directora</span><input class="input" name="principal_name" value="${escapeHtml(profile.principal_name)}"></label>
+        <label class="form-group"><span>Teléfono de directora</span><input class="input" name="principal_phone" value="${escapeHtml(profile.principal_phone)}"></label>
+        <label class="form-group"><span>Grupo / grado</span><input class="input" name="grade_or_class" value="${escapeHtml(profile.grade_or_class)}"></label>
+        <label class="form-group"><span>Último contacto</span><input class="input" type="date" name="last_contact_date" value="${escapeHtml(profile.last_contact_date)}"></label>
+        <label class="form-group"><span>Próximo seguimiento</span><input class="input" type="date" name="next_follow_up_date" value="${escapeHtml(profile.next_follow_up_date)}"></label>
+        <label class="form-group"><span>Estado de seguimiento</span><select class="select" name="follow_up_status">${options(FOLLOW_UP_STATUSES, profile.follow_up_status || "NEW_CONTACT")}</select></label>
+      </div><label class="form-group"><span>Notas comerciales</span><textarea class="textarea" name="commercial_notes">${escapeHtml(profile.commercial_notes)}</textarea></label></section>` : ""}
+      <button class="btn btn-primary" type="submit">Guardar cambios</button>`;
+    return;
+  }
   form.innerHTML = `
     <div class="form-grid">
       <div class="form-group"><label>Tipo de cliente</label><select class="select" name="client_type" required>${options(CLIENT_TYPES, client.client_type)}</select></div>
@@ -89,7 +114,7 @@ function render() {
   });
   document.querySelector("#clientsTable").innerHTML = rows.length ? `
     <table class="table"><thead><tr><th>Cliente</th><th>Tipo</th><th>Teléfono</th><th>Email</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
-    ${rows.map((client) => `<tr><td>${escapeHtml(client.name)}</td><td>${getClientTypeLabel(client.client_type)}</td><td>${escapeHtml(client.phone)}</td><td>${escapeHtml(client.email)}</td><td><span class="badge">${client.is_active ? "Activo" : "Inactivo"}</span></td><td class="actions"><button class="btn" data-edit="${client.id}" type="button">Editar</button><a class="btn" href="jobs.html?client=${client.id}">Trabajos</a><a class="btn btn-secondary" href="jobs.html?client=${client.id}&action=new">Nuevo trabajo</a><button class="btn btn-danger" data-deactivate="${client.id}" type="button">Desactivar</button><button class="btn btn-danger" data-delete-client="${client.id}" type="button">Eliminar todo</button></td></tr>`).join("")}
+    ${rows.map((client) => `<tr><td>${escapeHtml(client.name)}</td><td>${getClientTypeLabel(client.client_type)}</td><td>${escapeHtml(client.phone)}</td><td>${escapeHtml(client.email)}</td><td><span class="badge">${client.is_active ? "Activo" : "Inactivo"}</span></td><td class="actions"><button class="btn" data-edit="${client.id}" type="button">Editar</button><a class="btn" href="jobs.html?client=${client.id}">Trabajos</a>${currentUser?.staffRole === "assistant" ? "" : `<a class="btn btn-secondary" href="jobs.html?client=${client.id}&action=new">Nuevo trabajo</a><button class="btn btn-danger" data-deactivate="${client.id}" type="button">Desactivar</button><button class="btn btn-danger" data-delete-client="${client.id}" type="button">Eliminar todo</button>`}</td></tr>`).join("")}
     </tbody></table>` : `<div class="empty-state">No hay clientes para mostrar.</div>`;
 }
 
@@ -102,6 +127,32 @@ async function load() {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (currentUser?.staffRole === "assistant") {
+    if (!editingClient) return showToast("Este usuario solo puede editar registros existentes.", "error");
+    const values = formToObject(form);
+    const update = await supabase.from("clients").update({
+      name: values.name.trim(), phone: (editingClient.client_type === "SCHOOL_GRADUATION" ? values.contact_phone || values.phone : values.phone).trim(),
+      email: (editingClient.client_type === "SCHOOL_GRADUATION" ? values.contact_email || values.email : values.email) || null, notes: values.notes || null
+    }).eq("id", editingClient.id);
+    if (update.error) return showToast(`No se pudieron guardar los datos: ${update.error.message}`, "error");
+    if (editingClient.client_type === "SCHOOL_GRADUATION") {
+      const { data: profile } = await supabase.from("school_profiles").select("id").eq("client_id", editingClient.id).maybeSingle();
+      if (profile) {
+        const profileUpdate = await supabase.from("school_profiles").update({
+          school_name: values.name.trim(), contact_name: values.contact_name || null, contact_phone: values.contact_phone || null,
+          contact_email: values.contact_email || null, teacher_name: values.teacher_name || null,
+          teacher_phone: values.teacher_phone || null, principal_name: values.principal_name || null,
+          principal_phone: values.principal_phone || null, grade_or_class: values.grade_or_class || null,
+          last_contact_date: values.last_contact_date || null, next_follow_up_date: values.next_follow_up_date || null,
+          follow_up_status: values.follow_up_status || "NEW_CONTACT", commercial_notes: values.commercial_notes || null
+        }).eq("id", profile.id);
+        if (profileUpdate.error) return showToast(`Los datos principales se guardaron, pero falló el seguimiento: ${profileUpdate.error.message}`, "error");
+      }
+    }
+    modal.classList.add("hidden");
+    showToast("Cambios rutinarios guardados.");
+    return load();
+  }
   const afterSaveAction = event.submitter?.value || "stay";
   const data = formToObject(form);
   if (data.client_type === "SCHOOL_GRADUATION" && !data.school_name.trim()) {
@@ -169,6 +220,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#newClientBtn")?.addEventListener("click", () => {
+  if (currentUser?.staffRole === "assistant") return;
   openModal().catch((error) => {
     console.error(error);
     showToast("No se pudo abrir el formulario.", "error");
@@ -181,12 +233,12 @@ document.addEventListener("click", async (event) => {
   const deleteClientId = event.target.dataset.deleteClient;
   if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");
   if (editId) openModal(clients.find((client) => client.id === editId));
-  if (deactivateId && confirm("¿Desactivar este cliente?")) {
+  if (currentUser?.staffRole !== "assistant" && deactivateId && confirm("¿Desactivar este cliente?")) {
     await supabase.from("clients").update({ is_active: false }).eq("id", deactivateId);
     showToast("Cliente desactivado.");
     load();
   }
-  if (deleteClientId && confirm("¿Eliminar este cliente y todos sus trabajos, galerías, abonos y mensajes? Esta acción es para borrar datos de prueba y no se puede deshacer.")) {
+  if (currentUser?.staffRole !== "assistant" && deleteClientId && confirm("¿Eliminar este cliente y todos sus trabajos, galerías, abonos y mensajes? Esta acción es para borrar datos de prueba y no se puede deshacer.")) {
     let result = await supabase.from("clients").delete().eq("id", deleteClientId);
     if (result.error) {
       await supabase.from("jobs").delete().eq("client_id", deleteClientId);
@@ -206,6 +258,8 @@ document.addEventListener("click", async (event) => {
 
 requireAuth()
   .then((user) => {
+    currentUser = user;
+    if (user?.staffRole === "assistant") document.querySelector("#newClientBtn")?.remove();
     if (user) return load();
     return null;
   })

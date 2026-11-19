@@ -9,14 +9,14 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar"><div class="brand">Clarisa Rojas Fotografia</div><nav class="nav"><a href="dashboard.html">Dashboard</a><a href="clients.html">Clientes</a><a class="active" href="jobs.html">Trabajos</a><a href="packages.html" data-owner-only>Paquetes</a><a href="diplomas.html" data-owner-only>Diplomas y carpetas</a><a href="print-approvals.html" data-owner-only>Aprobados para impresión</a><a href="purchasing.html" data-owner-only>Pedidos y finanzas</a><a href="follow-ups.html">Seguimiento escuelas</a><button data-logout type="button">Cerrar sesión</button></nav></aside>
+    <aside class="sidebar"><div class="brand">Clarisa Rojas Fotografia</div><nav class="nav"><a href="dashboard.html">Dashboard</a><a href="clients.html">Clientes</a><a class="active" href="jobs.html">Trabajos</a><a href="packages.html" data-owner-or-assistant>Paquetes</a><a href="diplomas.html" data-owner-or-assistant>Diplomas y carpetas</a><a href="print-approvals.html" data-owner-or-assistant>Aprobados para impresión</a><a href="purchasing.html" data-owner-or-assistant>Pedidos y finanzas</a><a href="follow-ups.html">Seguimiento escuelas</a><button data-logout type="button">Cerrar sesión</button></nav></aside>
     <main class="main">
       <section class="container job-workspace">
         <div class="page-header"><h1 id="jobTitle" class="page-title">Trabajo</h1><a class="btn" href="jobs.html">Volver</a></div>
         <section id="summaryCard" class="card"></section>
         <section id="printItemsCard" class="card hidden"></section>
         <details id="schoolDetails" class="workflow-disclosure hidden" data-disclosure="school"><summary>Datos de la escuela</summary><section id="schoolCard"></section></details>
-        <details class="workflow-disclosure" data-disclosure="deposits" data-owner-only><summary>Historial de abonos</summary><div class="page-header"><h2>Abonos</h2><button id="newDepositBtn" class="btn btn-primary">Agregar abono general</button></div><div id="depositsList" class="table-wrap"></div></details>
+        <details class="workflow-disclosure" data-disclosure="deposits" data-owner-or-assistant><summary>Historial de abonos</summary><div class="page-header"><h2>Abonos</h2><button id="newDepositBtn" class="btn btn-primary" data-owner-only>Agregar abono general</button></div><div id="depositsList" class="table-wrap"></div></details>
         <details id="generalTools" class="workflow-disclosure" data-disclosure="general"><summary>Herramientas generales y archivos sin grupo</summary>
         <div class="actions"><button id="copyApprovalBtn" class="btn">Copiar link aprobación general</button><button id="openApprovalBtn" class="btn">Abrir aprobación general</button><button id="regenerateTokenBtn" class="btn">Regenerar token general</button><button id="revokeTokenBtn" class="btn btn-danger">Revocar token general</button><button id="deleteJobBtn" class="btn btn-danger" data-owner-only>Eliminar trabajo</button></div>
         <section class="card"><div class="page-header"><h2>Galerías</h2><div class="actions"><button id="sendTeacherPreviewWhatsappBtn" class="btn btn-secondary">WhatsApp galería maestra</button><button id="newGalleryBtn" class="btn btn-primary">Agregar galería</button></div></div><div id="galleriesList"></div></section>
@@ -33,6 +33,6 @@
     </main>
   </div>
   <div id="detailModal" class="modal hidden"><div class="modal-content"><div class="page-header"><h2 id="detailModalTitle">Formulario</h2><button class="btn" data-close-modal>Cerrar</button></div><form id="detailForm"></form></div></div>
-  <script type="module" src="js/job-detail.js"></script>
+  <script type="module" src="js/job-detail.js?v=20261119-assistant-role"></script>
 </body>
 </html>

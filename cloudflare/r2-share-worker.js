@@ -135,6 +135,13 @@ async function requireAdmin(request, env) {
   return user;
 }
 
+async function requirePreviewReader(request, env) {
+  const user = await getAuthenticatedUser(request, env);
+  const role = await getStaffRole(env, user.id);
+  if (!new Set(["owner", "assistant"]).has(role)) throw new Error("Esta acción requiere acceso autorizado a previews.");
+  return { user, role };
+}
+
 async function requireEditorAssignment(request, env, assignmentId) {
   const user = await getAuthenticatedUser(request, env);
   if (await getStaffRole(env, user.id) !== "editor") throw new Error("Esta acción requiere una tarea de editor.");
@@ -334,7 +341,8 @@ async function handleAdminGetCatalogFile(request, env, table, fileId) {
   const authorizedRequest = new Request(request, {
     headers: new Headers({ authorization: `Bearer ${token}` })
   });
-  await requireAdmin(authorizedRequest, env);
+  const { role } = await requirePreviewReader(authorizedRequest, env);
+  if (role === "assistant" && url.searchParams.get("download") === "1") return jsonError("Este rol solo puede ver previews.", 403);
 
   const files = await supabaseFetch(
     env,
@@ -444,14 +452,17 @@ async function handleAdminGetFile(request, env, fileId) {
   const authorizedRequest = new Request(request, {
     headers: new Headers({ authorization: `Bearer ${token}` })
   });
-  await requireAdmin(authorizedRequest, env);
+  const { role } = await requirePreviewReader(authorizedRequest, env);
 
   const files = await supabaseFetch(
     env,
-    `job_files?select=id,r2_key,file_name,content_type&id=eq.${encodeURIComponent(fileId)}&limit=1`
+    `job_files?select=id,r2_key,file_name,content_type,file_type&id=eq.${encodeURIComponent(fileId)}&limit=1`
   );
   const file = files[0];
   if (!file) return jsonError("Archivo no encontrado.", 404);
+  if (role === "assistant" && (file.file_type !== "TEACHER_PREVIEW" || url.searchParams.get("download") === "1")) {
+    return jsonError("Este rol solo puede ver previews para revisión.", 403);
+  }
   return streamFile(env, file, url.searchParams.get("download") === "1");
 }
 

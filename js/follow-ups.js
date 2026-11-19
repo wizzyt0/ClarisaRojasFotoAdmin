@@ -1,4 +1,4 @@
-import { requireAuth } from "./auth.js";
+import { requireAuth } from "./auth.js?v=20261119-assistant-role";
 import { supabase } from "./supabase.js";
 import { APP_CONFIG } from "./config.js";
 import { FOLLOW_UP_STATUSES, getFollowUpStatusLabel } from "./constants.js";
@@ -6,7 +6,8 @@ import { buildWhatsAppUrl } from "./whatsapp.js";
 import { escapeHtml, formToObject, openInNewTab, showToast, today } from "./utils.js";
 import { formatDate } from "./formatters.js";
 
-await requireAuth();
+const currentUser = await requireAuth();
+const canSendMessages = currentUser?.staffRole === "owner";
 
 let profiles = [];
 let editing = null;
@@ -32,7 +33,7 @@ function render() {
     const text = `${profile.school_name} ${profile.teacher_name || ""} ${profile.principal_name || ""}`.toLowerCase();
     return (!search || text.includes(search)) && (!status || profile.follow_up_status === status) && (!month || isThisMonth(profile.next_follow_up_date));
   });
-  document.querySelector("#followUpsTable").innerHTML = rows.length ? `<table class="table"><thead><tr><th>Escuela</th><th>Nivel</th><th>Teléfono</th><th>Maestra</th><th>Directora</th><th>Último contacto</th><th>Próximo seguimiento</th><th>Estado</th><th>Notas</th><th>Acciones</th></tr></thead><tbody>${rows.map((profile) => `<tr><td>${escapeHtml(profile.school_name)}</td><td>${escapeHtml(SCHOOL_LEVELS[profile.school_level] || "")}</td><td>${escapeHtml(profile.clients?.phone)}</td><td>${escapeHtml(profile.teacher_name)}</td><td>${escapeHtml(profile.principal_name)}</td><td>${formatDate(profile.last_contact_date)}</td><td>${formatDate(profile.next_follow_up_date)}</td><td><span class="badge">${getFollowUpStatusLabel(profile.follow_up_status)}</span></td><td>${escapeHtml(profile.commercial_notes)}</td><td class="actions"><button class="btn" data-edit="${profile.id}">Editar</button><button class="btn" data-contacted="${profile.id}">Contactado hoy</button><button class="btn" data-whatsapp="${profile.id}">WhatsApp</button><a class="btn" href="jobs.html?client=${profile.client_id}&action=new">Nuevo trabajo</a></td></tr>`).join("")}</tbody></table>` : `<div class="empty-state">No hay escuelas para mostrar.</div>`;
+  document.querySelector("#followUpsTable").innerHTML = rows.length ? `<table class="table"><thead><tr><th>Escuela</th><th>Nivel</th><th>Teléfono</th><th>Maestra</th><th>Directora</th><th>Último contacto</th><th>Próximo seguimiento</th><th>Estado</th><th>Notas</th><th>Acciones</th></tr></thead><tbody>${rows.map((profile) => `<tr><td>${escapeHtml(profile.school_name)}</td><td>${escapeHtml(SCHOOL_LEVELS[profile.school_level] || "")}</td><td>${escapeHtml(profile.clients?.phone)}</td><td>${escapeHtml(profile.teacher_name)}</td><td>${escapeHtml(profile.principal_name)}</td><td>${formatDate(profile.last_contact_date)}</td><td>${formatDate(profile.next_follow_up_date)}</td><td><span class="badge">${getFollowUpStatusLabel(profile.follow_up_status)}</span></td><td>${escapeHtml(profile.commercial_notes)}</td><td class="actions"><button class="btn" data-edit="${profile.id}">Editar</button><button class="btn" data-contacted="${profile.id}">Contactado hoy</button>${canSendMessages ? `<button class="btn" data-whatsapp="${profile.id}">WhatsApp</button><a class="btn" href="jobs.html?client=${profile.client_id}&action=new">Nuevo trabajo</a>` : ""}</td></tr>`).join("")}</tbody></table>` : `<div class="empty-state">No hay escuelas para mostrar.</div>`;
 }
 
 async function load() {

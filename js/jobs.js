@@ -1,4 +1,4 @@
-import { requireAuth } from "./auth.js";
+import { requireAuth } from "./auth.js?v=20261119-assistant-role";
 import { supabase } from "./supabase.js";
 import { JOB_STATUSES, SCHOOL_EVENT_TYPES, getJobStatusLabel, getJobTypeLabel, getSchoolEventTypeLabel } from "./constants.js";
 import { escapeHtml, formToObject, generateToken, getTokenExpirationDate, getQueryParam, showToast, openInNewTab } from "./utils.js";
@@ -8,6 +8,7 @@ import { formatDate, formatMoney } from "./formatters.js";
 let jobs = [];
 let clients = [];
 let editingJob = null;
+let currentUser = null;
 const modal = document.querySelector("#jobModal");
 const form = document.querySelector("#jobForm");
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -16,6 +17,14 @@ const isUuid = (value) => UUID_PATTERN.test(String(value || ""));
 document.querySelector("#statusFilter").insertAdjacentHTML("beforeend", Object.entries(JOB_STATUSES).map(([value, label]) => `<option value="${value}">${label}</option>`).join(""));
 
 function renderForm(job = {}) {
+  if (currentUser?.staffRole === "assistant") {
+    form.innerHTML = `<div class="form-grid"><label class="form-group"><span>Título del trabajo</span><input class="input" name="title" required value="${escapeHtml(job.title)}"></label>
+      <label class="form-group"><span>Fecha del evento</span><input class="input" type="date" name="event_date" value="${escapeHtml(job.event_date)}"></label>
+      <label class="form-group"><span>Fecha de entrega</span><input class="input" type="date" name="delivery_date" value="${escapeHtml(job.delivery_date)}"></label></div>
+      <label class="form-group"><span>Notas</span><textarea class="textarea" name="notes">${escapeHtml(job.notes)}</textarea></label>
+      <button class="btn btn-primary" type="submit">Guardar cambios</button>`;
+    return;
+  }
   form.innerHTML = `
     <div class="form-grid">
       <div class="form-group"><label>Cliente</label><select class="select" name="client_id" required><option value="">Seleccione</option>${clients.map((client) => `<option value="${client.id}" data-type="${client.client_type}" ${client.id === job.client_id ? "selected" : ""}>${escapeHtml(client.name)}</option>`).join("")}</select></div>
@@ -68,7 +77,7 @@ function render() {
     const total = (job.deposits || []).reduce((sum, item) => sum + Number(item.amount || 0), 0);
     const pending = Math.max(Number(job.price || 0) - total, 0);
     const groupSummary = renderJobGroups(job);
-    return `<tr><td>${escapeHtml(job.title)}<br><span class="muted">${job.job_type === "SCHOOL_GRADUATION" ? getSchoolEventTypeLabel(job.event_type) : escapeHtml(job.event_type || "")}</span></td><td>${escapeHtml(job.clients?.name)}</td><td>${getJobTypeLabel(job.job_type)}</td><td><span class="badge badge-status ${job.status}">${getJobStatusLabel(job.status)}</span></td><td>${groupSummary}</td><td>${formatMoney(job.price)}</td><td>${formatMoney(total)}</td><td>${formatMoney(pending)}</td><td>${formatDate(job.delivery_date)}</td><td class="actions"><a class="btn" href="job-detail.html?id=${job.id}">Abrir</a><button class="btn" data-edit="${job.id}">Editar</button><button class="btn btn-danger" data-delete-job="${job.id}">Eliminar</button></td></tr>`;
+    return `<tr><td>${escapeHtml(job.title)}<br><span class="muted">${job.job_type === "SCHOOL_GRADUATION" ? getSchoolEventTypeLabel(job.event_type) : escapeHtml(job.event_type || "")}</span></td><td>${escapeHtml(job.clients?.name)}</td><td>${getJobTypeLabel(job.job_type)}</td><td><span class="badge badge-status ${job.status}">${getJobStatusLabel(job.status)}</span></td><td>${groupSummary}</td><td>${formatMoney(job.price)}</td><td>${formatMoney(total)}</td><td>${formatMoney(pending)}</td><td>${formatDate(job.delivery_date)}</td><td class="actions"><a class="btn" href="job-detail.html?id=${job.id}">Abrir</a><button class="btn" data-edit="${job.id}">Editar</button>${currentUser?.staffRole === "assistant" ? "" : `<button class="btn btn-danger" data-delete-job="${job.id}">Eliminar</button>`}</td></tr>`;
   }).join("")}</tbody></table>` : `<div class="empty-state">No hay trabajos para mostrar.</div>`;
 }
 
@@ -79,10 +88,40 @@ function renderJobGroups(job) {
 }
 
 async function load() {
-  const [{ data: jobsData, error }, { data: clientsData }] = await Promise.all([
-    supabase.from("jobs").select("id, client_id, package_id, job_type, title, event_type, event_date, delivery_date, status, price, package_quantity, notes, approval_token, created_at, clients(name, is_active), packages(name), school_groups(*, packages(name, price)), deposits(amount, deposit_date, notes, created_at), galleries(id, is_active, google_photos_url)").order("created_at", { ascending: false }),
-    supabase.from("clients").select("*").eq("is_active", true).order("name")
-  ]);
+  let jobsData;
+  let error;
+  let clientsData;
+  if (currentUser?.staffRole === "assistant") {
+    const [jobResult, allClientsResult, packagesResult, groupsResult, depositsResult, galleriesResult, activeClientsResult] = await Promise.all([
+      supabase.from("assistant_jobs").select("*").order("created_at", { ascending: false }),
+      supabase.from("clients").select("id,name,is_active"),
+      supabase.from("packages").select("id,name,price"),
+      supabase.from("school_groups").select("*,packages(name,price)"),
+      supabase.from("deposits").select("job_id,amount,deposit_date,notes,created_at"),
+      supabase.from("galleries").select("id,job_id,is_active,google_photos_url"),
+      supabase.from("clients").select("*").eq("is_active", true).order("name")
+    ]);
+    error = jobResult.error || allClientsResult.error || packagesResult.error || groupsResult.error || depositsResult.error || galleriesResult.error || activeClientsResult.error;
+    const clientById = new Map((allClientsResult.data || []).map((row) => [row.id, row]));
+    const packageById = new Map((packagesResult.data || []).map((row) => [row.id, row]));
+    jobsData = (jobResult.data || []).map((job) => ({
+      ...job,
+      clients: clientById.get(job.client_id),
+      packages: packageById.get(job.package_id),
+      school_groups: (groupsResult.data || []).filter((group) => group.job_id === job.id),
+      deposits: (depositsResult.data || []).filter((deposit) => deposit.job_id === job.id),
+      galleries: (galleriesResult.data || []).filter((gallery) => gallery.job_id === job.id)
+    }));
+    clientsData = activeClientsResult.data;
+  } else {
+    const [jobsResult, clientsResult] = await Promise.all([
+      supabase.from("jobs").select("id, client_id, package_id, job_type, title, event_type, event_date, delivery_date, status, price, package_quantity, notes, created_at, clients(name, is_active), packages(name), school_groups(*, packages(name, price)), deposits(amount, deposit_date, notes, created_at), galleries(id, is_active, google_photos_url)").order("created_at", { ascending: false }),
+      supabase.from("clients").select("*").eq("is_active", true).order("name")
+    ]);
+    jobsData = jobsResult.data;
+    error = jobsResult.error;
+    clientsData = clientsResult.data;
+  }
   if (error) throw error;
   jobs = (jobsData || []).filter((job) => job.clients?.is_active !== false);
   clients = clientsData || [];
@@ -93,7 +132,7 @@ async function load() {
     if (client) document.querySelector("#searchInput").value = client.name;
   }
   render();
-  if (clientParam && actionParam === "new") {
+  if (clientParam && actionParam === "new" && currentUser?.staffRole !== "assistant") {
     const client = clients.find((item) => item.id === clientParam);
     openModal({
       client_id: clientParam,
@@ -116,6 +155,17 @@ function openModal(job = null, { isNew = false } = {}) {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = formToObject(form);
+  if (currentUser?.staffRole === "assistant") {
+    if (!editingJob) return showToast("Este usuario solo puede editar trabajos existentes.", "error");
+    const result = await supabase.from("jobs").update({
+      title: data.title.trim(), event_date: data.event_date || null,
+      delivery_date: data.delivery_date || null, notes: data.notes || null
+    }).eq("id", editingJob.id);
+    if (result.error) return showToast(`No se pudo guardar el trabajo: ${result.error.message}`, "error");
+    modal.classList.add("hidden");
+    showToast("Datos rutinarios del trabajo guardados.");
+    return load();
+  }
   const selectedClient = clients.find((client) => client.id === data.client_id);
   if (!selectedClient || !isUuid(selectedClient.id)) {
     return showToast("Seleccione un cliente válido antes de guardar.", "error");
@@ -192,13 +242,14 @@ form.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#newJobBtn")?.addEventListener("click", () => {
+  if (currentUser?.staffRole === "assistant") return;
   openModal();
 });
 
 document.addEventListener("click", async (event) => {
   if (event.target.matches("[data-close-modal]")) modal.classList.add("hidden");
   if (event.target.dataset.edit) openModal(jobs.find((job) => job.id === event.target.dataset.edit));
-  if (event.target.dataset.deleteJob) {
+  if (currentUser?.staffRole !== "assistant" && event.target.dataset.deleteJob) {
     const job = jobs.find((item) => item.id === event.target.dataset.deleteJob);
     const confirmed = confirm(`¿Está seguro de eliminar el trabajo "${job?.title || "seleccionado"}"? También se eliminarán sus galerías, abonos, aprobaciones y mensajes.`);
     if (!confirmed) return;
@@ -216,6 +267,8 @@ document.addEventListener("click", async (event) => {
 
 requireAuth()
   .then((user) => {
+    currentUser = user;
+    if (user?.staffRole === "assistant") document.querySelector("#newJobBtn")?.remove();
     if (user) return load();
     return null;
   })
