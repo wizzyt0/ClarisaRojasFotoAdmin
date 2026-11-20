@@ -1,10 +1,10 @@
 openapi: 3.1.0
 info:
   title: Clarisa Rojas Fotografia - API privada del asistente
-  version: 1.1.0
+  version: 1.2.0
   description: >-
-    API privada. GET acepta el token de lectura o escritura; PATCH acepta solo el token
-    de escritura separado y solo en tres rutas de campos rutinarios. Sin POST, PUT ni DELETE.
+    API privada. GET usa el token de lectura; las escrituras limitadas usan el token separado.
+    Fechas de evento/entrega, paquetes/precios, aprobaciones, pagos existentes, usuarios y borrados quedan bloqueados.
 servers:
   - url: https://clarisa-assistant-api.mudjkdriver.workers.dev
     description: Worker desplegado. Requiere Authorization Bearer.
@@ -49,12 +49,30 @@ paths:
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/Unavailable' }
+    post:
+      operationId: createSchool
+      summary: Dar de alta una escuela y sus contactos
+      description: No acepta precios, paquetes ni enlaces de aprobación.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SchoolCreate' }
+      responses:
+        '200': { description: Escuela creada, content: { application/json: { schema: { $ref: '#/components/schemas/UpdatedRecord' } } } }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Ya existe una escuela con ese nombre }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /v1/schools/{schoolId}:
     patch:
       operationId: updateRoutineSchoolFields
       summary: Actualizar datos rutinarios permitidos de una escuela
       description: >-
-        Requiere el token independiente de escritura. No admite cantidades, fechas de evento/entrega,
+        Requiere el token independiente de escritura. No admite cantidades de paquetes, fechas de evento/entrega,
         campos financieros, estados de impresión ni campos adicionales.
       parameters:
         - $ref: '#/components/parameters/SchoolId'
@@ -118,6 +136,24 @@ paths:
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/Unavailable' }
+    post:
+      operationId: createJob
+      summary: Crear trabajo sin paquete ni precio
+      description: Crea trabajo en estado inicial, sin fechas de evento/entrega, paquete ni precio definido.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JobCreate' }
+      responses:
+        '200': { description: Trabajo creado, content: { application/json: { schema: { $ref: '#/components/schemas/UpdatedRecord' } } } }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /v1/jobs/{jobId}:
     get:
       operationId: getJob
@@ -173,6 +209,50 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
         '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      operationId: createGroup
+      summary: Agregar grupo, maestra y cantidad
+      description: No acepta paquete, formato de impresion, precio ni cantidad de paquetes.
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupRoutine' }
+      responses:
+        '200': { description: Grupo creado, content: { application/json: { schema: { $ref: '#/components/schemas/UpdatedRecord' } } } }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
+  /v1/groups/{groupId}:
+    patch:
+      operationId: updateGroupRoutine
+      summary: Actualizar nombre, maestra, telefono, cantidad o notas
+      description: Solo campos rutinarios; no modifica paquetes, precios, estados ni fechas.
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GroupRoutinePatch' }
+      responses:
+        '200': { description: Grupo actualizado, content: { application/json: { schema: { $ref: '#/components/schemas/UpdatedRecord' } } } }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /v1/jobs/{jobId}/pieces:
     get:
       operationId: listJobPieces
@@ -226,6 +306,26 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
         '500': { $ref: '#/components/responses/InternalError' }
+    post:
+      operationId: recordDeposit
+      summary: Registrar un abono nuevo
+      description: Solo agrega abonos. No hay operaciones para editar o eliminar uno existente.
+      parameters:
+        - $ref: '#/components/parameters/JobId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DepositCreate' }
+      responses:
+        '200': { description: Abono agregado, content: { application/json: { schema: { $ref: '#/components/schemas/UpdatedRecord' } } } }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '500': { $ref: '#/components/responses/InternalError' }
+        '503': { $ref: '#/components/responses/Unavailable' }
   /v1/finance/costs:
     get:
       operationId: listCosts
@@ -496,6 +596,27 @@ components:
         next_follow_up_date: { type: [string, 'null'], format: date }
         follow_up_status: { type: [string, 'null'], enum: [NEW_CONTACT, CONTACT_NEXT_YEAR, INTERESTED, QUOTE_SENT, CONFIRMED, NOT_INTERESTED, RECURRING_CLIENT, null] }
         commercial_notes: { type: [string, 'null'], maxLength: 5000 }
+        student_count: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
+    SchoolCreate:
+      type: object
+      additionalProperties: false
+      required: [school_name, contact_phone]
+      properties:
+        school_name: { type: string, minLength: 1, maxLength: 200 }
+        school_level: { type: [string, 'null'], enum: [KINDER, PRIMARY, SECONDARY, null] }
+        contact_name: { type: [string, 'null'], maxLength: 200 }
+        contact_phone: { type: string, minLength: 1, maxLength: 40 }
+        contact_email: { type: [string, 'null'], maxLength: 254 }
+        teacher_name: { type: [string, 'null'], maxLength: 200 }
+        teacher_phone: { type: [string, 'null'], maxLength: 40 }
+        principal_name: { type: [string, 'null'], maxLength: 200 }
+        principal_phone: { type: [string, 'null'], maxLength: 40 }
+        grade_or_class: { type: [string, 'null'], maxLength: 120 }
+        student_count: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
+        last_contact_date: { type: [string, 'null'], format: date }
+        next_follow_up_date: { type: [string, 'null'], format: date }
+        follow_up_status: { type: [string, 'null'], enum: [NEW_CONTACT, CONTACT_NEXT_YEAR, INTERESTED, QUOTE_SENT, CONFIRMED, NOT_INTERESTED, RECURRING_CLIENT, null] }
+        commercial_notes: { type: [string, 'null'], maxLength: 5000 }
     JobPatch:
       type: object
       additionalProperties: false
@@ -503,6 +624,43 @@ components:
       properties:
         title: { type: string, minLength: 1, maxLength: 200 }
         notes: { type: [string, 'null'], maxLength: 5000 }
+    JobCreate:
+      type: object
+      additionalProperties: false
+      required: [client_id, title]
+      properties:
+        client_id: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        event_type: { type: [string, 'null'], maxLength: 60 }
+        notes: { type: [string, 'null'], maxLength: 5000 }
+    GroupRoutine:
+      type: object
+      additionalProperties: false
+      required: [group_name]
+      properties:
+        group_name: { type: string, minLength: 1, maxLength: 200 }
+        teacher_name: { type: [string, 'null'], maxLength: 200 }
+        teacher_phone: { type: [string, 'null'], maxLength: 40 }
+        student_count: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
+        notes: { type: [string, 'null'], maxLength: 2000 }
+    GroupRoutinePatch:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        group_name: { type: string, minLength: 1, maxLength: 200 }
+        teacher_name: { type: [string, 'null'], maxLength: 200 }
+        teacher_phone: { type: [string, 'null'], maxLength: 40 }
+        student_count: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
+        notes: { type: [string, 'null'], maxLength: 2000 }
+    DepositCreate:
+      type: object
+      additionalProperties: false
+      required: [amount, deposit_date]
+      properties:
+        amount: { type: number, exclusiveMinimum: 0, maximum: 9999999999.99, multipleOf: 0.01 }
+        deposit_date: { type: string, format: date }
+        notes: { type: [string, 'null'], maxLength: 500 }
     Page:
       type: object
       additionalProperties: false

@@ -28,7 +28,7 @@ test("rejects requests without a Bearer token", async () => {
 });
 
 test("rejects non-GET methods", async () => {
-  const response = await handleAssistantApiRequest(request("/v1/jobs", { method: "POST" }), env);
+  const response = await handleAssistantApiRequest(request("/v1/catalogs/packages", { method: "POST" }), env);
   assert.equal(response.status, 405);
   assert.equal(response.headers.get("allow"), "GET");
 });
@@ -101,6 +101,129 @@ test("routine PATCH uses only the allowed columns and assistant session", async 
   assert.equal(response.status, 200);
   assert.ok(calls.some(({ options }) => options.method === "PATCH"));
   assert.ok(calls.some(({ parsed, options }) => parsed.pathname.endsWith("/school_profiles") && options.method === undefined));
+});
+
+test("school creation uses the narrow RPC and rejects packages before database access", async () => {
+  globalThis.fetch = async (url, options) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_create_school$/);
+    assert.deepEqual(JSON.parse(options.body), { p_input: { school_name: "Escuela de prueba", contact_phone: "6677001100", teacher_name: "Maestra" } });
+    return Response.json({ ok: true, data: { id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", school_name: "Escuela de prueba" } });
+  };
+  const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/schools", {
+    method: "POST",
+    headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ school_name: "Escuela de prueba", contact_phone: "6677001100", teacher_name: "Maestra" })
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.school_name, "Escuela de prueba");
+
+  const rejected = await handleAssistantApiRequest(new Request("https://api.example.test/v1/schools", {
+    method: "POST",
+    headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ school_name: "Escuela", contact_phone: "6677001100", price: 200 })
+  }), env);
+  assert.equal(rejected.status, 400);
+});
+
+test("job creation sends only the approved fields to the restricted RPC", async () => {
+  globalThis.fetch = async (url, options) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_create_job$/);
+    assert.deepEqual(JSON.parse(options.body), { p_input: {
+      client_id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Graduacion", notes: "Nuevo trabajo"
+    } });
+    return Response.json({ ok: true, data: { id: "job-id", title: "Graduacion", status: "CREATED" } });
+  };
+  const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs", {
+    method: "POST",
+    headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ client_id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Graduacion", notes: "Nuevo trabajo" })
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.status, "CREATED");
+});
+
+test("group creation accepts teacher and student count but never package or price fields", async () => {
+  globalThis.fetch = async (url, options) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_create_group$/);
+    assert.deepEqual(JSON.parse(options.body), {
+      p_job_id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818",
+      p_input: { group_name: "1A", teacher_name: "Maestra", student_count: 28 }
+    });
+    return Response.json({ ok: true, data: { id: "group-id", group_name: "1A", student_count: 28 } });
+  };
+  const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818/groups", {
+    method: "POST",
+    headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ group_name: "1A", teacher_name: "Maestra", student_count: 28 })
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.student_count, 28);
+});
+
+test("the read token cannot create records", async () => {
+  globalThis.fetch = async () => { throw new Error("unexpected database call"); };
+  const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/schools", {
+    method: "POST",
+    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ school_name: "Escuela", contact_phone: "6677001100" })
+  }), env);
+  assert.equal(response.status, 403);
+});
+
+test("deposit creation is append-only and calls only its restricted RPC", async () => {
+  globalThis.fetch = async (url, options) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_record_deposit$/);
+    assert.deepEqual(JSON.parse(options.body), {
+      p_job_id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818",
+      p_input: { amount: 750.5, deposit_date: "2026-11-20", notes: "Transferencia" }
+    });
+    return Response.json({ ok: true, data: { id: "deposit-id", amount: 750.5 } });
+  };
+  const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818/deposits", {
+    method: "POST",
+    headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ amount: 750.5, deposit_date: "2026-11-20", notes: "Transferencia" })
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.amount, 750.5);
+
+  const forbiddenBody = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818/deposits", {
+    method: "POST",
+    headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ amount: 750.5, deposit_date: "2026-11-20", delete_existing: true })
+  }), env);
+  assert.equal(forbiddenBody.status, 400);
+
+  const deletion = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818/deposits", {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${writeToken}` }
+  }), env);
+  assert.equal(deletion.status, 405);
+});
+
+test("group routines reject package, price, approval and event-date fields", async () => {
+  globalThis.fetch = async () => { throw new Error("unexpected database call"); };
+  const cases = [
+    ["/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818/groups", "POST", { group_name: "1A", selected_package_id: "x" }],
+    ["/v1/groups/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", "PATCH", { student_count: 30, price: 100 }],
+    ["/v1/jobs", "POST", { client_id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Graduacion", event_date: "2026-12-01" }]
+  ];
+  for (const [path, method, body] of cases) {
+    const response = await handleAssistantApiRequest(new Request(`https://api.example.test${path}`, {
+      method,
+      headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+      body: JSON.stringify(body)
+    }), env);
+    assert.equal(response.status, 400);
+  }
 });
 
 test("job updates are verified through the restricted assistant view", async () => {
@@ -185,7 +308,7 @@ test("health requires authentication and does not query Supabase", async () => {
   globalThis.fetch = async () => { throw new Error("unexpected database call"); };
   const response = await handleAssistantApiRequest(request("/v1/health"), env);
   assert.equal(response.status, 200);
-  assert.equal(JSON.stringify(await response.json()), JSON.stringify({ ok: true, version: "1.1.0" }));
+  assert.equal(JSON.stringify(await response.json()), JSON.stringify({ ok: true, version: "1.2.0" }));
 });
 
 test("validates pagination bounds", async () => {

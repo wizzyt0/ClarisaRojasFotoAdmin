@@ -1,4 +1,4 @@
-const API_VERSION = "1.1.0";
+const API_VERSION = "1.2.0";
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const MAX_OFFSET = 100000;
@@ -168,6 +168,28 @@ async function supabaseUpdateJobRoutine(env, id, patch, retry = 0) {
   return { affectedRows: rows.length };
 }
 
+async function supabaseRpc(env, name, params, retry = 0) {
+  const accessToken = await getAssistantAccessToken(env);
+  const response = await fetch(supabaseUrl(env, `rpc/${name}`, {}), {
+    method: "POST",
+    headers: {
+      apikey: env.SUPABASE_ANON_KEY,
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(params)
+  });
+  if (response.status === 401 && retry === 0) {
+    cachedAssistantSession = null;
+    return supabaseRpc(env, name, params, 1);
+  }
+  if (response.status === 401 || response.status === 403) return { denied: true };
+  if (response.status === 404) return { notFound: true };
+  if (response.status === 409) return { conflict: true };
+  if (!response.ok) throw new Error("Database operation failed");
+  return { data: await response.json() };
+}
+
 const WRITE_FIELDS = {
   clients: {
     name: { max: 200, required: true },
@@ -183,6 +205,7 @@ const WRITE_FIELDS = {
     contact_email: { max: 254 },
     teacher_name: { max: 200 },
     teacher_phone: { max: 40 },
+    student_count: { integer: true, min: 0, max: 10000 },
     principal_name: { max: 200 },
     principal_phone: { max: 40 },
     grade_or_class: { max: 120 },
@@ -197,6 +220,45 @@ const WRITE_FIELDS = {
   }
 };
 
+const SCHOOL_CREATE_FIELDS = {
+  school_name: { max: 200, required: true },
+  school_level: { values: ["KINDER", "PRIMARY", "SECONDARY"] },
+  contact_name: { max: 200 },
+  contact_phone: { max: 40, required: true },
+  contact_email: { max: 254 },
+  teacher_name: { max: 200 },
+  teacher_phone: { max: 40 },
+  principal_name: { max: 200 },
+  principal_phone: { max: 40 },
+  grade_or_class: { max: 120 },
+  student_count: { integer: true, min: 0, max: 10000 },
+  last_contact_date: { date: true },
+  next_follow_up_date: { date: true },
+  follow_up_status: { values: ["NEW_CONTACT", "CONTACT_NEXT_YEAR", "INTERESTED", "QUOTE_SENT", "CONFIRMED", "NOT_INTERESTED", "RECURRING_CLIENT"] },
+  commercial_notes: { max: 5000 }
+};
+
+const GROUP_FIELDS = {
+  group_name: { max: 200, required: true },
+  teacher_name: { max: 200 },
+  teacher_phone: { max: 40 },
+  student_count: { integer: true, min: 0, max: 10000 },
+  notes: { max: 2000 }
+};
+
+const DEPOSIT_FIELDS = {
+  amount: { money: true, required: true },
+  deposit_date: { date: true, required: true },
+  notes: { max: 500 }
+};
+
+const JOB_CREATE_FIELDS = {
+  client_id: { uuid: true, required: true },
+  title: { max: 200, required: true },
+  event_type: { max: 60 },
+  notes: { max: 5000 }
+};
+
 function validatedPatch(table, body) {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new InputError("El cuerpo debe ser un objeto JSON.");
   const entries = Object.entries(body);
@@ -206,6 +268,10 @@ function validatedPatch(table, body) {
     const rule = allowed[field];
     if (!rule) throw new InputError(`El campo ${field} no se puede actualizar.`);
     if (value === null && !rule.required) continue;
+    if (rule.integer) {
+      if (!Number.isInteger(value) || value < rule.min || value > rule.max) throw new InputError(`${field} debe ser un entero entre ${rule.min} y ${rule.max}.`);
+      continue;
+    }
     if (typeof value !== "string" || value.trim().length === 0 || value.length > (rule.max || 10)) {
       if (rule.values || rule.date) throw new InputError(`${field} no tiene un valor valido.`);
       throw new InputError(`${field} debe ser texto no vacio de hasta ${rule.max} caracteres.`);
@@ -219,6 +285,170 @@ function validatedPatch(table, body) {
     if (rule.values && !rule.values.includes(value)) throw new InputError(`${field} no tiene un valor permitido.`);
   }
   return body;
+}
+
+function validatedObject(body, rules, label) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new InputError("El cuerpo debe ser un objeto JSON.");
+  const entries = Object.entries(body);
+  if (entries.length === 0) throw new InputError("Indica al menos un campo.");
+  for (const [field, value] of entries) {
+    const rule = rules[field];
+    if (!rule) throw new InputError(`El campo ${field} no se puede ${label}.`);
+    if (value === null && !rule.required) continue;
+    if (rule.uuid) {
+      if (typeof value !== "string" || !validUuid(value)) throw new InputError(`${field} debe ser un UUID valido.`);
+      continue;
+    }
+    if (rule.integer) {
+      if (!Number.isInteger(value) || value < rule.min || value > rule.max) throw new InputError(`${field} debe ser un entero entre ${rule.min} y ${rule.max}.`);
+      continue;
+    }
+    if (rule.money) {
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value > 9999999999.99
+        || !/^\d{1,10}(?:\.\d{1,2})?$/.test(String(value))) {
+        throw new InputError("amount debe ser un importe positivo con hasta dos decimales.");
+      }
+      continue;
+    }
+    if (typeof value !== "string" || value.trim().length === 0 || value.length > (rule.max || 10)) {
+      if (rule.values || rule.date) throw new InputError(`${field} no tiene un valor valido.`);
+      throw new InputError(`${field} debe ser texto no vacio de hasta ${rule.max} caracteres.`);
+    }
+    if (rule.date) {
+      const parsed = new Date(`${value}T00:00:00Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value) {
+        throw new InputError(`${field} debe usar una fecha valida YYYY-MM-DD.`);
+      }
+    }
+    if (rule.values && !rule.values.includes(value)) throw new InputError(`${field} no tiene un valor permitido.`);
+  }
+  for (const [field, rule] of Object.entries(rules)) {
+    if (rule.required && (body[field] === undefined || body[field] === null)) throw new InputError(`${field} es obligatorio.`);
+  }
+  return body;
+}
+
+async function readJsonBody(request, maxBytes = 16384) {
+  if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") {
+    throw new InputError("Content-Type debe ser application/json.");
+  }
+  const contentLength = Number(request.headers.get("content-length") || 0);
+  if (contentLength > maxBytes) throw new InputError(`El cuerpo supera el limite de ${maxBytes / 1024} KB.`);
+  const reader = request.body?.getReader();
+  if (!reader) throw new InputError("El cuerpo JSON esta vacio.");
+  const chunks = [];
+  let byteLength = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    byteLength += value.byteLength;
+    if (byteLength > maxBytes) {
+      await reader.cancel();
+      throw new InputError(`El cuerpo supera el limite de ${maxBytes / 1024} KB.`);
+    }
+    chunks.push(value);
+  }
+  try { return JSON.parse(new TextDecoder().decode(BufferlessConcat(chunks, byteLength))); }
+  catch (cause) {
+    if (cause instanceof InputError) throw cause;
+    throw new InputError("El cuerpo JSON no es valido.");
+  }
+}
+
+function requireWriteToken(request, env) {
+  return writeAuthorized(request, env);
+}
+
+async function runWriteRpc(request, env, rpcName, params) {
+  if (!env.ASSISTANT_API_WRITE_TOKEN || env.ASSISTANT_API_WRITE_TOKEN.length < 40
+    || env.ASSISTANT_API_WRITE_TOKEN === env.ASSISTANT_API_TOKEN) {
+    return error("write_not_configured", "La credencial independiente de escritura no esta configurada.", 503);
+  }
+  if (!await requireWriteToken(request, env)) {
+    const readMatch = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") || "");
+    if (await secureTokenMatch(readMatch?.[1], env.ASSISTANT_API_TOKEN)) return error("forbidden", "Se requiere la credencial de escritura autorizada.", 403);
+    return error("unauthorized", "Token faltante o invalido.", 401, { "www-authenticate": "Bearer" });
+  }
+  if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY || !env.SUPABASE_ASSISTANT_EMAIL || !env.SUPABASE_ASSISTANT_PASSWORD) {
+    return error("not_configured", "API no configurada.", 503);
+  }
+  const result = await supabaseRpc(env, rpcName, params);
+  if (result.denied) return error("forbidden", "La cuenta asistente no tiene permiso para esta operacion.", 403);
+  if (result.notFound) return error("not_found", "Registro relacionado no encontrado.", 404);
+  if (result.conflict) return error("already_exists", "Ya existe un registro equivalente.", 409);
+  if (!result.data || result.data.ok !== true) return error("write_unconfirmed", "La base de datos no confirmo la operacion.", 502);
+  return json({ data: result.data.data });
+}
+
+async function handleCreate(request, env, path) {
+  let rpcName;
+  let params;
+  let rules;
+  let expectedMethod = "POST";
+  let routeParams;
+  if (path === "/v1/schools") {
+    if (request.method === "GET") return null;
+    if (request.method !== expectedMethod) return error("method_not_allowed", "Esta ruta solo permite GET y POST.", 405, { allow: "GET, POST" });
+    rpcName = "assistant_create_school";
+    rules = SCHOOL_CREATE_FIELDS;
+  } else if (path === "/v1/jobs") {
+    if (request.method === "GET") return null;
+    if (request.method !== expectedMethod) return error("method_not_allowed", "Esta ruta solo permite GET y POST.", 405, { allow: "GET, POST" });
+    rpcName = "assistant_create_job";
+    rules = JOB_CREATE_FIELDS;
+  } else {
+    routeParams = path.match(/^\/v1\/jobs\/([^/]+)\/groups$/);
+    if (routeParams) {
+      if (request.method === "GET") return null;
+      if (request.method !== expectedMethod) return error("method_not_allowed", "Esta ruta solo permite GET y POST.", 405, { allow: "GET, POST" });
+      if (!validUuid(routeParams[1])) throw new InputError("jobId debe ser un UUID valido.");
+      rpcName = "assistant_create_group";
+      rules = GROUP_FIELDS;
+    } else {
+      routeParams = path.match(/^\/v1\/groups\/([^/]+)$/);
+      if (!routeParams) return null;
+      if (request.method === "GET") return null;
+      if (request.method !== "PATCH") return error("method_not_allowed", "Esta ruta solo permite PATCH.", 405, { allow: "PATCH" });
+      if (!validUuid(routeParams[1])) throw new InputError("groupId debe ser un UUID valido.");
+      rpcName = "assistant_update_group_routine";
+      rules = Object.fromEntries(Object.entries(GROUP_FIELDS).map(([key, rule]) => [key, { ...rule, required: false }]));
+      expectedMethod = "PATCH";
+    }
+  }
+  if (!env.ASSISTANT_API_WRITE_TOKEN || env.ASSISTANT_API_WRITE_TOKEN.length < 40
+    || env.ASSISTANT_API_WRITE_TOKEN === env.ASSISTANT_API_TOKEN) {
+    return error("write_not_configured", "La credencial independiente de escritura no esta configurada.", 503);
+  }
+  if (!await writeAuthorized(request, env)) {
+    const readMatch = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") || "");
+    if (await secureTokenMatch(readMatch?.[1], env.ASSISTANT_API_TOKEN)) return error("forbidden", "Se requiere la credencial de escritura autorizada.", 403);
+    return error("unauthorized", "Token faltante o invalido.", 401, { "www-authenticate": "Bearer" });
+  }
+  const body = validatedObject(await readJsonBody(request), rules, expectedMethod === "PATCH" ? "actualizar" : "crear");
+  if (rpcName === "assistant_create_group") params = { p_job_id: routeParams[1], p_input: body };
+  else if (rpcName === "assistant_update_group_routine") params = { p_group_id: routeParams[1], p_patch: body };
+  else params = { p_input: body };
+  return runWriteRpc(request, env, rpcName, params);
+}
+
+async function handleCreateDeposit(request, env, path) {
+  const match = path.match(/^\/v1\/jobs\/([^/]+)\/deposits$/);
+  if (!match || request.method === "GET") return null;
+  if (request.method !== "POST") return error("method_not_allowed", "Esta ruta solo permite GET y POST.", 405, { allow: "GET, POST" });
+  if (!validUuid(match[1])) throw new InputError("jobId debe ser un UUID valido.");
+  if (!env.ASSISTANT_API_WRITE_TOKEN || env.ASSISTANT_API_WRITE_TOKEN.length < 40
+    || env.ASSISTANT_API_WRITE_TOKEN === env.ASSISTANT_API_TOKEN) {
+    return error("write_not_configured", "La credencial independiente de escritura no esta configurada.", 503);
+  }
+  if (!await writeAuthorized(request, env)) {
+    const readMatch = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") || "");
+    if (await secureTokenMatch(readMatch?.[1], env.ASSISTANT_API_TOKEN)) return error("forbidden", "Se requiere la credencial de escritura autorizada.", 403);
+    return error("unauthorized", "Token faltante o invalido.", 401, { "www-authenticate": "Bearer" });
+  }
+  const body = validatedObject(await readJsonBody(request), DEPOSIT_FIELDS, "crear");
+  return runWriteRpc(request, env, "assistant_record_deposit", {
+    p_job_id: match[1], p_input: body
+  });
 }
 
 async function updateRecord(env, table, id, select, body) {
@@ -262,31 +492,13 @@ async function handleWrite(request, env, path) {
   const [, resource, id] = match;
   const config = {
     clients: ["clients", "id,name,phone,secondary_phone,email,notes"],
-    schools: ["school_profiles", "id,client_id,school_name,contact_name,contact_phone,contact_email,teacher_name,teacher_phone,principal_name,principal_phone,grade_or_class,last_contact_date,next_follow_up_date,follow_up_status,commercial_notes"],
+    schools: ["school_profiles", "id,client_id,school_name,contact_name,contact_phone,contact_email,teacher_name,teacher_phone,principal_name,principal_phone,grade_or_class,student_count,last_contact_date,next_follow_up_date,follow_up_status,commercial_notes"],
     jobs: ["jobs", "id,client_id,title,notes"]
   }[resource];
   if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") {
     throw new InputError("Content-Type debe ser application/json.");
   }
-  const contentLength = Number(request.headers.get("content-length") || 0);
-  if (contentLength > 16384) throw new InputError("El cuerpo supera el limite de 16 KB.");
-  const reader = request.body?.getReader();
-  if (!reader) throw new InputError("El cuerpo JSON esta vacio.");
-  const chunks = [];
-  let byteLength = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    byteLength += value.byteLength;
-    if (byteLength > 16384) {
-      await reader.cancel();
-      throw new InputError("El cuerpo supera el limite de 16 KB.");
-    }
-    chunks.push(value);
-  }
-  const rawBody = new TextDecoder().decode(BufferlessConcat(chunks, byteLength));
-  let body;
-  try { body = JSON.parse(rawBody); } catch { throw new InputError("El cuerpo JSON no es valido."); }
+  const body = await readJsonBody(request);
   return updateRecord(env, config[0], id, config[1], body);
 }
 
@@ -489,9 +701,13 @@ async function getPreview(env, fileId) {
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/$/, "") || "/";
+  const depositResult = await handleCreateDeposit(request, env, path);
+  if (depositResult) return depositResult;
+  const createResult = await handleCreate(request, env, path);
+  if (createResult) return createResult;
   const writeResult = await handleWrite(request, env, path);
   if (writeResult) return writeResult;
-  if (request.method !== "GET") return error("method_not_allowed", "Solo se permiten GET y las rutas PATCH autorizadas.", 405, { allow: "GET" });
+  if (request.method !== "GET") return error("method_not_allowed", "Metodo no permitido para esta ruta.", 405, { allow: "GET" });
   if (!env.ASSISTANT_API_TOKEN || env.ASSISTANT_API_TOKEN.length < 40) return error("not_configured", "API no configurada.", 503);
   if (!await readAuthorized(request, env)) {
     const writeMatch = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") || "");
