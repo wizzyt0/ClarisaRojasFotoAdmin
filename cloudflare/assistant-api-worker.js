@@ -272,7 +272,7 @@ function validatedPatch(table, body) {
       if (!Number.isInteger(value) || value < rule.min || value > rule.max) throw new InputError(`${field} debe ser un entero entre ${rule.min} y ${rule.max}.`);
       continue;
     }
-    if (typeof value !== "string" || value.trim().length === 0 || value.length > (rule.max || 10)) {
+    if (typeof value !== "string" || value.trim().length === 0 || (rule.max !== undefined && value.length > rule.max)) {
       if (rule.values || rule.date) throw new InputError(`${field} no tiene un valor valido.`);
       throw new InputError(`${field} debe ser texto no vacio de hasta ${rule.max} caracteres.`);
     }
@@ -310,7 +310,7 @@ function validatedObject(body, rules, label) {
       }
       continue;
     }
-    if (typeof value !== "string" || value.trim().length === 0 || value.length > (rule.max || 10)) {
+    if (typeof value !== "string" || value.trim().length === 0 || (rule.max !== undefined && value.length > rule.max)) {
       if (rule.values || rule.date) throw new InputError(`${field} no tiene un valor valido.`);
       throw new InputError(`${field} debe ser texto no vacio de hasta ${rule.max} caracteres.`);
     }

@@ -77,6 +77,7 @@ test("GET job details are not intercepted by the write route", async () => {
 
 test("routine PATCH uses only the allowed columns and assistant session", async () => {
   const calls = [];
+  const patch = { principal_phone: "6677998877", next_follow_up_date: "2026-12-01", follow_up_status: "CONTACT_NEXT_YEAR" };
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
     calls.push({ parsed, options });
@@ -86,17 +87,17 @@ test("routine PATCH uses only the allowed columns and assistant session", async 
     if (options.method === "PATCH") {
       assert.match(parsed.pathname, /\/rest\/v1\/school_profiles$/);
       assert.equal(options.headers.prefer, "return=minimal");
-      assert.deepEqual(JSON.parse(options.body), { principal_phone: "6677998877", next_follow_up_date: "2026-12-01" });
+      assert.deepEqual(JSON.parse(options.body), patch);
       return new Response(null, { status: 204, headers: { "content-range": "0-0/*" } });
     }
     assert.equal(options.method, undefined);
     assert.match(parsed.pathname, /\/rest\/v1\/school_profiles$/);
-    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", principal_phone: "6677998877", next_follow_up_date: "2026-12-01" }]);
+    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", ...patch }]);
   };
   const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/schools/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", {
     method: "PATCH",
     headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ principal_phone: "6677998877", next_follow_up_date: "2026-12-01" })
+    body: JSON.stringify(patch)
   }), env);
   assert.equal(response.status, 200);
   assert.ok(calls.some(({ options }) => options.method === "PATCH"));
@@ -104,17 +105,21 @@ test("routine PATCH uses only the allowed columns and assistant session", async 
 });
 
 test("school creation uses the narrow RPC and rejects packages before database access", async () => {
+  const input = { school_name: "Escuela de prueba", contact_phone: "6677001100", school_level: "PRIMARY",
+    teacher_name: "Maestra", follow_up_status: "NEW_CONTACT" };
+  let rpcCalls = 0;
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
     assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_create_school$/);
-    assert.deepEqual(JSON.parse(options.body), { p_input: { school_name: "Escuela de prueba", contact_phone: "6677001100", teacher_name: "Maestra" } });
+    rpcCalls++;
+    assert.deepEqual(JSON.parse(options.body), { p_input: input });
     return Response.json({ ok: true, data: { id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", school_name: "Escuela de prueba" } });
   };
   const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/schools", {
     method: "POST",
     headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ school_name: "Escuela de prueba", contact_phone: "6677001100", teacher_name: "Maestra" })
+    body: JSON.stringify(input)
   }), env);
   assert.equal(response.status, 200);
   assert.equal((await response.json()).data.school_name, "Escuela de prueba");
@@ -125,6 +130,16 @@ test("school creation uses the narrow RPC and rejects packages before database a
     body: JSON.stringify({ school_name: "Escuela", contact_phone: "6677001100", price: 200 })
   }), env);
   assert.equal(rejected.status, 400);
+
+  for (const invalid of [{ follow_up_status: "INVALID_STATUS" }, { school_name: "x".repeat(201) }]) {
+    const invalidResponse = await handleAssistantApiRequest(new Request("https://api.example.test/v1/schools", {
+      method: "POST",
+      headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ ...input, ...invalid })
+    }), env);
+    assert.equal(invalidResponse.status, 400);
+  }
+  assert.equal(rpcCalls, 1);
 });
 
 test("job creation sends only the approved fields to the restricted RPC", async () => {
@@ -290,7 +305,7 @@ test("rejects protected fields and invalid values before contacting Supabase", a
   const payloads = [
     ["/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", { event_date: "2026-12-01" }],
     ["/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", { status: "APPROVED_FOR_PRINT" }],
-    ["/v1/schools/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", { student_count: 99 }],
+    ["/v1/schools/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", { student_count: 10001 }],
     ["/v1/clients/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", { phone: "x", is_active: false }],
     ["/v1/schools/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", { next_follow_up_date: "2026-02-31" }]
   ];
