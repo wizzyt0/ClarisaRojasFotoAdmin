@@ -138,7 +138,12 @@ async function supabasePatch(env, table, id, body, select, retry = 0) {
   }
   if (response.status === 401 || response.status === 403) return { denied: true };
   if (!response.ok) throw new Error("Database update failed");
-  return { ok: true };
+  const contentRange = response.headers.get("content-range")?.trim();
+  if (contentRange === "*/*" || /^\*\/0$/.test(contentRange || "")) return { affectedRows: 0 };
+  const rangeMatch = /^(\d+)-(\d+)\/(?:\*|\d+)$/.exec(contentRange || "");
+  if (!rangeMatch) return { affectedRows: null };
+  const affectedRows = Number(rangeMatch[2]) - Number(rangeMatch[1]) + 1;
+  return { affectedRows };
 }
 
 const WRITE_FIELDS = {
@@ -203,6 +208,8 @@ async function updateRecord(env, table, id, select, body) {
   const patch = validatedPatch(table, body);
   const result = await supabasePatch(env, table, id, patch, select);
   if (result.denied) return error("forbidden", "La cuenta asistente no tiene permiso para actualizar este registro.", 403);
+  if (result.affectedRows === 0) return error("not_found", "Registro no encontrado.", 404);
+  if (result.affectedRows !== 1) return error("update_unconfirmed", "La base de datos no confirmo cuantas filas actualizo.", 502);
   const readableTable = table === "jobs" ? "assistant_jobs" : table;
   const { rows } = await supabaseGet(env, readableTable, { select, id: `eq.${id}`, limit: 1 });
   const row = rows[0];
