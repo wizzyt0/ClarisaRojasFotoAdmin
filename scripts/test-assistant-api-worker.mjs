@@ -23,6 +23,41 @@ function request(path, { method = "GET", auth = `Bearer ${token}` } = {}) {
   });
 }
 
+test("secondary credentials get the same eight write routes and separate read access", async () => {
+  const read = "secondary-read-".padEnd(48, "a");
+  const write = "secondary-write-".padEnd(48, "b");
+  const secondary = { ...env, ASSISTANT_API_SECONDARY_READ_TOKEN: read, ASSISTANT_API_SECONDARY_WRITE_TOKEN: write };
+  const id = "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818";
+  const routes = [
+    ["POST", "/v1/schools"], ["POST", "/v1/jobs"], ["PATCH", `/v1/clients/${id}`],
+    ["PATCH", `/v1/schools/${id}`], ["PATCH", `/v1/jobs/${id}`], ["POST", `/v1/jobs/${id}/groups`],
+    ["PATCH", `/v1/groups/${id}`], ["POST", `/v1/jobs/${id}/deposits`]
+  ];
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error("unexpected database call"); };
+  const health = (key, bindings = secondary) => handleAssistantApiRequest(
+    request("/v1/health", { auth: `Bearer ${key}` }), bindings
+  );
+  for (const [method, path] of routes) {
+    const call = key => handleAssistantApiRequest(new Request(`https://api.example.test${path}`, {
+      method, headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: "{}"
+    }), secondary);
+    assert.equal((await call(read)).status, 403, path);
+    assert.equal((await call(write)).status, 400, path);
+  }
+  assert.equal((await health(read)).status, 200);
+  assert.equal((await health(write)).status, 403);
+  assert.equal((await health(token)).status, 200);
+  assert.equal((await health(writeToken)).status, 403);
+  for (const invalid of [{ ASSISTANT_API_SECONDARY_WRITE_TOKEN: token },
+    { ASSISTANT_API_SECONDARY_WRITE_TOKEN: undefined }, { ASSISTANT_API_SECONDARY_WRITE_TOKEN: read }]) {
+    const bindings = { ...secondary, ...invalid };
+    assert.equal((await health(read, bindings)).status, 401);
+    assert.equal((await health(token, bindings)).status, 200);
+  }
+  assert.equal(calls, 0);
+});
+
 test("rejects requests without a Bearer token", async () => {
   const response = await handleAssistantApiRequest(request("/v1/health", { auth: "" }), env);
   assert.equal(response.status, 401);

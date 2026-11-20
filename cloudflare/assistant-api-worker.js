@@ -52,14 +52,40 @@ async function secureTokenMatch(candidate, expected) {
   return difference === 0;
 }
 
-async function readAuthorized(request, env) {
-  const match = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") || "");
-  return secureTokenMatch(match?.[1], env.ASSISTANT_API_TOKEN);
+function validApiToken(value) {
+  return typeof value === "string" && value.length >= 40 && !/\s/.test(value);
 }
 
-async function writeAuthorized(request, env) {
+function apiTokens(env) {
+  const primaryRead = env.ASSISTANT_API_TOKEN;
+  const primaryWrite = env.ASSISTANT_API_WRITE_TOKEN;
+  const secondaryRead = env.ASSISTANT_API_SECONDARY_READ_TOKEN;
+  const secondaryWrite = env.ASSISTANT_API_SECONDARY_WRITE_TOKEN;
+  const read = validApiToken(primaryRead) ? [primaryRead] : [];
+  const write = validApiToken(primaryWrite) && primaryWrite !== primaryRead ? [primaryWrite] : [];
+  if (validApiToken(secondaryRead) && validApiToken(secondaryWrite)
+    && new Set([primaryRead, primaryWrite, secondaryRead, secondaryWrite]).size === 4) {
+    read.push(secondaryRead);
+    write.push(secondaryWrite);
+  }
+  return { read, write };
+}
+
+async function authorizeApi(request, env, scope) {
+  const tokens = apiTokens(env);
+  if (tokens[scope].length === 0) {
+    return scope === "write"
+      ? error("write_not_configured", "La credencial independiente de escritura no esta configurada.", 503)
+      : error("not_configured", "API no configurada.", 503);
+  }
   const match = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") || "");
-  return secureTokenMatch(match?.[1], env.ASSISTANT_API_WRITE_TOKEN);
+  const matches = async list => (await Promise.all(list.map(token => secureTokenMatch(match?.[1], token)))).some(Boolean);
+  if (await matches(tokens[scope])) return null;
+  if (await matches(tokens[scope === "read" ? "write" : "read"])) {
+    return error("forbidden", scope === "read" ? "La credencial de escritura no permite consultas GET."
+      : "Se requiere la credencial de escritura autorizada.", 403);
+  }
+  return error("unauthorized", "Token faltante o invalido.", 401, { "www-authenticate": "Bearer" });
 }
 
 function supabaseUrl(env, table, params) {
@@ -360,20 +386,7 @@ async function readJsonBody(request, maxBytes = 16384) {
   }
 }
 
-function requireWriteToken(request, env) {
-  return writeAuthorized(request, env);
-}
-
-async function runWriteRpc(request, env, rpcName, params) {
-  if (!env.ASSISTANT_API_WRITE_TOKEN || env.ASSISTANT_API_WRITE_TOKEN.length < 40
-    || env.ASSISTANT_API_WRITE_TOKEN === env.ASSISTANT_API_TOKEN) {
-    return error("write_not_configured", "La credencial independiente de escritura no esta configurada.", 503);
-  }
-  if (!await requireWriteToken(request, env)) {
-    const readMatch = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") || "");
-    if (await secureTokenMatch(readMatch?.[1], env.ASSISTANT_API_TOKEN)) return error("forbidden", "Se requiere la credencial de escritura autorizada.", 403);
-    return error("unauthorized", "Token faltante o invalido.", 401, { "www-authenticate": "Bearer" });
-  }
+async function runWriteRpc(env, rpcName, params) {
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY || !env.SUPABASE_ASSISTANT_EMAIL || !env.SUPABASE_ASSISTANT_PASSWORD) {
     return error("not_configured", "API no configurada.", 503);
   }
@@ -420,20 +433,13 @@ async function handleCreate(request, env, path) {
       expectedMethod = "PATCH";
     }
   }
-  if (!env.ASSISTANT_API_WRITE_TOKEN || env.ASSISTANT_API_WRITE_TOKEN.length < 40
-    || env.ASSISTANT_API_WRITE_TOKEN === env.ASSISTANT_API_TOKEN) {
-    return error("write_not_configured", "La credencial independiente de escritura no esta configurada.", 503);
-  }
-  if (!await writeAuthorized(request, env)) {
-    const readMatch = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") || "");
-    if (await secureTokenMatch(readMatch?.[1], env.ASSISTANT_API_TOKEN)) return error("forbidden", "Se requiere la credencial de escritura autorizada.", 403);
-    return error("unauthorized", "Token faltante o invalido.", 401, { "www-authenticate": "Bearer" });
-  }
+  const denied = await authorizeApi(request, env, "write");
+  if (denied) return denied;
   const body = validatedObject(await readJsonBody(request), rules, expectedMethod === "PATCH" ? "actualizar" : "crear");
   if (rpcName === "assistant_create_group") params = { p_job_id: routeParams[1], p_input: body };
   else if (rpcName === "assistant_update_group_routine") params = { p_group_id: routeParams[1], p_patch: body };
   else params = { p_input: body };
-  return runWriteRpc(request, env, rpcName, params);
+  return runWriteRpc(env, rpcName, params);
 }
 
 async function handleCreateDeposit(request, env, path) {
@@ -441,29 +447,18 @@ async function handleCreateDeposit(request, env, path) {
   if (!match || request.method === "GET") return null;
   if (request.method !== "POST") return error("method_not_allowed", "Esta ruta solo permite GET y POST.", 405, { allow: "GET, POST" });
   if (!validUuid(match[1])) throw new InputError("jobId debe ser un UUID valido.");
-  if (!env.ASSISTANT_API_WRITE_TOKEN || env.ASSISTANT_API_WRITE_TOKEN.length < 40
-    || env.ASSISTANT_API_WRITE_TOKEN === env.ASSISTANT_API_TOKEN) {
-    return error("write_not_configured", "La credencial independiente de escritura no esta configurada.", 503);
-  }
-  if (!await writeAuthorized(request, env)) {
-    const readMatch = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") || "");
-    if (await secureTokenMatch(readMatch?.[1], env.ASSISTANT_API_TOKEN)) return error("forbidden", "Se requiere la credencial de escritura autorizada.", 403);
-    return error("unauthorized", "Token faltante o invalido.", 401, { "www-authenticate": "Bearer" });
-  }
+  const denied = await authorizeApi(request, env, "write");
+  if (denied) return denied;
   const body = validatedObject(await readJsonBody(request), DEPOSIT_FIELDS, "crear");
   const requestKey = request.headers.get("Idempotency-Key");
   if (!validUuid(requestKey)) throw new InputError("Idempotency-Key debe ser un UUID valido.");
-  return runWriteRpc(request, env, "assistant_record_deposit_once", {
+  return runWriteRpc(env, "assistant_record_deposit_once", {
     p_job_id: match[1], p_input: body, p_request_key: requestKey
   });
 }
 
 async function updateRecord(env, table, id, select, body) {
   if (!validUuid(id)) throw new InputError("El id debe ser un UUID valido.");
-  if (!env.ASSISTANT_API_WRITE_TOKEN || env.ASSISTANT_API_WRITE_TOKEN.length < 40
-    || env.ASSISTANT_API_WRITE_TOKEN === env.ASSISTANT_API_TOKEN) {
-    return error("write_not_configured", "La credencial independiente de escritura no esta configurada.", 503);
-  }
   const patch = validatedPatch(table, body);
   const result = table === "jobs"
     ? await supabaseUpdateJobRoutine(env, id, patch)
@@ -486,13 +481,8 @@ async function handleWrite(request, env, path) {
   if (!match) return null;
   if (request.method === "GET") return null;
   if (request.method !== "PATCH") return error("method_not_allowed", "Esta ruta solo permite PATCH.", 405, { allow: "PATCH" });
-  if (!await writeAuthorized(request, env)) {
-    const readMatch = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") || "");
-    if (await secureTokenMatch(readMatch?.[1], env.ASSISTANT_API_TOKEN)) {
-      return error("forbidden", "Se requiere la credencial de escritura autorizada.", 403);
-    }
-    return error("unauthorized", "Token faltante o invalido.", 401, { "www-authenticate": "Bearer" });
-  }
+  const denied = await authorizeApi(request, env, "write");
+  if (denied) return denied;
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY || !env.SUPABASE_ASSISTANT_EMAIL || !env.SUPABASE_ASSISTANT_PASSWORD) {
     return error("not_configured", "API no configurada.", 503);
   }
@@ -715,14 +705,8 @@ async function route(request, env) {
   const writeResult = await handleWrite(request, env, path);
   if (writeResult) return writeResult;
   if (request.method !== "GET") return error("method_not_allowed", "Metodo no permitido para esta ruta.", 405, { allow: "GET" });
-  if (!env.ASSISTANT_API_TOKEN || env.ASSISTANT_API_TOKEN.length < 40) return error("not_configured", "API no configurada.", 503);
-  if (!await readAuthorized(request, env)) {
-    const writeMatch = /^Bearer ([^\s]+)$/i.exec(request.headers.get("authorization") || "");
-    if (await secureTokenMatch(writeMatch?.[1], env.ASSISTANT_API_WRITE_TOKEN)) {
-      return error("forbidden", "La credencial de escritura no permite consultas GET.", 403);
-    }
-    return error("unauthorized", "Token faltante o invalido.", 401, { "www-authenticate": "Bearer" });
-  }
+  const denied = await authorizeApi(request, env, "read");
+  if (denied) return denied;
   if (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY || !env.SUPABASE_ASSISTANT_EMAIL || !env.SUPABASE_ASSISTANT_PASSWORD) {
     return error("not_configured", "API no configurada.", 503);
   }
