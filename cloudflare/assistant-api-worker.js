@@ -128,7 +128,7 @@ async function supabasePatch(env, table, id, body, select, retry = 0) {
       apikey: env.SUPABASE_ANON_KEY,
       authorization: `Bearer ${accessToken}`,
       "content-type": "application/json",
-      prefer: "return=representation"
+      prefer: "return=minimal"
     },
     body: JSON.stringify(body)
   });
@@ -138,7 +138,7 @@ async function supabasePatch(env, table, id, body, select, retry = 0) {
   }
   if (response.status === 401 || response.status === 403) return { denied: true };
   if (!response.ok) throw new Error("Database update failed");
-  return { rows: await response.json() };
+  return { ok: true };
 }
 
 const WRITE_FIELDS = {
@@ -203,7 +203,14 @@ async function updateRecord(env, table, id, select, body) {
   const patch = validatedPatch(table, body);
   const result = await supabasePatch(env, table, id, patch, select);
   if (result.denied) return error("forbidden", "La cuenta asistente no tiene permiso para actualizar este registro.", 403);
-  return result.rows[0] ? json({ data: result.rows[0] }) : error("not_found", "Registro no encontrado.", 404);
+  const readableTable = table === "jobs" ? "assistant_jobs" : table;
+  const { rows } = await supabaseGet(env, readableTable, { select, id: `eq.${id}`, limit: 1 });
+  const row = rows[0];
+  if (!row) return error("not_found", "Registro no encontrado.", 404);
+  if (!Object.entries(patch).every(([field, value]) => row[field] === value)) {
+    return error("update_not_applied", "La base de datos no confirmó todos los cambios solicitados.", 409);
+  }
+  return json({ data: row });
 }
 
 async function handleWrite(request, env, path) {

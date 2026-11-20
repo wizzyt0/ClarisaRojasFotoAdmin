@@ -81,13 +81,17 @@ test("routine PATCH uses only the allowed columns and assistant session", async 
     const parsed = new URL(url);
     calls.push({ parsed, options });
     if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
-    assert.equal(options.method, "PATCH");
-    assert.match(parsed.pathname, /\/rest\/v1\/school_profiles$/);
+    assert.match(parsed.pathname, /\/rest\/v1\/(school_profiles|assistant_jobs)$/);
     assert.equal(parsed.searchParams.get("id"), "eq.2cde2ddb-3d5a-49e8-9f09-24e42ba2e818");
-    assert.equal(parsed.searchParams.get("select"), "id,client_id,school_name,contact_name,contact_phone,contact_email,teacher_name,teacher_phone,principal_name,principal_phone,grade_or_class,last_contact_date,next_follow_up_date,follow_up_status,commercial_notes");
-    assert.equal(options.headers.prefer, "return=representation");
-    assert.deepEqual(JSON.parse(options.body), { principal_phone: "6677998877", next_follow_up_date: "2026-12-01" });
-    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", principal_phone: "6677998877" }]);
+    if (options.method === "PATCH") {
+      assert.match(parsed.pathname, /\/rest\/v1\/school_profiles$/);
+      assert.equal(options.headers.prefer, "return=minimal");
+      assert.deepEqual(JSON.parse(options.body), { principal_phone: "6677998877", next_follow_up_date: "2026-12-01" });
+      return new Response(null, { status: 204 });
+    }
+    assert.equal(options.method, undefined);
+    assert.match(parsed.pathname, /\/rest\/v1\/school_profiles$/);
+    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", principal_phone: "6677998877", next_follow_up_date: "2026-12-01" }]);
   };
   const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/schools/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", {
     method: "PATCH",
@@ -96,6 +100,31 @@ test("routine PATCH uses only the allowed columns and assistant session", async 
   }), env);
   assert.equal(response.status, 200);
   assert.ok(calls.some(({ options }) => options.method === "PATCH"));
+  assert.ok(calls.some(({ parsed, options }) => parsed.pathname.endsWith("/school_profiles") && options.method === undefined));
+});
+
+test("job updates are verified through the restricted assistant view", async () => {
+  const calls = [];
+  globalThis.fetch = async (url, options) => {
+    const parsed = new URL(url);
+    calls.push({ parsed, options });
+    if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    if (options.method === "PATCH") {
+      assert.match(parsed.pathname, /\/rest\/v1\/jobs$/);
+      assert.equal(options.headers.prefer, "return=minimal");
+      return new Response(null, { status: 204 });
+    }
+    assert.match(parsed.pathname, /\/rest\/v1\/assistant_jobs$/);
+    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Trabajo actualizado" }]);
+  };
+  const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", {
+    method: "PATCH",
+    headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ title: "Trabajo actualizado" })
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.title, "Trabajo actualizado");
+  assert.ok(calls.some(({ parsed, options }) => parsed.pathname.endsWith("/assistant_jobs") && options.method === undefined));
 });
 
 test("rejects protected fields and invalid values before contacting Supabase", async () => {
