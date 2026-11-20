@@ -186,6 +186,11 @@ async function supabaseRpc(env, name, params, retry = 0) {
   if (response.status === 401 || response.status === 403) return { denied: true };
   if (response.status === 404) return { notFound: true };
   if (response.status === 409) return { conflict: true };
+  if (response.status === 500) {
+    // PostgREST maps PostgreSQL's no_data_found to HTTP 500.
+    const failure = await response.json().catch(() => null);
+    if (failure?.code === "P0002") return { notFound: true };
+  }
   if (!response.ok) throw new Error("Database operation failed");
   return { data: await response.json() };
 }

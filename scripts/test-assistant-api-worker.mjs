@@ -191,6 +191,34 @@ test("the read token cannot create records", async () => {
   assert.equal(response.status, 403);
 });
 
+test("deposit RPC no_data_found becomes 404 without exposing database errors", async () => {
+  const path = "/v1/jobs/d47f9795-14d3-4f31-9449-9428fd328857/deposits";
+  for (const [code, status, publicCode] of [
+    ["P0002", 404, "not_found"],
+    ["XX000", 500, "internal_error"]
+  ]) {
+    let rpcCalls = 0;
+    globalThis.fetch = async (url) => {
+      if (new URL(url).pathname.endsWith("/auth/v1/token")) {
+        return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+      }
+      assert.match(new URL(url).pathname, /\/rest\/v1\/rpc\/assistant_record_deposit$/);
+      rpcCalls++;
+      return Response.json({ code, message: "Internal database details" }, { status: 500 });
+    };
+    const response = await handleAssistantApiRequest(new Request(`https://api.example.test${path}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ amount: 1, deposit_date: "2026-11-20" })
+    }), env);
+    assert.equal(response.status, status);
+    const body = await response.json();
+    assert.equal(body.error.code, publicCode);
+    assert.doesNotMatch(body.error.message, /Internal database details/);
+    assert.equal(rpcCalls, 1);
+  }
+});
+
 test("deposit creation is append-only and calls only its restricted RPC", async () => {
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
