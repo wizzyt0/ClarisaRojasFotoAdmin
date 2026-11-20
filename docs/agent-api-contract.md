@@ -15,6 +15,7 @@ Host actual: `https://clarisa-assistant-api.mudjkdriver.workers.dev`. El dominio
 - El correo y contrasena de la cuenta assistant se guardan solo como secretos de Cloudflare. No se proporcionan al agente ni se pegan en el chat. Se requiere que la migracion del rol assistant este aplicada y el usuario tenga dicho rol.
 - La API no acepta nombres de tablas, filtros PostgREST arbitrarios, SQL, RPC genericos ni cuerpos de solicitud.
 - Los listados limitan paginas a 100 y offsets a 100000. La API no registra el token ni los cuerpos de datos en logs propios.
+- Muse solo puede consultar clientes activos. Las escuelas se filtran por el estado del cliente asociado; trabajos, grupos, piezas, finanzas, abonos, gastos y previews de trabajos inactivos se ocultan y responden como no encontrados al consultar por ID. Las escrituras rutinarias sobre clientes, escuelas o trabajos inactivos también se rechazan. Para reactivar o consultar un registro inactivo, la propietaria debe usar el panel.
 - Las rutas de escritura son especificas y validan cada campo. Los RPC de Supabase vuelven a validar el rol assistant y los campos autorizados.
 - Puede agregar escuelas/contactos, crear trabajos sin fechas/paquete/precio, agregar grupos con maestra/teléfono/cantidad, cambiar datos rutinarios permitidos y registrar abonos nuevos.
 - No puede cambiar fechas de evento/entrega, paquetes, precios, cantidades de paquetes, aprobaciones/estados de impresion; tampoco editar o borrar abonos, eliminar registros, mandar mensajes ni administrar usuarios/permisos.
@@ -25,10 +26,10 @@ Host actual: `https://clarisa-assistant-api.mudjkdriver.workers.dev`. El dominio
 | Metodo y ruta | Resultado |
 | --- | --- |
 | `GET /v1/health` | Estado y version; tambien requiere Bearer. |
-| `GET /v1/schools?q=&limit=50&offset=0` | Escuelas, nivel, contactos y seguimiento. `q` busca nombre. |
-| `GET /v1/jobs?client_id=&status=&limit=50&offset=0` | Trabajos paginados. |
-| `GET /v1/jobs/{jobId}` | Detalle seguro del trabajo, sin tokens de aprobacion. |
-| `GET /v1/jobs/{jobId}/groups?limit=50&offset=0` | Grupos, maestra, cantidad y paquete. |
+| `GET /v1/schools?q=&limit=50&offset=0` | Solo escuelas con cliente activo, nivel, contactos y seguimiento. `q` busca nombre. |
+| `GET /v1/jobs?client_id=&status=&limit=50&offset=0` | Solo trabajos de clientes activos, paginados. |
+| `GET /v1/jobs/{jobId}` | Detalle seguro de un trabajo de cliente activo, sin tokens de aprobacion. |
+| `GET /v1/jobs/{jobId}/groups?limit=50&offset=0` | Grupos, maestra, cantidad y paquete de trabajos activos. |
 | `GET /v1/jobs/{jobId}/pieces?limit=50&offset=0` | Diplomas, carpetas y estados de piezas, sin tokens. |
 | `GET /v1/jobs/{jobId}/finance` | Total, abonos, saldo, gastos y fecha del ultimo abono. |
 | `GET /v1/jobs/{jobId}/deposits?limit=50&offset=0` | Abonos con importe y fecha. |

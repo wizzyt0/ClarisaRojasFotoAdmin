@@ -1,4 +1,4 @@
-const API_VERSION = "1.2.0";
+const API_VERSION = "1.3.0";
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const MAX_OFFSET = 100000;
@@ -436,6 +436,16 @@ async function handleCreate(request, env, path) {
   const denied = await authorizeApi(request, env, "write");
   if (denied) return denied;
   const body = validatedObject(await readJsonBody(request), rules, expectedMethod === "PATCH" ? "actualizar" : "crear");
+  if (rpcName === "assistant_create_job" && !await isActiveClient(env, body.client_id)) {
+    return error("not_found", "Cliente activo no encontrado.", 404);
+  }
+  if (rpcName === "assistant_create_group" && !await getActiveJob(env, routeParams[1])) {
+    return error("not_found", "Trabajo no encontrado.", 404);
+  }
+  if (rpcName === "assistant_update_group_routine") {
+    const { rows } = await supabaseGet(env, "school_groups", { select: "id,job_id", id: `eq.${routeParams[1]}`, limit: 1 });
+    if (!rows[0] || !await getActiveJob(env, rows[0].job_id)) return error("not_found", "Grupo no encontrado.", 404);
+  }
   if (rpcName === "assistant_create_group") params = { p_job_id: routeParams[1], p_input: body };
   else if (rpcName === "assistant_update_group_routine") params = { p_group_id: routeParams[1], p_patch: body };
   else params = { p_input: body };
@@ -449,6 +459,7 @@ async function handleCreateDeposit(request, env, path) {
   if (!validUuid(match[1])) throw new InputError("jobId debe ser un UUID valido.");
   const denied = await authorizeApi(request, env, "write");
   if (denied) return denied;
+  if (!await getActiveJob(env, match[1])) return error("not_found", "Trabajo no encontrado.", 404);
   const body = validatedObject(await readJsonBody(request), DEPOSIT_FIELDS, "crear");
   const requestKey = request.headers.get("Idempotency-Key");
   if (!validUuid(requestKey)) throw new InputError("Idempotency-Key debe ser un UUID valido.");
@@ -496,6 +507,15 @@ async function handleWrite(request, env, path) {
     throw new InputError("Content-Type debe ser application/json.");
   }
   const body = await readJsonBody(request);
+  validatedPatch(config[0], body);
+  if (resource === "clients") {
+    if (!await isActiveClient(env, id)) return error("not_found", "Cliente no encontrado.", 404);
+  } else if (resource === "schools") {
+    const { rows } = await supabaseGet(env, "school_profiles", { select: "id,client_id", id: `eq.${id}`, limit: 1 });
+    if (!rows[0] || !await isActiveClient(env, rows[0].client_id)) return error("not_found", "Escuela no encontrada.", 404);
+  } else if (!await getActiveJob(env, id)) {
+    return error("not_found", "Trabajo no encontrado.", 404);
+  }
   return updateRecord(env, config[0], id, config[1], body);
 }
 
@@ -522,6 +542,11 @@ async function pagedRows(env, table, select, filters, page, order) {
     data: result.rows.slice(0, page.limit),
     page: { limit: page.limit, offset: page.offset, has_more: hasMore }
   };
+}
+
+async function pagedFilteredRows(env, table, select, filters, order, predicate, url) {
+  const rows = await allRows(env, table, select, filters, order);
+  return paged(rows.filter(predicate), url);
 }
 
 async function allRows(env, table, select, filters, order) {
@@ -560,44 +585,78 @@ function paged(rows, url) {
   return json({ data, page: { ...page, has_more: start + page.limit < rows.length } });
 }
 
-const SCHOOL_SELECT = "id,client_id,school_name,school_level,contact_name,contact_phone,contact_email,teacher_name,teacher_phone,principal_name,principal_phone,grade_or_class,student_count,last_contact_date,next_follow_up_date,follow_up_status,commercial_notes,created_at,updated_at,clients(id,name,client_type,is_active)";
+const SCHOOL_SELECT = "id,client_id,school_name,school_level,contact_name,contact_phone,contact_email,teacher_name,teacher_phone,principal_name,principal_phone,grade_or_class,student_count,last_contact_date,next_follow_up_date,follow_up_status,commercial_notes,created_at,updated_at,clients!inner(id,name,client_type,is_active)";
 const JOB_SELECT = "id,client_id,package_id,job_type,title,event_type,event_date,delivery_date,status,price,package_quantity,notes,approved_at,approval_name,approval_terms_accepted,created_at,updated_at";
 const GROUP_SELECT = "id,job_id,group_name,teacher_name,teacher_phone,student_count,selected_package_id,photo_format,package_quantity,price,notes,sort_order,created_at,updated_at,packages(name,description,price)";
 const PIECE_SELECT = "id,job_id,group_id,item_type,title,status,sent_at,approved_at,approved_by_name,terms_accepted,selected_file_id,selected_package_id,notes,client_notes,changes_requested_at,created_at,updated_at";
+
+async function isActiveClient(env, clientId) {
+  if (!clientId) return false;
+  const { rows } = await supabaseGet(env, "clients", {
+    select: "id", id: `eq.${clientId}`, is_active: "eq.true", limit: 1
+  });
+  return rows.length === 1;
+}
+
+async function getActiveJob(env, jobId) {
+  const { rows } = await supabaseGet(env, "assistant_jobs", {
+    select: "id,client_id", id: `eq.${jobId}`, limit: 1
+  });
+  const job = rows[0];
+  return job && await isActiveClient(env, job.client_id) ? job : null;
+}
+
+async function activeJobIds(env) {
+  const [jobs, clients] = await Promise.all([
+    allRows(env, "assistant_jobs", "id,client_id", {}, "created_at.desc"),
+    allRows(env, "clients", "id", { is_active: "eq.true" }, "id.asc")
+  ]);
+  const activeClients = new Set(clients.map((client) => client.id));
+  return new Set(jobs.filter((job) => activeClients.has(job.client_id)).map((job) => job.id));
+}
 
 async function listSchools(env, url) {
   const page = pageOptions(url);
   const query = safeSearch(url);
   return json(await pagedRows(env, "school_profiles", SCHOOL_SELECT,
-    query ? { school_name: `ilike.*${query}*` } : {}, page, "school_name.asc"));
+    { "clients.is_active": "eq.true", ...(query ? { school_name: `ilike.*${query}*` } : {}) }, page, "school_name.asc"));
 }
 
 async function listJobs(env, url) {
-  const page = pageOptions(url);
+  pageOptions(url);
   const clientId = uuidParam(url, "client_id");
   const status = url.searchParams.get("status");
   if (status && !/^[A-Z_]{2,40}$/.test(status)) throw new InputError("status no es valido.");
-  return json(await pagedRows(env, "assistant_jobs", JOB_SELECT,
-    { ...(clientId ? { client_id: `eq.${clientId}` } : {}), ...(status ? { status: `eq.${status}` } : {}) },
-    page, "created_at.desc"));
+  const [rows, clients] = await Promise.all([
+    allRows(env, "assistant_jobs", JOB_SELECT,
+      { ...(clientId ? { client_id: `eq.${clientId}` } : {}), ...(status ? { status: `eq.${status}` } : {}) },
+      "created_at.desc"),
+    allRows(env, "clients", "id", { is_active: "eq.true" }, "id.asc")
+  ]);
+  const activeClients = new Set(clients.map((client) => client.id));
+  return paged(rows.filter((job) => activeClients.has(job.client_id)), url);
 }
 
 async function getJob(env, jobId) {
+  if (!await getActiveJob(env, jobId)) return error("not_found", "Trabajo no encontrado.", 404);
   const { rows } = await supabaseGet(env, "assistant_jobs", { select: JOB_SELECT, id: `eq.${jobId}`, limit: 1 });
   return rows[0] ? json({ data: rows[0] }) : error("not_found", "Trabajo no encontrado.", 404);
 }
 
 async function listJobGroups(env, jobId, url) {
+  if (!await getActiveJob(env, jobId)) return error("not_found", "Trabajo no encontrado.", 404);
   const page = pageOptions(url);
   return json(await pagedRows(env, "school_groups", GROUP_SELECT, { job_id: `eq.${jobId}` }, page, "sort_order.asc,group_name.asc"));
 }
 
 async function listJobPieces(env, jobId, url) {
+  if (!await getActiveJob(env, jobId)) return error("not_found", "Trabajo no encontrado.", 404);
   const page = pageOptions(url);
   return json(await pagedRows(env, "assistant_print_items", PIECE_SELECT, { job_id: `eq.${jobId}` }, page, "created_at.asc"));
 }
 
 async function getJobFinance(env, jobId) {
+  if (!await getActiveJob(env, jobId)) return error("not_found", "Trabajo no encontrado.", 404);
   const [jobs, deposits, expenses] = await Promise.all([
     supabaseGet(env, "assistant_jobs", { select: "id,title,price", id: `eq.${jobId}`, limit: 1 }),
     allRows(env, "deposits", "id,amount,deposit_date", { job_id: `eq.${jobId}` }, "deposit_date.asc"),
@@ -622,6 +681,7 @@ async function getJobFinance(env, jobId) {
 }
 
 async function listJobDeposits(env, jobId, url) {
+  if (!await getActiveJob(env, jobId)) return error("not_found", "Trabajo no encontrado.", 404);
   const page = pageOptions(url);
   return json(await pagedRows(env, "deposits", "id,job_id,group_id,amount,deposit_date,notes,created_at",
     { job_id: `eq.${jobId}` }, page, "deposit_date.desc,created_at.desc"));
@@ -640,9 +700,12 @@ async function listExpenses(env, url) {
   const to = url.searchParams.get("to");
   if (from && !/^\d{4}-\d{2}-\d{2}$/.test(from)) throw new InputError("from debe usar YYYY-MM-DD.");
   if (to && !/^\d{4}-\d{2}-\d{2}$/.test(to)) throw new InputError("to debe usar YYYY-MM-DD.");
-  return json(await pagedRows(env, "expenses", "id,job_id,cost_item_id,purchase_order_id,expense_date,vendor,description,quantity,unit,amount,reference,notes,created_at",
-    { ...(jobId ? { job_id: `eq.${jobId}` } : {}), ...(from ? { expense_date: `gte.${from}` } : {}), ...(to ? { expense_date: `lte.${to}` } : {}) },
-    page, "expense_date.desc,created_at.desc"));
+  if (jobId && !await getActiveJob(env, jobId)) return error("not_found", "Trabajo no encontrado.", 404);
+  const filters = { ...(jobId ? { job_id: `eq.${jobId}` } : {}), ...(from ? { expense_date: `gte.${from}` } : {}), ...(to ? { expense_date: `lte.${to}` } : {}) };
+  if (jobId) return json(await pagedRows(env, "expenses", "id,job_id,cost_item_id,purchase_order_id,expense_date,vendor,description,quantity,unit,amount,reference,notes,created_at", filters, page, "expense_date.desc,created_at.desc"));
+  const activeJobs = await activeJobIds(env);
+  return pagedFilteredRows(env, "expenses", "id,job_id,cost_item_id,purchase_order_id,expense_date,vendor,description,quantity,unit,amount,reference,notes,created_at", filters,
+    "expense_date.desc,created_at.desc", (row) => activeJobs.has(row.job_id), url);
 }
 
 async function listPackages(env, url) {
@@ -672,10 +735,12 @@ async function getPreview(env, fileId) {
   ];
   let file = null;
   for (const [table, filters] of lookups) {
-    const { rows } = await supabaseGet(env, table, { select: "id,r2_key,file_name,content_type,size_bytes", ...filters, limit: 1 });
+    const select = table === "assistant_job_files" ? "id,job_id,r2_key,file_name,content_type,size_bytes" : "id,r2_key,file_name,content_type,size_bytes";
+    const { rows } = await supabaseGet(env, table, { select, ...filters, limit: 1 });
     if (rows[0]) { file = rows[0]; break; }
   }
   if (!file) return error("not_found", "Preview no encontrado.", 404);
+  if (file.job_id && !await getActiveJob(env, file.job_id)) return error("not_found", "Preview no encontrado.", 404);
   const contentType = String(file.content_type || "").split(";")[0].toLowerCase();
   const size = Number(file.size_bytes || 0);
   if (!IMAGE_TYPES.has(contentType)) return error("unsupported_media", "El preview no es una imagen compatible.", 415);

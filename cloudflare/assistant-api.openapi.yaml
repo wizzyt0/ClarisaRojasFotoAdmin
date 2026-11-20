@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Clarisa Rojas Fotografia - API privada del asistente
-  version: 1.2.0
+  version: 1.3.0
   description: >-
     API privada. GET usa el token de lectura; las escrituras limitadas usan el token separado.
     Fechas de evento/entrega, paquetes/precios, aprobaciones, pagos existentes, usuarios y borrados quedan bloqueados.
@@ -30,7 +30,8 @@ paths:
   /v1/schools:
     get:
       operationId: listSchools
-      summary: Buscar escuelas
+      summary: Buscar escuelas activas
+      description: Solo devuelve escuelas cuyo cliente asociado está activo. Las escuelas inactivas no son visibles para el asistente.
       parameters:
         - name: q
           in: query
@@ -114,7 +115,8 @@ paths:
   /v1/jobs:
     get:
       operationId: listJobs
-      summary: Consultar trabajos
+      summary: Consultar trabajos de clientes activos
+      description: Solo devuelve trabajos cuyo cliente asociado está activo. Los detalles, grupos, piezas, finanzas, abonos, gastos y previews de trabajos inactivos responden como no encontrados.
       parameters:
         - name: client_id
           in: query

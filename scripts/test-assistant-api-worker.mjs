@@ -96,19 +96,101 @@ test("the write token cannot read", async () => {
 });
 
 test("GET job details are not intercepted by the write route", async () => {
+  const clientId = "c5e5894d-fec6-49e4-a99c-e9f36ddbb57b";
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/auth/v1/token")) {
       return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
     }
     assert.equal(options.method, undefined);
+    if (parsed.pathname.endsWith("/clients")) return Response.json([{ id: clientId }]);
     assert.match(parsed.pathname, /\/rest\/v1\/assistant_jobs$/);
     assert.equal(parsed.searchParams.get("id"), "eq.2cde2ddb-3d5a-49e8-9f09-24e42ba2e818");
-    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Trabajo de prueba" }]);
+    if (parsed.searchParams.get("select") === "id,client_id") return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", client_id: clientId }]);
+    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", client_id: clientId, title: "Trabajo de prueba" }]);
   };
   const response = await handleAssistantApiRequest(request("/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818"), env);
   assert.equal(response.status, 200);
   assert.equal((await response.json()).data.id, "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818");
+});
+
+test("school listing excludes inactive clients before pagination", async () => {
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    assert.match(parsed.pathname, /\/rest\/v1\/school_profiles$/);
+    assert.equal(parsed.searchParams.get("clients.is_active"), "eq.true");
+    return Response.json([{ id: "active-school", school_name: "Activa", clients: { is_active: true } }]);
+  };
+  const response = await handleAssistantApiRequest(request("/v1/schools?limit=1&offset=0"), env);
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).data.map((row) => row.id), ["active-school"]);
+});
+
+test("job listing excludes jobs belonging to inactive clients", async () => {
+  const activeClient = "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818";
+  const inactiveClient = "c5e5894d-fec6-49e4-a99c-e9f36ddbb57b";
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    if (parsed.pathname.endsWith("/assistant_jobs")) {
+      if (parsed.searchParams.get("offset") === "500") return Response.json([]);
+      return Response.json([
+        { id: "active-job", client_id: activeClient },
+        { id: "inactive-job", client_id: inactiveClient }
+      ]);
+    }
+    assert.match(parsed.pathname, /\/rest\/v1\/clients$/);
+    if (parsed.searchParams.get("offset") === "500") return Response.json([]);
+    return Response.json([{ id: activeClient }]);
+  };
+  const response = await handleAssistantApiRequest(request("/v1/jobs?limit=1&offset=0"), env);
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).data.map((row) => row.id), ["active-job"]);
+});
+
+test("inactive job details, finance, groups and deposits are not visible", async () => {
+  const jobId = "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818";
+  const inactiveClient = "c5e5894d-fec6-49e4-a99c-e9f36ddbb57b";
+  for (const suffix of ["", "/finance", "/groups", "/deposits"]) {
+    let requestedProtectedData = false;
+    globalThis.fetch = async (url) => {
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+      if (parsed.pathname.endsWith("/assistant_jobs")) return Response.json([{ id: jobId, client_id: inactiveClient }]);
+      if (parsed.pathname.endsWith("/clients")) return Response.json([]);
+      requestedProtectedData = true;
+      throw new Error("Inactive job data must not be queried");
+    };
+    const response = await handleAssistantApiRequest(request(`/v1/jobs/${jobId}${suffix}`), env);
+    assert.equal(response.status, 404, suffix);
+    assert.equal(requestedProtectedData, false, suffix);
+  }
+});
+
+test("assistant writes cannot target an inactive client or its jobs", async () => {
+  const clientId = "c5e5894d-fec6-49e4-a99c-e9f36ddbb57b";
+  const jobId = "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818";
+  let writeRpcCalls = 0;
+  globalThis.fetch = async (url) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    if (parsed.pathname.endsWith("/assistant_jobs")) return Response.json([{ id: jobId, client_id: clientId }]);
+    if (parsed.pathname.endsWith("/clients")) return Response.json([]);
+    if (parsed.pathname.includes("/rpc/")) writeRpcCalls++;
+    throw new Error("No write RPC should be called for inactive records");
+  };
+  const create = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs", {
+    method: "POST", headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ client_id: clientId, title: "No debe crearse" })
+  }), env);
+  assert.equal(create.status, 404);
+  const patch = await handleAssistantApiRequest(new Request(`https://api.example.test/v1/jobs/${jobId}`, {
+    method: "PATCH", headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ title: "No debe cambiarse" })
+  }), env);
+  assert.equal(patch.status, 404);
+  assert.equal(writeRpcCalls, 0);
 });
 
 test("routine PATCH uses only the allowed columns and assistant session", async () => {
@@ -179,12 +261,14 @@ test("school creation uses the narrow RPC and rejects packages before database a
 });
 
 test("job creation sends only the approved fields to the restricted RPC", async () => {
+  const clientId = "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818";
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    if (parsed.pathname.endsWith("/clients")) return Response.json([{ id: clientId }]);
     assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_create_job$/);
     assert.deepEqual(JSON.parse(options.body), { p_input: {
-      client_id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Graduacion", notes: "Nuevo trabajo"
+      client_id: clientId, title: "Graduacion", notes: "Nuevo trabajo"
     } });
     return Response.json({ ok: true, data: { id: "job-id", title: "Graduacion", status: "CREATED" } });
   };
@@ -198,9 +282,12 @@ test("job creation sends only the approved fields to the restricted RPC", async 
 });
 
 test("group creation accepts teacher and student count but never package or price fields", async () => {
+  const clientId = "c5e5894d-fec6-49e4-a99c-e9f36ddbb57b";
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    if (parsed.pathname.endsWith("/assistant_jobs")) return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", client_id: clientId }]);
+    if (parsed.pathname.endsWith("/clients")) return Response.json([{ id: clientId }]);
     assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_create_group$/);
     assert.deepEqual(JSON.parse(options.body), {
       p_job_id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818",
@@ -229,6 +316,7 @@ test("the read token cannot create records", async () => {
 
 test("deposit RPC no_data_found becomes 404 without exposing database errors", async () => {
   const path = "/v1/jobs/d47f9795-14d3-4f31-9449-9428fd328857/deposits";
+  const clientId = "c5e5894d-fec6-49e4-a99c-e9f36ddbb57b";
   for (const [code, status, publicCode] of [
     ["P0002", 404, "not_found"],
     ["XX000", 500, "internal_error"]
@@ -238,6 +326,9 @@ test("deposit RPC no_data_found becomes 404 without exposing database errors", a
       if (new URL(url).pathname.endsWith("/auth/v1/token")) {
         return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
       }
+      const parsed = new URL(url);
+      if (parsed.pathname.endsWith("/assistant_jobs")) return Response.json([{ id: "d47f9795-14d3-4f31-9449-9428fd328857", client_id: clientId }]);
+      if (parsed.pathname.endsWith("/clients")) return Response.json([{ id: clientId }]);
       assert.match(new URL(url).pathname, /\/rest\/v1\/rpc\/assistant_record_deposit_once$/);
       rpcCalls++;
       return Response.json({ code, message: "Internal database details" }, { status: 500 });
@@ -256,9 +347,12 @@ test("deposit RPC no_data_found becomes 404 without exposing database errors", a
 });
 
 test("deposit creation is append-only and calls only its restricted RPC", async () => {
+  const clientId = "c5e5894d-fec6-49e4-a99c-e9f36ddbb57b";
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    if (parsed.pathname.endsWith("/assistant_jobs")) return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", client_id: clientId }]);
+    if (parsed.pathname.endsWith("/clients")) return Response.json([{ id: clientId }]);
     assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_record_deposit_once$/);
     assert.deepEqual(JSON.parse(options.body), {
       p_job_id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818",
@@ -322,6 +416,7 @@ test("group routines reject package, price, approval and event-date fields", asy
 });
 
 test("job updates are verified through the restricted assistant view", async () => {
+  const clientId = "c5e5894d-fec6-49e4-a99c-e9f36ddbb57b";
   const calls = [];
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
@@ -335,8 +430,10 @@ test("job updates are verified through the restricted assistant view", async () 
       });
       return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Trabajo actualizado", notes: null }]);
     }
+    if (parsed.pathname.endsWith("/clients")) return Response.json([{ id: clientId }]);
     assert.match(parsed.pathname, /\/rest\/v1\/assistant_jobs$/);
-    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Trabajo actualizado" }]);
+    if (parsed.searchParams.get("select") === "id,client_id") return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", client_id: clientId }]);
+    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", client_id: clientId, title: "Trabajo actualizado" }]);
   };
   const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", {
     method: "PATCH",
@@ -349,9 +446,12 @@ test("job updates are verified through the restricted assistant view", async () 
 });
 
 test("does not report success when the job routine function updates zero rows", async () => {
+  const clientId = "c5e5894d-fec6-49e4-a99c-e9f36ddbb57b";
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
+    if (parsed.pathname.endsWith("/assistant_jobs")) return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", client_id: clientId }]);
+    if (parsed.pathname.endsWith("/clients")) return Response.json([{ id: clientId }]);
     assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_update_job_routine$/);
     return Response.json([]);
   };
@@ -365,10 +465,13 @@ test("does not report success when the job routine function updates zero rows", 
 });
 
 test("school updates fail closed when PostgREST omits the affected-row count", async () => {
+  const clientId = "c5e5894d-fec6-49e4-a99c-e9f36ddbb57b";
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
     if (options.method === "PATCH") return new Response(null, { status: 204 });
+    if (parsed.pathname.endsWith("/school_profiles")) return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", client_id: clientId }]);
+    if (parsed.pathname.endsWith("/clients")) return Response.json([{ id: clientId }]);
     throw new Error("A read should not follow an unconfirmed update");
   };
   const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/schools/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", {
@@ -403,7 +506,7 @@ test("health requires authentication and does not query Supabase", async () => {
   globalThis.fetch = async () => { throw new Error("unexpected database call"); };
   const response = await handleAssistantApiRequest(request("/v1/health"), env);
   assert.equal(response.status, 200);
-  assert.equal(JSON.stringify(await response.json()), JSON.stringify({ ok: true, version: "1.2.0" }));
+  assert.equal(JSON.stringify(await response.json()), JSON.stringify({ ok: true, version: "1.3.0" }));
 });
 
 test("validates pagination bounds", async () => {
@@ -421,7 +524,8 @@ test("returns bounded pages and never issues writes", async () => {
     assert.equal(options.method, undefined);
     assert.match(String(url), /\/rest\/v1\/school_profiles/);
     assert.equal(new URL(url).searchParams.get("limit"), "2");
-    return Response.json([{ id: "one" }, { id: "two" }]);
+    assert.equal(new URL(url).searchParams.get("clients.is_active"), "eq.true");
+    return Response.json([{ id: "one", clients: { is_active: true } }, { id: "two", clients: { is_active: true } }]);
   };
   const response = await handleAssistantApiRequest(request("/v1/schools?limit=1"), env);
   assert.equal(response.status, 200);
@@ -438,19 +542,19 @@ test("does not expose routes outside the allowlist", async () => {
 });
 
 test("serves only authenticated teacher-preview images", async () => {
+  const clientId = "c5e5894d-fec6-49e4-a99c-e9f36ddbb57b";
   globalThis.fetch = async (url) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/auth/v1/token")) {
       return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
     }
+    if (parsed.pathname.endsWith("/assistant_jobs")) return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", client_id: clientId }]);
+    if (parsed.pathname.endsWith("/clients")) return Response.json([{ id: clientId }]);
     assert.match(parsed.pathname, /\/rest\/v1\/assistant_job_files$/);
     assert.equal(parsed.searchParams.get("file_type"), "eq.TEACHER_PREVIEW");
     return Response.json([{
-      id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818",
-      r2_key: "private/preview.jpg",
-      file_name: "preview.jpg",
-      content_type: "image/jpeg",
-      size_bytes: 4
+      id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", job_id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818",
+      r2_key: "private/preview.jpg", file_name: "preview.jpg", content_type: "image/jpeg", size_bytes: 4
     }]);
   };
   const imageEnv = {
