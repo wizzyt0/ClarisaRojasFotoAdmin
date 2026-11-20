@@ -4,6 +4,7 @@ import { handleAssistantApiRequest } from "../cloudflare/assistant-api-worker.js
 
 const token = "test-token-".padEnd(48, "x");
 const writeToken = "write-token-".padEnd(48, "y");
+const depositKey = "2cf4795d-145a-42fc-91b7-685c46bdffaa";
 const env = {
   ASSISTANT_API_TOKEN: token,
   ASSISTANT_API_WRITE_TOKEN: writeToken,
@@ -202,13 +203,13 @@ test("deposit RPC no_data_found becomes 404 without exposing database errors", a
       if (new URL(url).pathname.endsWith("/auth/v1/token")) {
         return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
       }
-      assert.match(new URL(url).pathname, /\/rest\/v1\/rpc\/assistant_record_deposit$/);
+      assert.match(new URL(url).pathname, /\/rest\/v1\/rpc\/assistant_record_deposit_once$/);
       rpcCalls++;
       return Response.json({ code, message: "Internal database details" }, { status: 500 });
     };
     const response = await handleAssistantApiRequest(new Request(`https://api.example.test${path}`, {
       method: "POST",
-      headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+      headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json", "idempotency-key": depositKey },
       body: JSON.stringify({ amount: 1, deposit_date: "2026-11-20" })
     }), env);
     assert.equal(response.status, status);
@@ -223,16 +224,17 @@ test("deposit creation is append-only and calls only its restricted RPC", async 
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
-    assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_record_deposit$/);
+    assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_record_deposit_once$/);
     assert.deepEqual(JSON.parse(options.body), {
       p_job_id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818",
-      p_input: { amount: 750.5, deposit_date: "2026-11-20", notes: "Transferencia" }
+      p_input: { amount: 750.5, deposit_date: "2026-11-20", notes: "Transferencia" },
+      p_request_key: depositKey
     });
     return Response.json({ ok: true, data: { id: "deposit-id", amount: 750.5 } });
   };
   const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818/deposits", {
     method: "POST",
-    headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
+    headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json", "idempotency-key": depositKey },
     body: JSON.stringify({ amount: 750.5, deposit_date: "2026-11-20", notes: "Transferencia" })
   }), env);
   assert.equal(response.status, 200);
@@ -250,6 +252,21 @@ test("deposit creation is append-only and calls only its restricted RPC", async 
     headers: { authorization: `Bearer ${writeToken}` }
   }), env);
   assert.equal(deletion.status, 405);
+});
+
+test("deposit creation requires a UUID request key before accessing Supabase", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; throw new Error("unexpected database call"); };
+  for (const key of [null, "not-a-uuid"]) {
+    const headers = { authorization: `Bearer ${writeToken}`, "content-type": "application/json" };
+    if (key) headers["idempotency-key"] = key;
+    const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818/deposits", {
+      method: "POST", headers, body: JSON.stringify({ amount: 1, deposit_date: "2026-11-20" })
+    }), env);
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error.message, /Idempotency-Key/);
+  }
+  assert.equal(calls, 0);
 });
 
 test("group routines reject package, price, approval and event-date fields", async () => {

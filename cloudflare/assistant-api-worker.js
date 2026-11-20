@@ -451,8 +451,10 @@ async function handleCreateDeposit(request, env, path) {
     return error("unauthorized", "Token faltante o invalido.", 401, { "www-authenticate": "Bearer" });
   }
   const body = validatedObject(await readJsonBody(request), DEPOSIT_FIELDS, "crear");
-  return runWriteRpc(request, env, "assistant_record_deposit", {
-    p_job_id: match[1], p_input: body
+  const requestKey = request.headers.get("Idempotency-Key");
+  if (!validUuid(requestKey)) throw new InputError("Idempotency-Key debe ser un UUID valido.");
+  return runWriteRpc(request, env, "assistant_record_deposit_once", {
+    p_job_id: match[1], p_input: body, p_request_key: requestKey
   });
 }
 

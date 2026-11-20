@@ -309,21 +309,27 @@ paths:
     post:
       operationId: recordDeposit
       summary: Registrar un abono nuevo
-      description: Solo agrega abonos. No hay operaciones para editar o eliminar uno existente.
+      description: Solo agrega abonos. Reutiliza la misma clave y los mismos datos si se pierde la respuesta. No hay operaciones para editar o eliminar abonos.
       parameters:
         - $ref: '#/components/parameters/JobId'
+        - in: header
+          name: Idempotency-Key
+          required: true
+          description: UUID distinto para cada pago. Repetir la misma clave y datos devuelve el resultado original.
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/DepositCreate' }
       responses:
-        '200': { description: Abono agregado, content: { application/json: { schema: { $ref: '#/components/schemas/UpdatedRecord' } } } }
+        '200': { description: Abono agregado o resultado original de la misma solicitud, content: { application/json: { schema: { $ref: '#/components/schemas/UpdatedRecord' } } } }
         '400': { $ref: '#/components/responses/InvalidRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '405': { $ref: '#/components/responses/MethodNotAllowed' }
+        '409': { description: La clave ya se uso para otro trabajo o con otros datos. }
         '500': { $ref: '#/components/responses/InternalError' }
         '503': { $ref: '#/components/responses/Unavailable' }
   /v1/finance/costs:

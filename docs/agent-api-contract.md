@@ -52,7 +52,11 @@ Todas requieren `Authorization: Bearer <ASSISTANT_API_WRITE_TOKEN>`, JSON y actu
 | `PATCH /v1/jobs/{jobId}` | `title`, `notes` |
 | `POST /v1/jobs/{jobId}/groups` | `group_name` obligatorio; `teacher_name`, `teacher_phone`, `student_count`, `notes` opcionales. Nace sin paquete, formato, precio ni cantidad de paquetes. |
 | `PATCH /v1/groups/{groupId}` | `group_name`, `teacher_name`, `teacher_phone`, `student_count`, `notes` |
-| `POST /v1/jobs/{jobId}/deposits` | `amount` positivo (maximo 2 decimales), `deposit_date` y `notes` opcional. Agrega un abono; no existe ruta para editarlo o borrarlo. |
+| `POST /v1/jobs/{jobId}/deposits` | `amount` positivo (maximo 2 decimales), `deposit_date` y `notes` opcional. Requiere `Idempotency-Key` (UUID). Agrega un abono; no existe ruta para editarlo o borrarlo. |
+
+Para cada pago confirmado, conserva un UUID estable antes del primer envio. Si se pierde la respuesta, no generes otra clave: usa la misma con el mismo trabajo, importe, fecha y notas. Una clave reutilizada con otros datos devuelve 409. Esto no deduplica pagos enviados con claves diferentes ni pagos ingresados por el panel.
+
+Despliegue: aplicar primero `sql/assistant-deposit-idempotency.sql`, luego desplegar el Worker y actualizar el conector de escritura. Entre ambos pasos, el alta de abonos queda inhabilitada; las demas operaciones no cambian. No volver a habilitar la RPC anterior para recuperar el servicio.
 
 Los campos opcionales se pueden limpiar con `null`; nombre, telefono de contacto, nombre escolar y titulo no aceptan nulos. Las fechas de seguimiento deben ser fechas reales `YYYY-MM-DD`; fechas de evento y entrega no se pueden escribir. `follow_up_status` debe pertenecer al enum permitido. La cuenta `assistant`, RLS, los RPC y el trigger vuelven a validar el permiso. No se usa `service_role`.
 
