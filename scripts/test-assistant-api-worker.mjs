@@ -109,10 +109,13 @@ test("job updates are verified through the restricted assistant view", async () 
     const parsed = new URL(url);
     calls.push({ parsed, options });
     if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
-    if (options.method === "PATCH") {
-      assert.match(parsed.pathname, /\/rest\/v1\/jobs$/);
-      assert.equal(options.headers.prefer, "return=minimal");
-      return new Response(null, { status: 204, headers: { "content-range": "0-0/*" } });
+    if (parsed.pathname.endsWith("/rpc/assistant_update_job_routine")) {
+      assert.equal(options.method, "POST");
+      assert.deepEqual(JSON.parse(options.body), {
+        p_job_id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818",
+        p_patch: { title: "Trabajo actualizado" }
+      });
+      return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Trabajo actualizado", notes: null }]);
     }
     assert.match(parsed.pathname, /\/rest\/v1\/assistant_jobs$/);
     return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Trabajo actualizado" }]);
@@ -127,13 +130,12 @@ test("job updates are verified through the restricted assistant view", async () 
   assert.ok(calls.some(({ parsed, options }) => parsed.pathname.endsWith("/assistant_jobs") && options.method === undefined));
 });
 
-test("does not report success when PostgREST updated zero rows", async () => {
+test("does not report success when the job routine function updates zero rows", async () => {
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
-    if (options.method === "PATCH") return new Response(null, { status: 204, headers: { "content-range": "*/*" } });
-    assert.match(parsed.pathname, /\/rest\/v1\/assistant_jobs$/);
-    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Titulo original" }]);
+    assert.match(parsed.pathname, /\/rest\/v1\/rpc\/assistant_update_job_routine$/);
+    return Response.json([]);
   };
   const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", {
     method: "PATCH",
@@ -144,18 +146,17 @@ test("does not report success when PostgREST updated zero rows", async () => {
   assert.equal((await response.json()).error.code, "not_found");
 });
 
-test("fails closed when PostgREST omits the affected-row count", async () => {
+test("school updates fail closed when PostgREST omits the affected-row count", async () => {
   globalThis.fetch = async (url, options) => {
     const parsed = new URL(url);
     if (parsed.pathname.endsWith("/auth/v1/token")) return Response.json({ access_token: "mock-assistant-jwt", expires_in: 3600 });
     if (options.method === "PATCH") return new Response(null, { status: 204 });
-    assert.match(parsed.pathname, /\/rest\/v1\/assistant_jobs$/);
-    return Response.json([{ id: "2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", title: "Titulo original" }]);
+    throw new Error("A read should not follow an unconfirmed update");
   };
-  const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/jobs/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", {
+  const response = await handleAssistantApiRequest(new Request("https://api.example.test/v1/schools/2cde2ddb-3d5a-49e8-9f09-24e42ba2e818", {
     method: "PATCH",
     headers: { authorization: `Bearer ${writeToken}`, "content-type": "application/json" },
-    body: JSON.stringify({ title: "Titulo original" })
+    body: JSON.stringify({ principal_phone: "6677998877" })
   }), env);
   assert.equal(response.status, 502);
   assert.equal((await response.json()).error.code, "update_unconfirmed");

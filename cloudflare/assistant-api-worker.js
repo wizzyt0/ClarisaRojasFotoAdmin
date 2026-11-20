@@ -146,6 +146,28 @@ async function supabasePatch(env, table, id, body, select, retry = 0) {
   return { affectedRows };
 }
 
+async function supabaseUpdateJobRoutine(env, id, patch, retry = 0) {
+  const accessToken = await getAssistantAccessToken(env);
+  const response = await fetch(supabaseUrl(env, "rpc/assistant_update_job_routine", {}), {
+    method: "POST",
+    headers: {
+      apikey: env.SUPABASE_ANON_KEY,
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({ p_job_id: id, p_patch: patch })
+  });
+  if (response.status === 401 && retry === 0) {
+    cachedAssistantSession = null;
+    return supabaseUpdateJobRoutine(env, id, patch, 1);
+  }
+  if (response.status === 401 || response.status === 403) return { denied: true };
+  if (!response.ok) throw new Error("Database update failed");
+  const rows = await response.json();
+  if (!Array.isArray(rows)) throw new Error("Database update response invalid");
+  return { affectedRows: rows.length };
+}
+
 const WRITE_FIELDS = {
   clients: {
     name: { max: 200, required: true },
@@ -206,7 +228,9 @@ async function updateRecord(env, table, id, select, body) {
     return error("write_not_configured", "La credencial independiente de escritura no esta configurada.", 503);
   }
   const patch = validatedPatch(table, body);
-  const result = await supabasePatch(env, table, id, patch, select);
+  const result = table === "jobs"
+    ? await supabaseUpdateJobRoutine(env, id, patch)
+    : await supabasePatch(env, table, id, patch, select);
   if (result.denied) return error("forbidden", "La cuenta asistente no tiene permiso para actualizar este registro.", 403);
   if (result.affectedRows === 0) return error("not_found", "Registro no encontrado.", 404);
   if (result.affectedRows !== 1) return error("update_unconfirmed", "La base de datos no confirmo cuantas filas actualizo.", 502);
